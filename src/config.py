@@ -57,9 +57,6 @@ class GoogleCalendarSourceConfig(GoogleSourceConfig):
     show_deleted: bool = True
     single_events: bool = True
 
-class GoogleDocsSourceConfig(GoogleSourceConfig):
-    type: Literal["google_docs"] = "google_docs"
-
 class FakturyOnlineSourceConfig(BaseSourceConfig):
     type: Literal["faktury_online"] = "faktury_online"
     api_key: str = Field(default_factory=lambda: os.environ.get("FAKTURY_ONLINE_KEY", ""))
@@ -76,7 +73,6 @@ SourceConfig = Annotated[
         GmailSourceConfig,
         GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig,
-        GoogleDocsSourceConfig,
         FakturyOnlineSourceConfig,
         MockSourceConfig
     ],
