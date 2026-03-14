@@ -36,7 +36,7 @@ sources:
 
 ### Full Configuration
 
-You can also specify a custom name and different intervals. Note that `poll_interval` is optional and defaults to `10m`.
+You can customize the polling interval and provide a list of label IDs to exclude. By default, `SPAM` messages are excluded.
 
 ```yaml
 sources:
@@ -44,7 +44,16 @@ sources:
     type: gmail
     token_file: "tokens/support_token.json"
     poll_interval: "1m"
+    exclude_label_ids: ["SPAM", "TRASH", "CATEGORY_PROMOTIONS"]
 ```
+
+### Filtering by Label IDs
+
+The `exclude_label_ids` parameter allows you to skip emails that have specific Gmail labels. 
+
+- **Default behavior**: If not specified, `exclude_label_ids` defaults to `["SPAM"]`.
+- **How it works**: If an email has *at least one* label that matches any ID in the `exclude_label_ids` list, the source will skip it.
+- **Common Labels**: `SPAM`, `TRASH`, `UNREAD`, `STARRED`, `IMPORTANT`, `INBOX`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`.
 
 ## OAuth Scopes Required
 
@@ -60,24 +69,57 @@ python main.py google auth --scopes gmail --token data/gmail_token.json
 
 | Parameter | Value | Description |
 | :--- | :--- | :--- |
-| **Type** | `gmail.email` | Triggered when a new email is fetched. |
+| **Type** | `gmail.message_added` | Triggered when a new email is received. |
+| **Type** | `gmail.message_deleted` | Triggered when an email is deleted. |
+| **Type** | `gmail.label_added` | Triggered when a label is added to an email. |
+| **Type** | `gmail.label_removed` | Triggered when a label is removed from an email. |
 | **Entity ID** | Google Message ID | Uniquely identifies the email message. |
 
-### Data Payload
+### Data Payloads
 
-When an email is fetched, it creates an event with the type `gmail.email`. The `data` field contains:
+#### gmail.message_added
+
+The `data` field contains:
 
 ```json
 {
   "threadId": "...",
+  "messageId": "...",
   "snippet": "Brief preview of the email content...",
   "from": "Sender Name <sender@example.com>",
   "to": "Recipient <recipient@example.com>",
   "subject": "Email Subject",
   "date": "Date header from email",
-  "internalDate": "1234567890",
   "labelIds": ["INBOX", "UNREAD"]
 }
 ```
 
-The `occurred_at` field of the event is automatically set based on the `internalDate` (the time the message was received).
+The `occurred_at` field is set based on the time the message was received.
+
+#### gmail.message_deleted
+
+The `data` field contains:
+
+```json
+{
+  "threadId": "...",
+  "messageId": "...",
+  "historyId": "..."
+}
+```
+
+#### gmail.label_added / gmail.label_removed
+
+The `data` field contains:
+
+```json
+{
+  "threadId": "...",
+  "messageId": "...",
+  "historyId": "...",
+  "labelIds": ["LABEL_ID"],
+  "allLabelIds": ["INBOX", "LABEL_ID"]
+}
+```
+
+`labelIds` contains the IDs of the labels that were just added or removed. `allLabelIds` contains the full set of labels on the message after the change.

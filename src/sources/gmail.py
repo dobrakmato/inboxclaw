@@ -51,7 +51,7 @@ class GmailSource:
             metadataHeaders=['From', 'To', 'Subject', 'Date']
         ).execute()
 
-    def _create_event(self, msg_id: str, msg: dict) -> NewEvent:
+    def _create_message_added_event(self, msg_id: str, msg: dict) -> NewEvent:
         """Construct a NewEvent from Gmail message data."""
         label_ids = msg.get('labelIds', [])
         payload = msg.get('payload', {})
@@ -59,25 +59,51 @@ class GmailSource:
         headers = {h['name']: h['value'] for h in headers_list}
 
         internal_date = msg.get("internalDate")
-        occurred_at = None
+        occurred_at = datetime.now(timezone.utc)
         if internal_date:
             occurred_at = datetime.fromtimestamp(int(internal_date) / 1000, tz=timezone.utc)
 
         return NewEvent(
             event_id=msg_id,
-            event_type="gmail.email",
+            event_type="gmail.message_added",
             entity_id=msg_id,
             data={
                 "threadId": msg.get("threadId"),
+                "messageId": msg_id,
                 "snippet": msg.get("snippet"),
                 "from": headers.get("From"),
                 "to": headers.get("To"),
                 "subject": headers.get("Subject"),
                 "date": headers.get("Date"),
-                "internalDate": internal_date,
                 "labelIds": label_ids
             },
             occurred_at=occurred_at
+        )
+
+    def _create_message_deleted_event(self, msg_id: str, thread_id: str, history_id: str) -> NewEvent:
+        return NewEvent(
+            event_id=f"{msg_id}-deleted",
+            event_type="gmail.message_deleted",
+            entity_id=msg_id,
+            data={
+                "threadId": thread_id,
+                "messageId": msg_id,
+            }
+        )
+
+    def _create_label_event(self, event_type: str, msg_id: str, thread_id: str, history_id: str, changed_labels: list, all_labels: list) -> NewEvent:
+        suffix = "lab-add" if "added" in event_type else "lab-rem"
+        key = "addedLabelIds" if "added" in event_type else "removedLabelIds"
+        return NewEvent(
+            event_id=f"{msg_id}-{history_id}-{suffix}",
+            event_type=event_type,
+            entity_id=msg_id,
+            data={
+                "threadId": thread_id,
+                "messageId": msg_id,
+                key: changed_labels,
+                "newLabelIds": all_labels
+            }
         )
 
     async def fetch_and_publish(self):
@@ -101,8 +127,7 @@ class GmailSource:
                     history_results = service.users().history().list(
                         userId='me',
                         startHistoryId=current_history_id,
-                        pageToken=page_token,
-                        historyTypes=['messageAdded']
+                        pageToken=page_token
                     ).execute()
                 except HttpError as e:
                     if e.resp.status == 404:
@@ -116,15 +141,64 @@ class GmailSource:
                 new_history_id = history_results.get('historyId', new_history_id)
 
                 for record in history_records:
-                    messages_added = record.get('messagesAdded', [])
-                    for msg_added in messages_added:
-                        msg_ref = msg_added.get('message')
-                        if not msg_ref:
+                    history_id = record.get('id')
+
+                    # 1. Messages Added
+                    for item in record.get('messagesAdded', []):
+                        msg_ref = item.get('message', {})
+                        msg_id = msg_ref.get('id')
+                        if not msg_id: continue
+                        
+                        # Early filter if labels present
+                        label_ids = msg_ref.get('labelIds', [])
+                        if any(l in self.config.exclude_label_ids for l in label_ids):
                             continue
 
-                        msg_id = msg_ref['id']
                         msg = self._get_message_metadata(service, msg_id)
-                        events.append(self._create_event(msg_id, msg))
+                        # Re-check labels after metadata fetch
+                        label_ids = msg.get('labelIds', [])
+                        if any(l in self.config.exclude_label_ids for l in label_ids):
+                            continue
+                        events.append(self._create_message_added_event(msg_id, msg))
+
+                    # 2. Messages Deleted
+                    for item in record.get('messagesDeleted', []):
+                        msg_ref = item.get('message', {})
+                        msg_id = msg_ref.get('id')
+                        if not msg_id: continue
+                        
+                        label_ids = msg_ref.get('labelIds', [])
+                        if any(l in self.config.exclude_label_ids for l in label_ids):
+                            continue
+                        events.append(self._create_message_deleted_event(msg_id, msg_ref.get('threadId'), history_id))
+
+                    # 3. Labels Added
+                    for item in record.get('labelsAdded', []):
+                        msg_ref = item.get('message', {})
+                        msg_id = msg_ref.get('id')
+                        if not msg_id: continue
+                        
+                        label_ids = msg_ref.get('labelIds', [])
+                        if any(l in self.config.exclude_label_ids for l in label_ids):
+                            continue
+                        events.append(self._create_label_event(
+                            "gmail.label_added", msg_id, msg_ref.get('threadId'),
+                            history_id, item.get('labelIds', []), label_ids
+                        ))
+
+                    # 4. Labels Removed
+                    for item in record.get('labelsRemoved', []):
+                        msg_ref = item.get('message', {})
+                        msg_id = msg_ref.get('id')
+                        if not msg_id: continue
+                        
+                        label_ids = msg_ref.get('labelIds', [])
+                        if any(l in self.config.exclude_label_ids for l in label_ids):
+                            continue
+                        events.append(self._create_label_event(
+                            "gmail.label_removed", msg_id, msg_ref.get('threadId'),
+                            history_id, item.get('labelIds', []), label_ids
+                        ))
 
                 page_token = history_results.get('nextPageToken')
                 if not page_token:
