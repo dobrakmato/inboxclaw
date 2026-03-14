@@ -6,7 +6,7 @@ from src.config import load_config, Config
 def test_load_config_defaults(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_data = {
-        "database": {"days": 30, "db_path": ":memory:"},
+        "database": {"retention_days": 30, "db_path": ":memory:"},
         "sources": {"test_source": {"type": "gmail"}},
         "sink": {"test_sink": {"type": "sse", "match": "*"}}
     }
@@ -24,7 +24,7 @@ def test_load_config_overrides(tmp_path):
     config_file = tmp_path / "config_override.yaml"
     config_data = {
         "server": {"host": "127.0.0.1", "port": 9000},
-        "database": {"days": 60, "db_path": "other.db"},
+        "database": {"retention_days": 60, "db_path": "other.db"},
         "sources": {},
         "sink": {}
     }
@@ -34,5 +34,5 @@ def test_load_config_overrides(tmp_path):
     config = load_config(str(config_file))
     assert config.server.host == "127.0.0.1"
     assert config.server.port == 9000
-    assert config.database.days == 60
+    assert config.database.retention_days == 60
     assert config.database.db_path == "other.db"

@@ -39,7 +39,7 @@ def test_coalescer_simple():
         Event(event_id="3", event_type="type2", entity_id="b", created_at=now),
     ]
     
-    coalesced = coalescer.coalesce(events)
+    coalesced, _ = coalescer.coalesce(events)
     # Should have 2 events: one for (type1, a) and one for (type2, b)
     assert len(coalesced) == 2
     
@@ -49,7 +49,7 @@ def test_coalescer_simple():
 
 def test_coalescer_empty():
     coalescer = Coalescer()
-    assert coalescer.coalesce([]) == []
+    assert coalescer.coalesce([]) == ([], {})
 
 def test_coalescer_no_match():
     # Coalescer only matches "matched.*"
@@ -60,7 +60,7 @@ def test_coalescer_no_match():
         Event(event_id="2", event_type="other", entity_id="a", created_at=now),
     ]
     # Should NOT coalesce because "other" doesn't match "matched.*"
-    coalesced = coalescer.coalesce(events)
+    coalesced, _ = coalescer.coalesce(events)
     assert len(coalesced) == 2
 
 def test_coalescer_meta_and_ordering():
@@ -75,7 +75,7 @@ def test_coalescer_meta_and_ordering():
         Event(event_id="3", event_type="type1", entity_id="a", created_at=t3),
     ]
     
-    coalesced = coalescer.coalesce(events)
+    coalesced, _ = coalescer.coalesce(events)
     assert len(coalesced) == 1
     
     ev = coalesced[0]
@@ -96,11 +96,63 @@ def test_coalescer_meta_preservation():
         Event(event_id="2", event_type="type1", entity_id="a", created_at=t2, meta={"important": "data"}),
     ]
     
-    coalesced = coalescer.coalesce(events)
+    coalesced, _ = coalescer.coalesce(events)
     assert len(coalesced) == 1
     ev = coalesced[0]
     assert ev.meta["important"] == "data"
     assert ev.meta["coalesced_events"] == 2
+
+def test_coalescer_no_entity_id_should_not_coalesce():
+    coalescer = Coalescer()
+    now = datetime.now(timezone.utc)
+    
+    events = [
+        Event(event_id="1", event_type="type1", entity_id=None, created_at=now),
+        Event(event_id="2", event_type="type1", entity_id=None, created_at=now),
+    ]
+    
+    coalesced, _ = coalescer.coalesce(events)
+    # They should NOT be coalesced because entity_id is None
+    assert len(coalesced) == 2
+
+def test_coalescer_mixed_entities():
+    coalescer = Coalescer()
+    now = datetime.now(timezone.utc)
+    
+    events = [
+        # To be coalesced (type1, a)
+        Event(id=1, event_id="e1", event_type="type1", entity_id="a", created_at=now),
+        Event(id=2, event_id="e2", event_type="type1", entity_id="a", created_at=now),
+        
+        # To be coalesced (type2, b)
+        Event(id=3, event_id="e3", event_type="type2", entity_id="b", created_at=now),
+        Event(id=4, event_id="e4", event_type="type2", entity_id="b", created_at=now),
+        
+        # Single event (not coalesced but matches pattern)
+        Event(id=5, event_id="e5", event_type="type3", entity_id="c", created_at=now),
+        
+        # No entity_id (should NOT be coalesced)
+        Event(id=6, event_id="e6", event_type="type1", entity_id=None, created_at=now),
+        Event(id=7, event_id="e7", event_type="type1", entity_id=None, created_at=now),
+    ]
+    
+    coalesced, _ = coalescer.coalesce(events)
+    
+    # Expected:
+    # 1. Coalesced (type1, a) -> 1 event (id 2)
+    # 2. Coalesced (type2, b) -> 1 event (id 4)
+    # 3. Single (type3, c)    -> 1 event (id 5)
+    # 4. No entity (type1, None) -> 2 events (id 6, 7)
+    # Total: 5 events
+    
+    assert len(coalesced) == 5
+    
+    ids = [e.id for e in coalesced]
+    assert 2 in ids
+    assert 4 in ids
+    assert 5 in ids
+    assert 6 in ids
+    assert 7 in ids
 
 def test_coalescer_match_patterns_property():
     coalescer = Coalescer(match_patterns=["a.*"])

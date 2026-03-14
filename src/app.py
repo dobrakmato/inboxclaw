@@ -6,6 +6,7 @@ from src.services import AppServices
 from src.database import init_db
 from src.pipeline.notifier import EventNotifier
 from src.initialization import init_sources, init_sinks
+from src.pipeline.cleanup import cleanup_task
 
 logger = logging.getLogger("ingest-pipeline")
 
@@ -31,6 +32,9 @@ async def lifespan(app: FastAPI):
     app.state.services = services
     init_sources(services)
     init_sinks(services)
+    
+    # Start cleanup task
+    services.add_task(cleanup_task(services))
     
     logger.info("App initialized.")
     yield

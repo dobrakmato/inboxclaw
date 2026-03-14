@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from src.database import Event
 from src.pipeline.matcher import EventMatcher
 
@@ -12,7 +12,7 @@ class Coalescer:
     def match_patterns(self) -> List[str]:
         return self.matcher.patterns
 
-    def coalesce(self, events: List[Event]) -> Tuple[List[Event], Dict[int, List[int]]]:
+    def coalesce(self, events: List[Event]) -> Tuple[List[Event], Dict[Optional[int], List[Optional[int]]]]:
         """
         Groups events by (event_type, entity_id).
         Only events matching the matcher patterns are coalesced.
@@ -26,12 +26,12 @@ class Coalescer:
         others: List[Event] = []
         
         for event in events:
-            if self.matcher.matches(event.event_type):
+            if event.entity_id is not None and self.matcher.matches(event.event_type):
                 to_coalesce.append(event)
             else:
                 others.append(event)
 
-        source_ids_map: Dict[int, List[int]] = {}
+        source_ids_map: Dict[Optional[int], List[Optional[int]]] = {}
         for ev in others:
             source_ids_map[ev.id] = [ev.id]
 
@@ -40,7 +40,7 @@ class Coalescer:
 
         grouped: Dict[Tuple[str, str], List[Event]] = {}
         for event in to_coalesce:
-            key = (event.event_type, event.entity_id)
+            key = (event.event_type, event.entity_id) # type: ignore
             if key not in grouped:
                 grouped[key] = []
             grouped[key].append(event)

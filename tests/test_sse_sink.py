@@ -74,7 +74,9 @@ async def test_sse_generator_real_flow(services):
     # First real event
     msg = await asyncio.wait_for(anext(gen), timeout=1.0)
     assert msg["event"] == "message"
-    assert msg["data"]["event_id"] == "e1"
+    import json
+    data = json.loads(msg["data"])
+    assert data["event_id"] == "e1"
     
     # Set disconnected to True so the next iteration exits
     mock_request.is_disconnected.return_value = True
@@ -103,7 +105,9 @@ async def test_sse_generator_event_type_filtering(services):
     
     # Should only get type1
     msg = await asyncio.wait_for(anext(gen), timeout=1.0)
-    assert msg["data"]["event_type"] == "type1"
+    import json
+    data = json.loads(msg["data"])
+    assert data["event_type"] == "type1"
     
     # Now it should wait for more events. We disconnect.
     mock_request.is_disconnected.return_value = True
@@ -211,7 +215,9 @@ async def test_sse_generator_event_type_filtering_restrictive(services):
     services.notifier.notify()
     
     msg = await asyncio.wait_for(anext(gen1), timeout=1.0)
-    assert msg["data"]["event_type"] == "test.click"
+    import json
+    data = json.loads(msg["data"])
+    assert data["event_type"] == "test.click"
     
     # 2. Request for 'other.type' (should return NOTHING because sink is restricted to 'test.*')
     # Even though it's requested in the URL, the config 'match' should block it.

@@ -4,8 +4,9 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, List, Any, Optional
 
 class DatabaseConfig(BaseModel):
-    days: int = 30
+    retention_days: int = Field(alias="days", default=30)
     db_path: str = "./data/data.db"
+    model_config = ConfigDict(populate_by_name=True)
 
 class SourceConfig(BaseModel):
     type: Optional[str] = None
