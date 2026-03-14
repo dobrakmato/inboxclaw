@@ -29,6 +29,8 @@ def mock_services(db_session_maker):
     services = MagicMock(spec=AppServices)
     services.db_session_maker = db_session_maker
     services.notifier = MagicMock()
+    services.writer = MagicMock()
+    services.cursor = MagicMock()
     services.background_tasks = []
     
     def add_task(coro):

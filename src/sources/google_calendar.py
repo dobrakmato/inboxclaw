@@ -4,10 +4,8 @@ from datetime import datetime, timezone
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from sqlalchemy import update
 
 from src.config import GoogleCalendarSourceConfig
-from src.database import Source
 from src.pipeline.writer import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
@@ -29,9 +27,7 @@ class GoogleCalendarSource:
             creds = get_google_credentials(self.token_file, self.name)
             service = build("calendar", "v3", credentials=creds, cache_discovery=False)
             
-            with self.services.db_session_maker() as session:
-                source = session.get(Source, self.source_id)
-                sync_token = source.cursor
+            sync_token = self.services.cursor.get_last_cursor(self.source_id)
 
             page_token = None
             
@@ -54,11 +50,7 @@ class GoogleCalendarSource:
                     if e.resp.status == 410:
                         # Sync token expired, clear it and start over
                         logger.warning(f"Sync token expired for {self.name}, clearing and restarting sync")
-                        with self.services.db_session_maker() as session:
-                            session.execute(
-                                update(Source).where(Source.id == self.source_id).values(cursor=None)
-                            )
-                            session.commit()
+                        self.services.cursor.set_cursor(self.source_id, None)
                         sync_token = None
                         page_token = None
                         continue
@@ -92,11 +84,7 @@ class GoogleCalendarSource:
                 if not page_token:
                     new_sync_token = events_result.get('nextSyncToken')
                     if new_sync_token:
-                        with self.services.db_session_maker() as session:
-                            session.execute(
-                                update(Source).where(Source.id == self.source_id).values(cursor=new_sync_token)
-                            )
-                            session.commit()
+                        self.services.cursor.set_cursor(self.source_id, new_sync_token)
                     break
 
         except HttpError as error:

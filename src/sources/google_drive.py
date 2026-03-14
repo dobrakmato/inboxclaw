@@ -4,10 +4,8 @@ from datetime import datetime
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from sqlalchemy import update
 
 from src.config import GoogleDriveSourceConfig
-from src.database import Source
 from src.pipeline.writer import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
@@ -29,19 +27,13 @@ class GoogleDriveSource:
             service = build("drive", "v3", credentials=creds, cache_discovery=False)
             
             # Get current cursor (startPageToken) if not exists
-            with self.services.db_session_maker() as session:
-                source = session.get(Source, self.source_id)
-                page_token = source.cursor
+            page_token = self.services.cursor.get_last_cursor(self.source_id)
 
             if not page_token:
                 response = service.changes().getStartPageToken().execute()
                 page_token = response.get('startPageToken')
                 logger.info(f"Initialized Google Drive startPageToken: {page_token} for {self.name}")
-                with self.services.db_session_maker() as session:
-                    session.execute(
-                        update(Source).where(Source.id == self.source_id).values(cursor=page_token)
-                    )
-                    session.commit()
+                self.services.cursor.set_cursor(self.source_id, page_token)
 
             while page_token:
                 response = service.changes().list(pageToken=page_token, spaces='drive').execute()
@@ -89,11 +81,7 @@ class GoogleDriveSource:
                 else:
                     new_start_page_token = response.get('newStartPageToken')
                     if new_start_page_token:
-                        with self.services.db_session_maker() as session:
-                            session.execute(
-                                update(Source).where(Source.id == self.source_id).values(cursor=new_start_page_token)
-                            )
-                            session.commit()
+                        self.services.cursor.set_cursor(self.source_id, new_start_page_token)
                         page_token = None # End of current changes
                     else:
                         break

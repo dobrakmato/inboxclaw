@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from src.config import Config
 from src.pipeline.notifier import EventNotifier
 from src.pipeline.writer import EventWriter
+from src.pipeline.cursor import SourceCursor
 
 @dataclass
 class AppServices:
@@ -15,12 +16,14 @@ class AppServices:
     db_session_maker: sessionmaker
     notifier: EventNotifier
     writer: EventWriter = field(init=False)
+    cursor: SourceCursor = field(init=False)
     background_tasks: List[asyncio.Task] = field(default_factory=list)
     sources: Dict[str, Any] = field(default_factory=dict)
     sinks: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.writer = EventWriter(self)
+        self.cursor = SourceCursor(self)
 
     def add_task(self, coro) -> asyncio.Task:
         """Create and track a background task."""

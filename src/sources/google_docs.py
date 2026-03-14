@@ -4,10 +4,8 @@ from datetime import datetime
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from sqlalchemy import update
 
 from src.config import GoogleDocsSourceConfig
-from src.database import Source
 from src.pipeline.writer import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
@@ -39,9 +37,7 @@ class GoogleDocsSource:
             query = "mimeType = 'application/vnd.google-apps.document' and trashed = false"
             
             # We could use the cursor to only get things modified since last time
-            with self.services.db_session_maker() as session:
-                source = session.get(Source, self.source_id)
-                last_mod_time = source.cursor
+            last_mod_time = self.services.cursor.get_last_cursor(self.source_id)
             
             if last_mod_time:
                 query += f" and modifiedTime > '{last_mod_time}'"
@@ -82,11 +78,7 @@ class GoogleDocsSource:
             new_count = self.services.writer.write_events(self.source_id, events)
 
             if latest_mod and latest_mod != last_mod_time:
-                with self.services.db_session_maker() as session:
-                    session.execute(
-                        update(Source).where(Source.id == self.source_id).values(cursor=latest_mod)
-                    )
-                    session.commit()
+                self.services.cursor.set_cursor(self.source_id, latest_mod)
                 
         except HttpError as error:
             logger.error(f"An error occurred in Google Docs source {self.name}: {error}")

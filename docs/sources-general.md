@@ -14,6 +14,21 @@ Sources are the entry points of data into the system. They are responsible for f
 Sources interact with the rest of the system primarily through `AppServices`:
 -   **Database**: Sources are registered in the `sources` table. Their current cursor state is stored there.
 -   **Event Writer**: Sources call `services.writer.write_events()` to save new events to the database.
+-   **Source Cursor**: Sources use `services.cursor.get_last_cursor(source_id)` and `services.cursor.set_cursor(source_id, value)` to manage their watermark.
+
+### Cursors (Watermarks)
+
+To ensure efficient data fetching and avoid processing the same data twice, sources use a **Cursor** (also known as a watermark). A cursor represents the last point of progress for a given source.
+
+#### Why use cursors?
+- **Efficiency**: Only fetch data that has changed since the last poll.
+- **Reliability**: If a source stops, it can resume from exactly where it left off.
+- **Reduced Load**: Minimizes API calls to external systems by avoiding full scans.
+
+#### Cursor Types
+- **Page/Sync Tokens**: Provided by many APIs (like Google Drive/Calendar) to represent a specific point in the change history.
+- **Timestamps**: Used when an API only supports filtering by modification date (like Google Docs search).
+- **Sequence Numbers**: Used for systems with monotonically increasing IDs.
 
 ### Common Event Parameters
 
