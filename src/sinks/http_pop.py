@@ -164,5 +164,6 @@ class HttpPopSink:
             "event_type": event.event_type,
             "entity_id": event.entity_id,
             "created_at": event.created_at.isoformat() if event.created_at else None,
-            "data": event.data
+            "data": event.data,
+            "meta": event.meta
         }
