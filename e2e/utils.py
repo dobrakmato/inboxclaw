@@ -53,7 +53,7 @@ class E2EApp:
         env["CONFIG_PATH"] = self.config_path
         
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "src.main"],
+            [sys.executable, "main.py", "listen"],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

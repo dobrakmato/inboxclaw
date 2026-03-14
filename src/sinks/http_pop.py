@@ -97,8 +97,8 @@ class HttpPopSink:
         event_type: Optional[str] = None, 
         batch_size: Optional[int] = None
     ) -> List[Event]:
-        # Events that are NOT in ANY HttpPullBatchEvent
-        subq = select(HttpPullBatchEvent.event_id)
+        # Events that are NOT in ANY HttpPullBatchEvent WHERE processed is True
+        subq = select(HttpPullBatchEvent.event_id).where(HttpPullBatchEvent.processed == True)
         
         # Build match clause
         final_match = self.matcher.build_sqlalchemy_clause(event_type)
@@ -117,7 +117,7 @@ class HttpPopSink:
 
     def _count_unprocessed_events(self, session: Session, event_type: Optional[str] = None) -> int:
         from sqlalchemy import func
-        subq = select(HttpPullBatchEvent.event_id)
+        subq = select(HttpPullBatchEvent.event_id).where(HttpPullBatchEvent.processed == True)
         final_match = self.matcher.build_sqlalchemy_clause(event_type)
             
         stmt = select(func.count(Event.id)).where(

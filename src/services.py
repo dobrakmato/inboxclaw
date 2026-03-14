@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Dict, Any
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
 from src.config import Config
@@ -14,6 +14,8 @@ class AppServices:
     db_session_maker: sessionmaker
     notifier: EventNotifier
     background_tasks: List[asyncio.Task] = field(default_factory=list)
+    sources: Dict[str, Any] = field(default_factory=dict)
+    sinks: Dict[str, Any] = field(default_factory=dict)
 
     def add_task(self, coro) -> asyncio.Task:
         """Create and track a background task."""

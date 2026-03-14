@@ -5,6 +5,51 @@ from e2e.utils import E2EApp
 
 APP_PORT = 8103
 
+def test_http_pop_unprocessed_remains():
+    config = {
+        "sources": {
+            "mock_src": {"type": "mock", "interval": "1s"}
+        },
+        "sink": {
+            "pop_sink": {
+                "type": "http_pop",
+                "match": "*"
+            }
+        }
+    }
+    
+    with E2EApp(config, "unprocessed", APP_PORT, suite_name="http_pop") as app:
+        # Wait for some events
+        time.sleep(5)
+        
+        extract_url = app.get_url("/pop_sink/extract")
+        mark_url = app.get_url("/pop_sink/mark-processed")
+        
+        # 1. Extract first time
+        resp1 = requests.get(extract_url)
+        data1 = resp1.json()
+        ids1 = {e["event_id"] for e in data1["events"]}
+        assert len(ids1) > 0
+        
+        # 2. Extract second time WITHOUT marking processed
+        resp2 = requests.get(extract_url)
+        data2 = resp2.json()
+        ids2 = {e["event_id"] for e in data2["events"]}
+        
+        # All events from first extract should still be in the second extract
+        assert ids1.issubset(ids2)
+        
+        # 3. Mark first batch as processed
+        requests.post(f"{mark_url}?batch_id={data1['batch_id']}")
+        
+        # 4. Extract third time
+        resp3 = requests.get(extract_url)
+        data3 = resp3.json()
+        ids3 = {e["event_id"] for e in data3["events"]}
+        
+        # None of the events from the first batch should be in the third extract
+        assert not (ids1 & ids3)
+
 def test_http_pop_standard_cycle():
     config = {
         "sources": {

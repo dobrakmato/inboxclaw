@@ -15,7 +15,7 @@ The HTTP Pop Sink is a robust and reliable mechanism for retrieving event data f
 ## How it Works
 
 ### 1. The Pull and Confirm Lifecycle
-The Pop Sink ensures data integrity through a simple, atomic request-response cycle.
+The Pop Sink ensures data integrity through a simple, atomic request-response cycle. Crucially, **events remain in the "Unprocessed" state and will be returned by subsequent `GET /extract` calls until they are explicitly confirmed.**
 
 ```mermaid
 sequenceDiagram
@@ -25,7 +25,7 @@ sequenceDiagram
 
     Note over App, Sink: Step 1: Request Data
     App->>Sink: GET /extract
-    Sink->>DB: Query unprocessed events
+    Sink->>DB: Query events NOT marked processed
     DB-->>Sink: Event list
     Sink-->>App: Batch ID + Events
 
@@ -34,7 +34,7 @@ sequenceDiagram
 
     Note over App, Sink: Step 3: Confirm Success
     App->>Sink: POST /mark-processed?batch_id=42
-    Sink->>DB: Mark batch as confirmed
+    Sink->>DB: Mark events in batch as processed
     Sink-->>App: Confirmation Response
 ```
 
@@ -42,9 +42,10 @@ sequenceDiagram
 Consider a system tracking inventory updates from multiple warehouses.
 1. **Extract**: Your application requests the latest batch of updates.
 2. **Response**: The sink returns 50 updates (e.g., stock changes for Item A, B, and C) assigned to `batch_id: 105`.
-3. **Processing**: Your application updates its local inventory database with these changes.
-4. **Mark Processed**: Once the database update is successful, your application confirms `batch_id: 105`.
-5. **Outcome**: These specific updates are marked as complete and will not be returned in future requests.
+3. **Processing**: Your application starts updating its local inventory database.
+4. **Retry Logic**: If your application crashes *before* it can confirm `batch_id: 105`, the next time it calls **Extract**, it will receive the same 50 updates again. This ensures zero data loss.
+5. **Mark Processed**: Once the database update is successful, your application confirms `batch_id: 105`.
+6. **Outcome**: These specific updates are now marked as `processed` and will no longer be returned in future requests.
 
 ### 2. Understanding Core Concepts
 
@@ -130,7 +131,7 @@ Confirms that a specific batch has been successfully handled.
 
 **Endpoint:** `POST /{sink_name}/mark-processed?batch_id={id}`
 
-Always call this endpoint **after** your application has successfully committed the data to its own storage. If a batch is never confirmed, its events will eventually be eligible for re-extraction to ensure no data is lost.
+Always call this endpoint **after** your application has successfully committed the data to its own storage. If a batch is never confirmed, its events will be returned in future calls to `GET /extract` to ensure no data is lost.
 
 **Response Example:**
 ```json

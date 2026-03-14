@@ -99,7 +99,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     response = client.get("/my_pop/extract?event_type=calendar.new_event")
     data = response.json()
     assert len(data["events"]) == 2
-    assert data["remaining_events"] == 0 # remaining for this selector
+    assert data["remaining_events"] == 2 # still 2 remaining because not marked processed
     assert all(e["event_type"] == "calendar.new_event" for e in data["events"])
     
     # 2. Test event_type wildcard
@@ -108,7 +108,8 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     
     response = client.get("/my_pop/extract?event_type=calendar.*")
     data = response.json()
-    assert len(data["events"]) == 1 # only calendar.update_event remains
+    # Now calendar.new_event are marked processed, so only update_event remains
+    assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "calendar.update_event"
 
     # 3. Test batch_size
@@ -121,13 +122,21 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     response = client.get("/my_pop/extract?event_type=bulk&batch_size=4")
     data = response.json()
     assert len(data["events"]) == 4
+    assert data["remaining_events"] == 10 # still 10 remaining until marked processed
+    
+    # Now mark the batch as processed to reduce remaining count
+    client.post(f"/my_pop/mark-processed?batch_id={data['batch_id']}")
+    
+    # Now call again to verify remaining count decreased
+    response = client.get("/my_pop/extract?event_type=bulk&batch_size=4")
+    data = response.json()
     assert data["remaining_events"] == 6
     
     # 4. Test FIFO order
-    assert data["events"][0]["event_id"] == "bulk_0"
-    assert data["events"][1]["event_id"] == "bulk_1"
-    assert data["events"][2]["event_id"] == "bulk_2"
-    assert data["events"][3]["event_id"] == "bulk_3"
+    assert data["events"][0]["event_id"] == "bulk_4"
+    assert data["events"][1]["event_id"] == "bulk_5"
+    assert data["events"][2]["event_id"] == "bulk_6"
+    assert data["events"][3]["event_id"] == "bulk_7"
 
 def test_extract_respects_sink_match_patterns(services, client, db_session_maker):
     # Sink only allowed to see 'mail.*'
@@ -228,15 +237,25 @@ def test_extract_already_in_batch(services, client, db_session_maker):
         session.commit()
         session.refresh(ev1)
         
-        # Manually create a batch for it
         batch = HttpPopBatch()
         session.add(batch)
         session.flush()
-        link = HttpPullBatchEvent(batch_id=batch.id, event_id=ev1.id, processed=False)
+        batch_id = batch.id
+        link = HttpPullBatchEvent(batch_id=batch_id, event_id=ev1.id, processed=False)
         session.add(link)
         session.commit()
 
-    # Second extract should find nothing
+    # Second extract should find the same event because it hasn't been marked processed
+    response = client.get("/my_pop/extract")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["batch_id"] is not None
+    assert data["events"][0]["event_id"] == "e1"
+
+    # Now mark the first batch as processed
+    client.post(f"/my_pop/mark-processed?batch_id={batch_id}")
+
+    # Third extract should still find nothing because it's now truly processed
     response = client.get("/my_pop/extract")
     assert response.status_code == 200
     assert response.json()["batch_id"] is None
