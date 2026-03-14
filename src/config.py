@@ -35,11 +35,10 @@ class BaseSourceConfig(BaseModel):
 
 class GoogleSourceConfig(BaseSourceConfig):
     token_file: str
-    poll_interval: Interval = "5m"
+    poll_interval: Interval = "10m"
 
 class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
-    max_results: int = 50
 
 class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"

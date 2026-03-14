@@ -13,6 +13,7 @@
    - Use a "service container" or `AppServices` object to encapsulate shared dependencies like the database session maker, the FastAPI application, and the event notifier.
    - Follow the established architecture in `ARCHITECTURE.md`.
    - Keep functions small and focused on a single task.
+   - Follow SRP (Single Responsibility Principle) and DRY (Don't Repeat Yourself)
 
 3. **High Test Coverage**
    - Write unit tests for core logic (e.g. `Coalescer`, `EventNotifier`).
@@ -35,7 +36,7 @@
 6. **Effective Documentation**
    - **Human-Centric Tone**: Write for humans, not for computers. Explain *why* a feature exists and *what* it accomplishes before detailing *how* to use it.
    - **Explain Core Concepts**: Never assume the reader knows internal jargon (e.g., "coalescing", "batching"). Provide a dedicated section explaining these concepts in plain English with real-world examples.
-   - **Pros & Cons**: Always include a "Pros and Cons" or "When to use" section at the top to help the reader decide if the component fits their needs.
+   - **Pros & Cons**: When it makes sense, include a "Pros and Cons" or "When to use" section at the top to help the reader decide if the component fits their needs. Do not create pros and cons just for sake of including it.
    - **Progressive Disclosure of Complexity**: 
      - Start with a **Minimal Configuration** example (the simplest way to get it running).
      - Show **Implicit vs Explicit** configuration patterns where applicable.

@@ -9,22 +9,16 @@ This source is ideal for building workflows that respond to incoming emails, suc
 - Archiving important communications.
 - Triggering notifications based on specific senders or subjects.
 
-**Pros:**
-- Simple setup using Google OAuth.
-- Efficiently fetches only the most recent emails.
-- Preserves key metadata (sender, recipient, subject, snippet).
-
-**Cons:**
-- Currently fetches only the 50 most recent emails per poll (basic implementation).
-- Requires a persistent OAuth token.
-
 ## Core Concepts
 
 ### Polling
 The source periodically "polls" the Gmail API to check for new messages. You can configure how often this happens using a human-readable interval.
 
+### Incremental Sync (History API)
+Unlike simple listing, this source uses the Gmail `history.list` API. It maintains a `historyId` cursor in the database. On each poll, it only asks for changes that happened *after* that ID. This is much more efficient and reliable for busy mailboxes.
+
 ### Deduplication
-Each email has a unique `msg_id` from Google. The source uses this ID to ensure that each email is only published as an event once, even if it's found multiple times during polling.
+Each email has a unique `msg_id` from Google. The source uses this ID as the `event_id` and `entity_id` to ensure that each email is only published as an event once.
 
 ## Configuration
 
@@ -37,12 +31,12 @@ sources:
   my_inbox:
     type: gmail
     token_file: "data/gmail_token.json"
-    poll_interval: "5m"
+    poll_interval: "10m"
 ```
 
 ### Full Configuration
 
-You can also specify a custom name and different intervals.
+You can also specify a custom name and different intervals. Note that `poll_interval` is optional and defaults to `10m`.
 
 ```yaml
 sources:
