@@ -40,12 +40,18 @@ sources:
     poll_interval: "10m"
 ```
 
-## Events
+## Event Definitions
 
-- **Type**: `docs.document_change`
-- **Entity ID**: Google Document/File ID
-- **Data**:
-    - `id`: The ID of the document.
-    - `name`: Name of the document.
-    - `modifiedTime`: RFC 3339 timestamp of the last modification.
-    - `version`: The version number of the document.
+| Parameter | Value | Description |
+| :--- | :--- | :--- |
+| **Type** | `docs.document_change` | Triggered when a Google Document is modified. |
+| **Entity ID** | Google Document ID | Uniquely identifies the document. |
+
+### Data Payload
+
+The `data` field contains:
+
+- `id`: The ID of the document.
+- `name`: Name of the document.
+- `modifiedTime`: RFC 3339 timestamp of the last modification.
+- `version`: The version number of the document.

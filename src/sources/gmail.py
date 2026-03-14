@@ -28,8 +28,8 @@ class GmailSource:
             # In a highly scalable system, we might want to run it in a thread pool
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)
             
-            # Fetch recent 50 messages
-            results = service.users().messages().list(userId='me', maxResults=50).execute()
+            # Fetch recent messages
+            results = service.users().messages().list(userId='me', maxResults=self.config.max_results).execute()
             messages = results.get('messages', [])
             
             if not messages:
@@ -47,6 +47,8 @@ class GmailSource:
                     format='metadata',
                     metadataHeaders=['From', 'To', 'Subject', 'Date']
                 ).execute()
+                
+                label_ids = msg.get('labelIds', [])
                 
                 payload = msg.get('payload', {})
                 headers_list = payload.get('headers', [])
@@ -68,7 +70,8 @@ class GmailSource:
                         "to": headers.get("To"),
                         "subject": headers.get("Subject"),
                         "date": headers.get("Date"),
-                        "internalDate": internal_date
+                        "internalDate": internal_date,
+                        "labelIds": label_ids
                     },
                     occurred_at=occurred_at
                 ))

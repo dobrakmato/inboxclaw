@@ -64,6 +64,13 @@ python main.py google auth --scopes gmail --token data/gmail_token.json
 
 ## Event Data structure
 
+| Parameter | Value | Description |
+| :--- | :--- | :--- |
+| **Type** | `gmail.email` | Triggered when a new email is fetched. |
+| **Entity ID** | Google Message ID | Uniquely identifies the email message. |
+
+### Data Payload
+
 When an email is fetched, it creates an event with the type `gmail.email`. The `data` field contains:
 
 ```json
@@ -74,7 +81,8 @@ When an email is fetched, it creates an event with the type `gmail.email`. The `
   "to": "Recipient <recipient@example.com>",
   "subject": "Email Subject",
   "date": "Date header from email",
-  "internalDate": "1234567890"
+  "internalDate": "1234567890",
+  "labelIds": ["INBOX", "UNREAD"]
 }
 ```
 

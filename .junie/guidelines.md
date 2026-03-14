@@ -41,3 +41,4 @@
      - Show **Implicit vs Explicit** configuration patterns where applicable.
      - Provide a **Full Configuration** example showing all possible options.
    - **Clear API Examples**: Use consistent, realistic examples for requests and responses. Include notes on what to do based on response fields (e.g., "if `remaining_events > 0`, call again").
+   - **Event Definitions**: Always include a "Event Definitions" section in source documentation, using a table for `Type`, `Entity ID`, and `Description`. Keep this in sync with the source implementation.

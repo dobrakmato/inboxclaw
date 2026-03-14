@@ -25,7 +25,6 @@ class Event(Base):
     event_type = Column(String, nullable=False)
     entity_id = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    ingested_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     occurred_at = Column(DateTime)
     data = Column(JSON)
     meta = Column(JSON)

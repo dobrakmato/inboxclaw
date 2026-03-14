@@ -39,6 +39,7 @@ class GoogleSourceConfig(BaseSourceConfig):
 
 class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
+    max_results: int = 50
 
 class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"

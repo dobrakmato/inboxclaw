@@ -39,12 +39,18 @@ sources:
     poll_interval: "5m"  # Human-readable interval
 ```
 
-## Events
+## Event Definitions
 
-- **Type**: `drive.file_change`
-- **Entity ID**: Google File ID
-- **Data**:
-    - `fileId`: The ID of the file.
-    - `removed`: Boolean, true if the file was removed.
-    - `time`: RFC 3339 timestamp of the change.
-    - `file`: Metadata object (id, name, mimeType, modifiedTime, owners) if not removed.
+| Parameter | Value | Description |
+| :--- | :--- | :--- |
+| **Type** | `drive.file_change` | Triggered when a file in the Drive is modified, added, or deleted. |
+| **Entity ID** | Google File ID | Uniquely identifies the file. |
+
+### Data Payload
+
+The `data` field contains:
+
+- `fileId`: The ID of the file.
+- `removed`: Boolean, true if the file was removed.
+- `time`: RFC 3339 timestamp of the change.
+- `file`: Metadata object (`id`, `name`, `mimeType`, `modifiedTime`, `owners`) if not removed.

@@ -40,8 +40,13 @@ sources:
     poll_interval: "10m"
 ```
 
-## Events
+## Event Definitions
 
-- **Type**: `calendar.event_change`
-- **Entity ID**: Google Event ID
-- **Data**: The full [Google Calendar Event resource](https://developers.google.com/calendar/api/v3/reference/events#resource).
+| Parameter | Value | Description |
+| :--- | :--- | :--- |
+| **Type** | `calendar.event_change` | Triggered when a calendar event is created, updated, or deleted. |
+| **Entity ID** | Google Event ID | Uniquely identifies the calendar event. |
+
+### Data Payload
+
+The `data` field contains the full [Google Calendar Event resource](https://developers.google.com/calendar/api/v3/reference/events#resource).
