@@ -49,12 +49,12 @@ sources:
 
 ### Configuration Parameters
 
-| Parameter       | Type     | Default | Description                                                                                             |
-|:----------------|:---------|:--------|:--------------------------------------------------------------------------------------------------------|
-| `api_key`       | `string` | Env var | Your 32-character API key from Faktury Online. Defaults to `FAKTURY_ONLINE_KEY` environment variable.     |
-| `email`         | `string` | Env var | Your login email for Faktury Online. Defaults to `FAKTURY_ONLINE_EMAIL` environment variable.            |
-| `poll_interval` | `string` | `6h`    | How often to check for changes (e.g., "5m", "1h").                                                      |
-| `max_days_back` | `integer`| `30`    | How many days back to look for created/updated invoices during each poll.                               |
+| Parameter       | Type      | Default | Description                                                                                           |
+|:----------------|:----------|:--------|:------------------------------------------------------------------------------------------------------|
+| `api_key`       | `string`  | Env var | Your 32-character API key from Faktury Online. Defaults to `FAKTURY_ONLINE_KEY` environment variable. |
+| `email`         | `string`  | Env var | Your login email for Faktury Online. Defaults to `FAKTURY_ONLINE_EMAIL` environment variable.         |
+| `poll_interval` | `string`  | `6h`    | How often to check for changes (e.g., "5m", "1h").                                                    |
+| `max_days_back` | `integer` | `30`    | How many days back to look for created/updated invoices during each poll.                             |
 
 ## Event Definitions
 

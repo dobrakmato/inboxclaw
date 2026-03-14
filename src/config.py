@@ -4,6 +4,10 @@ from typing import Dict, List, Optional, Union, Literal, Annotated, Any
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
 from pytimeparse import parse as parse_time
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def parse_interval(value) -> float:

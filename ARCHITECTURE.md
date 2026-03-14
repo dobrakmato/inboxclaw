@@ -34,7 +34,7 @@
 - [x] [Gmail](docs/source-gmail.md)
 - [x] [Google Calendar](docs/source-google-calendar.md)
 - [x] [Google Docs](docs/source-google-docs.md)
-- [ ] Faktury Online
+- [x] [Faktury Online](docs/source-faktury-online.md)
 - [ ] Fio Banka
 - [ ] Asana
 - [ ] Stats.fm
