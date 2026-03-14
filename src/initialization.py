@@ -6,6 +6,7 @@ from src.sources.gmail import GmailSource
 from src.sources.google_drive import GoogleDriveSource
 from src.sources.google_calendar import GoogleCalendarSource
 from src.sources.google_docs import GoogleDocsSource
+from src.sources.faktury_online import FakturyOnlineSource
 from src.sources.mock import MockSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
@@ -47,6 +48,11 @@ def init_sources(services: AppServices):
             elif s_type == "google_docs":
                 logger.info(f"Initializing Google Docs source: {name} (id={source_id})")
                 source_instance = GoogleDocsSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "faktury_online":
+                logger.info(f"Initializing Faktury Online source: {name} (id={source_id})")
+                source_instance = FakturyOnlineSource(name, s_config, services, source_id)
                 services.sources[name] = source_instance
                 services.add_task(source_instance.run())
             elif s_type == "mock":

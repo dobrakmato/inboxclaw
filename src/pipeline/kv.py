@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 from sqlalchemy import select, delete as sqa_delete
 from src.database import SourceKV
 
@@ -16,7 +16,7 @@ class SourceKVService:
     def __init__(self, services: "AppServices"):
         self.services = services
 
-    def get(self, source_id: int, key: str) -> Optional[str]:
+    def get(self, source_id: int, key: str) -> Optional[Any]:
         """
         Get the value for the given key and source_id.
         """
@@ -31,7 +31,7 @@ class SourceKVService:
                 return kv.value
             return None
 
-    def set(self, source_id: int, key: str, value: str):
+    def set(self, source_id: int, key: str, value: Any):
         """
         Set the value for the given key and source_id.
         """
@@ -91,3 +91,16 @@ class SourceKVService:
             )
             session.commit()
             logger.debug(f"Deleted old KV for source {source_id} older than {cutoff}")
+
+    def list_keys_with_prefix(self, source_id: int, prefix: str) -> list[str]:
+        """
+        List all keys for the given source_id that start with the prefix.
+        """
+        with self.services.db_session_maker() as session:
+            kv_list = session.scalars(
+                select(SourceKV.key).where(
+                    SourceKV.source_id == source_id,
+                    SourceKV.key.like(f"{prefix}%")
+                )
+            ).all()
+            return list(kv_list)

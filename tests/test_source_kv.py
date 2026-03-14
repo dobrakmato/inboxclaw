@@ -49,13 +49,18 @@ def test_source_kv_operations(services, session_maker):
     kv_service.set(source_id, "my_key", "my_value")
     assert kv_service.get(source_id, "my_key") == "my_value"
 
+    # Set structured value
+    structured_data = {"a": 1, "b": [1, 2, 3]}
+    kv_service.set(source_id, "struct_key", structured_data)
+    assert kv_service.get(source_id, "struct_key") == structured_data
+
     # Verify in DB
     with session_maker() as session:
         kv_db = session.scalar(
-            select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "my_key")
+            select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "struct_key")
         )
         assert kv_db is not None
-        assert kv_db.value == "my_value"
+        assert kv_db.value == structured_data
 
     # Update value
     kv_service.set(source_id, "my_key", "new_value")

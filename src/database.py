@@ -25,7 +25,7 @@ class SourceKV(Base):
     id = Column(Integer, primary_key=True)
     source_id = Column(Integer, ForeignKey('sources.id'), nullable=False)
     key = Column(String, nullable=False)
-    value = Column(String, nullable=False)
+    value = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Event(Base):

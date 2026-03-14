@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Optional, Union, Literal, Annotated
+from typing import Dict, List, Optional, Union, Literal, Annotated, Any
 
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
@@ -48,11 +48,20 @@ class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"
     calendar_ids: List[str] = Field(default_factory=lambda: ["primary"])
     max_event_age_days: Optional[float] = 1.0
+    max_into_future: Interval = "365d"
+    calendar_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     show_deleted: bool = True
     single_events: bool = True
 
 class GoogleDocsSourceConfig(GoogleSourceConfig):
     type: Literal["google_docs"] = "google_docs"
+
+class FakturyOnlineSourceConfig(BaseSourceConfig):
+    type: Literal["faktury_online"] = "faktury_online"
+    api_key: str = Field(default_factory=lambda: os.environ.get("FAKTURY_ONLINE_KEY", ""))
+    email: str = Field(default_factory=lambda: os.environ.get("FAKTURY_ONLINE_EMAIL", ""))
+    poll_interval: Interval = "6h"
+    max_days_back: int = 30
 
 class MockSourceConfig(BaseSourceConfig):
     type: Literal["mock"] = "mock"
@@ -64,6 +73,7 @@ SourceConfig = Annotated[
         GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig,
         GoogleDocsSourceConfig,
+        FakturyOnlineSourceConfig,
         MockSourceConfig
     ],
     Field(discriminator="type")
