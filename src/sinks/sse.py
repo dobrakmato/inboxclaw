@@ -83,7 +83,7 @@ class SSESink:
                     last_event_id = events[-1].id
                     
                     if self.coalescer:
-                        events = self.coalescer.coalesce(events)
+                        events, _ = self.coalescer.coalesce(events)
                     
                     for event in events:
                         yield {

@@ -44,29 +44,69 @@ class HttpPopSink:
 
     def handle_extract(self, event_type: Optional[str] = None, batch_size: Optional[int] = None) -> Dict[str, Any]:
         with self.services.db_session_maker() as session:
-            events = self._get_unprocessed_events(session, event_type=event_type, batch_size=batch_size)
+            # If coalescing, we need to fetch all potentially matching events to coalesce them correctly.
+            # If not coalescing, we can apply batch_size directly in the query.
+            fetch_size = None if self.coalescer else batch_size
+            
+            events = self._get_unprocessed_events(session, event_type=event_type, batch_size=fetch_size)
             if not events:
                 return {"batch_id": None, "events": [], "remaining_events": 0}
             
+            source_ids_to_link: List[int] = []
             if self.coalescer:
-                events = self.coalescer.coalesce(events)
+                coalesced_events, source_ids_map = self.coalescer.coalesce(events)
+                
+                # Apply batch_size limit AFTER coalescing
+                if batch_size is not None and batch_size > 0:
+                    emitted_events = coalesced_events[:batch_size]
+                    remaining_coalesced = coalesced_events[batch_size:]
+                else:
+                    emitted_events = coalesced_events
+                    remaining_coalesced = []
+                
+                # We must link ALL source events that contributed to the EMITTED coalesced events
+                for ev in emitted_events:
+                    source_ids_to_link.extend(source_ids_map.get(ev.id, []))
+                
+                events_to_return = emitted_events
+                
+                # Calculate remaining_count:
+                # It should be the number of potential EMITTED events that would remain 
+                # AFTER the current batch events are marked processed.
+                # Since we fetched ALL unprocessed matching events (fetch_size is None), 
+                # remaining_coalesced contains all other potential emitted events.
+                remaining_count = len(remaining_coalesced)
+            else:
+                events_to_return = events
+                source_ids_to_link = [e.id for e in events]
+                
+                # If not coalescing, remaining_count is:
+                # total unprocessed events (including those in the current batch because they are not yet processed)
+                remaining_count = self._count_unprocessed_events(session, event_type=event_type)
             
+            # Create a new batch
             batch = HttpPopBatch()
             session.add(batch)
             session.flush() # Get batch.id
             
-            self._link_events_to_batch(session, batch.id, events)
-            
-            # Count remaining events after this extraction
-            remaining_count = self._count_unprocessed_events(session, event_type=event_type)
+            self._link_events_by_id(session, batch.id, source_ids_to_link)
             
             session.commit()
             
             return {
                 "batch_id": batch.id,
-                "events": [self._format_event(e) for e in events],
-                "remaining_events": remaining_count
+                "events": [self._format_event(e) for e in events_to_return],
+                "remaining_events": max(0, remaining_count)
             }
+
+    def _link_events_by_id(self, session: Session, batch_id: int, event_ids: List[int]):
+        for eid in event_ids:
+            batch_event = HttpPullBatchEvent(
+                batch_id=batch_id,
+                event_id=eid,
+                processed=False
+            )
+            session.add(batch_event)
 
     def handle_mark_processed(self, batch_id: int) -> Dict[str, Any]:
         with self.services.db_session_maker() as session:
@@ -148,14 +188,6 @@ class HttpPopSink:
             return [True]
         return [clause]
 
-    def _link_events_to_batch(self, session: Session, batch_id: int, events: List[Event]):
-        for event in events:
-            batch_event = HttpPullBatchEvent(
-                batch_id=batch_id,
-                event_id=event.id,
-                processed=False
-            )
-            session.add(batch_event)
 
     def _format_event(self, event: Event) -> Dict[str, Any]:
         return {
