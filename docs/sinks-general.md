@@ -51,11 +51,11 @@ sink:
     path: "/events"
 ```
 
-#### HTTP Pop (Pull)
+#### HTTP Pull
 ```yaml
 sink:
   batch_processor:
-    type: http_pop
+    type: http_pull
     match: ["drive.file_change", "docs.*"]
     path:
       extract: "/get-batch"

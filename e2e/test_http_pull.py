@@ -5,25 +5,25 @@ from e2e.utils import E2EApp
 
 APP_PORT = 8103
 
-def test_http_pop_unprocessed_remains():
+def test_http_pull_unprocessed_remains():
     config = {
         "sources": {
             "mock_src": {"type": "mock", "interval": "1s"}
         },
         "sink": {
-            "pop_sink": {
-                "type": "http_pop",
+            "pull_sink": {
+                "type": "http_pull",
                 "match": "*"
             }
         }
     }
     
-    with E2EApp(config, "unprocessed", APP_PORT, suite_name="http_pop") as app:
+    with E2EApp(config, "unprocessed", APP_PORT, suite_name="http_pull") as app:
         # Wait for some events
         time.sleep(5)
         
-        extract_url = app.get_url("/pop_sink/extract")
-        mark_url = app.get_url("/pop_sink/mark-processed")
+        extract_url = app.get_url("/pull_sink/extract")
+        mark_url = app.get_url("/pull_sink/mark-processed")
         
         # 1. Extract first time
         resp1 = requests.get(extract_url)
@@ -50,25 +50,25 @@ def test_http_pop_unprocessed_remains():
         # None of the events from the first batch should be in the third extract
         assert not (ids1 & ids3)
 
-def test_http_pop_standard_cycle():
+def test_http_pull_standard_cycle():
     config = {
         "sources": {
             "mock_src": {"type": "mock", "interval": "1s"}
         },
         "sink": {
-            "pop_sink": {
-                "type": "http_pop",
+            "pull_sink": {
+                "type": "http_pull",
                 "match": "*"
             }
         }
     }
     
-    with E2EApp(config, "std", APP_PORT, suite_name="http_pop") as app:
+    with E2EApp(config, "std", APP_PORT, suite_name="http_pull") as app:
         # Wait for some events
         time.sleep(5)
         
-        extract_url = app.get_url("/pop_sink/extract")
-        mark_url = app.get_url("/pop_sink/mark-processed")
+        extract_url = app.get_url("/pull_sink/extract")
+        mark_url = app.get_url("/pull_sink/mark-processed")
         
         # 1. Extract
         resp = requests.get(extract_url)
@@ -92,23 +92,23 @@ def test_http_pop_standard_cycle():
         new_ids = {e["event_id"] for e in new_events}
         assert not (old_ids & new_ids)
 
-def test_http_pop_batching():
+def test_http_pull_batching():
     config = {
         "sources": {
             "mock_src": {"type": "mock", "interval": "1s"}
         },
         "sink": {
-            "pop_sink": {
-                "type": "http_pop",
+            "pull_sink": {
+                "type": "http_pull",
                 "match": "*"
             }
         }
     }
     
-    with E2EApp(config, "batch", APP_PORT, suite_name="http_pop") as app:
+    with E2EApp(config, "batch", APP_PORT, suite_name="http_pull") as app:
         time.sleep(10)
         
-        extract_url = app.get_url("/pop_sink/extract")
+        extract_url = app.get_url("/pull_sink/extract")
         
         # Extract with batch size
         resp = requests.get(f"{extract_url}?batch_size=2")
@@ -116,21 +116,21 @@ def test_http_pop_batching():
         assert len(data["events"]) == 2
         assert data["remaining_events"] > 0
 
-def test_http_pop_filtering():
+def test_http_pull_filtering():
     config = {
         "sources": {
             "mock_src": {"type": "mock", "interval": "1s"}
         },
         "sink": {
-            "pop_sink": {
-                "type": "http_pop",
+            "pull_sink": {
+                "type": "http_pull",
                 "match": "none_match"
             }
         }
     }
     
-    with E2EApp(config, "filter", APP_PORT, suite_name="http_pop") as app:
+    with E2EApp(config, "filter", APP_PORT, suite_name="http_pull") as app:
         time.sleep(5)
-        extract_url = app.get_url("/pop_sink/extract")
+        extract_url = app.get_url("/pull_sink/extract")
         resp = requests.get(extract_url)
         assert len(resp.json()["events"]) == 0

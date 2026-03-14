@@ -9,7 +9,7 @@ from src.sources.google_docs import GoogleDocsSource
 from src.sources.mock import MockSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
-from src.sinks.http_pop import HttpPopSink
+from src.sinks.http_pull import HttpPullSink
 
 logger = logging.getLogger("ingest-pipeline")
 
@@ -71,8 +71,8 @@ def init_sinks(services: AppServices):
             services.sinks[name] = sink
             # Start the background task
             services.add_task(sink.start())
-        elif snk_type == "http_pop":
-            logger.info(f"Initializing HTTP Pop sink: {name}")
-            services.sinks[name] = HttpPopSink(name, snk_config, services)
+        elif snk_type == "http_pull":
+            logger.info(f"Initializing HTTP Pull sink: {name}")
+            services.sinks[name] = HttpPullSink(name, snk_config, services)
         else:
             logger.warning(f"Sink type {snk_type} for {name} not implemented yet.")

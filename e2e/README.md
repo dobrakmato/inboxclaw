@@ -16,7 +16,7 @@ Our E2E tests follow these principles:
 
 -   `e2e/test_webhook.py`: Tests for the Webhook sink.
 -   `e2e/test_sse.py`: Tests for the Server-Sent Events (SSE) sink.
--   `e2e/test_http_pop.py`: Tests for the HTTP Pop sink.
+-   `e2e/test_http_pull.py`: Tests for the HTTP Pull sink.
 -   `e2e/utils.py`: Common utilities for E2E testing (e.g., `E2EApp`).
 -   `e2e/run_e2e.py`: Orchestrator script to run all tests.
 -   `e2e/runs/`: (Generated) Temporary directory for test case artifacts (configs and databases).

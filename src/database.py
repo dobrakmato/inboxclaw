@@ -40,15 +40,15 @@ class HttpWebhookDelivery(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     delivered = Column(Boolean, default=False)
 
-class HttpPopBatch(Base):
-    __tablename__ = 'http_pop_batches'
+class HttpPullBatch(Base):
+    __tablename__ = 'http_pull_batches'
     id = Column(Integer, primary_key=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class HttpPullBatchEvent(Base):
     __tablename__ = 'http_pull_batch_events'
     id = Column(Integer, primary_key=True)
-    batch_id = Column(Integer, ForeignKey('http_pop_batches.id'), nullable=False)
+    batch_id = Column(Integer, ForeignKey('http_pull_batches.id'), nullable=False)
     event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
     processed = Column(Boolean, default=False)
 

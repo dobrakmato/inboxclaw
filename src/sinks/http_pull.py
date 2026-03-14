@@ -4,20 +4,20 @@ from fastapi import HTTPException, Query
 from sqlalchemy import select, and_, not_, or_
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
-from src.database import Event, HttpPopBatch, HttpPullBatchEvent
+from src.database import Event, HttpPullBatch, HttpPullBatchEvent
 from src.schemas import EventWithMeta
 from src.services import AppServices
 from src.pipeline.coalescer import Coalescer
 from src.pipeline.matcher import EventMatcher
-from src.config import HttpPopSinkConfig
+from src.config import HttpPullSinkConfig
 
 logger = logging.getLogger(__name__)
 
-class HttpPopSink:
-    def __init__(self, name: str, config: Union[HttpPopSinkConfig, Dict[str, Any]], services: AppServices):
+class HttpPullSink:
+    def __init__(self, name: str, config: Union[HttpPullSinkConfig, Dict[str, Any]], services: AppServices):
         if isinstance(config, dict):
             try:
-                config = HttpPopSinkConfig(**config)
+                config = HttpPullSinkConfig(**config)
             except ValidationError as e:
                 # Re-raise as KeyError for compatibility with tests
                 for error in e.errors():
@@ -97,7 +97,7 @@ class HttpPopSink:
                 remaining_count = self._count_unprocessed_events(session, event_type=event_type)
             
             # Create a new batch
-            batch = HttpPopBatch()
+            batch = HttpPullBatch()
             session.add(batch)
             session.flush() # Get batch.id
             
@@ -123,7 +123,7 @@ class HttpPopSink:
     def handle_mark_processed(self, batch_id: int) -> Dict[str, Any]:
         with self.services.db_session_maker() as session:
             # Check if batch exists
-            batch = session.get(HttpPopBatch, batch_id)
+            batch = session.get(HttpPullBatch, batch_id)
             if not batch:
                 raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 

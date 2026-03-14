@@ -80,8 +80,8 @@ class WebhookSinkConfig(BaseSinkConfig):
     max_retries: int = 3
     retry_interval: Interval = 10.0
 
-class HttpPopSinkConfig(BaseSinkConfig):
-    type: Literal["http_pop"] = "http_pop"
+class HttpPullSinkConfig(BaseSinkConfig):
+    type: Literal["http_pull"] = "http_pull"
     path: Dict[str, str] = Field(default_factory=lambda: {"extract": "extract", "mark_processed": "mark-processed"})
     coalesce: Optional[List[str]] = None
 
@@ -94,7 +94,7 @@ class SSESinkConfig(BaseSinkConfig):
 SinkConfig = Annotated[
     Union[
         WebhookSinkConfig,
-        HttpPopSinkConfig,
+        HttpPullSinkConfig,
         SSESinkConfig
     ],
     Field(discriminator="type")

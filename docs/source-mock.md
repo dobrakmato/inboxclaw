@@ -6,7 +6,7 @@ The Mock Event Source is a testing and diagnostic tool designed to generate cont
 
 | Use Case                                                                                                                       | Considerations                                                         |
 |:-------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------|
-| **Pipeline Verification**: Quickly test if your sinks (Webhooks, SSE, HTTP Pop) are correctly receiving and processing events. | **Non-Production Tool**: Use primarily for development and monitoring. |
+| **Pipeline Verification**: Quickly test if your sinks (Webhooks, SSE, HTTP Pull) are correctly receiving and processing events. | **Non-Production Tool**: Use primarily for development and monitoring. |
 | **Heartbeat & Monitoring**: Ensure the pipeline is alive with a steady stream of data.                                         | **Simple Payload**: Generates a random number (1-100).                 |
 | **Load Testing**: Simulate high-frequency data streams.                                                                        |                                                                        |
 

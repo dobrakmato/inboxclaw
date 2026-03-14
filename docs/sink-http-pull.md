@@ -1,6 +1,6 @@
-# HTTP Pop Sink (The Pull-Based Delivery Model)
+# HTTP Pull Sink (The Pull-Based Delivery Model)
 
-The HTTP Pop Sink is a robust and reliable mechanism for retrieving event data from the pipeline. Unlike "push-based" systems (like Webhooks), where the server initiates data transfer, the HTTP Pop Sink follows a **pull-based model**. In this model, your application decides when to request data, processes it at its own pace, and explicitly confirms successful receipt.
+The HTTP Pull Sink is a robust and reliable mechanism for retrieving event data from the pipeline. Unlike "push-based" systems (like Webhooks), where the server initiates data transfer, the HTTP Pull Sink follows a **pull-based model**. In this model, your application decides when to request data, processes it at its own pace, and explicitly confirms successful receipt.
 
 ### Is this the right choice for you?
 
@@ -15,12 +15,12 @@ The HTTP Pop Sink is a robust and reliable mechanism for retrieving event data f
 ## How it Works
 
 ### 1. The Pull and Confirm Lifecycle
-The Pop Sink ensures data integrity through a simple, atomic request-response cycle. Crucially, **events remain in the "Unprocessed" state and will be returned by subsequent `GET /extract` calls until they are explicitly confirmed.**
+The Pull Sink ensures data integrity through a simple, atomic request-response cycle. Crucially, **events remain in the "Unprocessed" state and will be returned by subsequent `GET /extract` calls until they are explicitly confirmed.**
 
 ```mermaid
 sequenceDiagram
     participant App as Your Application
-    participant Sink as HTTP Pop Sink
+    participant Sink as HTTP Pull Sink
     participant DB as Pipeline Database
 
     Note over App, Sink: Step 1: Request Data
@@ -50,7 +50,7 @@ Consider a system tracking inventory updates from multiple warehouses.
 ### 2. Understanding Core Concepts
 
 #### Batching
-To improve performance, the Pop Sink groups events into **batches**. Instead of making one network request per event, your application can request multiple events at once (e.g., 100 events in a single call). This significantly reduces network overhead.
+To improve performance, the Pull Sink groups events into **batches**. Instead of making one network request per event, your application can request multiple events at once (e.g., 100 events in a single call). This significantly reduces network overhead.
 
 #### Coalescing (Event De-duplication)
 In high-frequency environments, a single entity might trigger multiple updates in a short period (e.g., a "Price Update" event occurring 5 times for the same product within seconds).
@@ -63,11 +63,11 @@ In high-frequency environments, a single entity might trigger multiple updates i
 ## Configuration (`config.yaml`)
 
 ### Minimal Configuration
-The most basic setup. By default, it will expose endpoints at `/http_pop/extract` and `/http_pop/mark-processed`.
+The most basic setup. By default, it will expose endpoints at `/http_pull/extract` and `/http_pull/mark-processed`.
 
 ```yaml
 sink:
-  http_pop: {} 
+  http_pull: {}
 ```
 
 ### Named Sink with Filtering
@@ -76,7 +76,7 @@ You can assign a custom name to the sink and restrict it to specific event types
 ```yaml
 sink:
   accounting_service:
-    type: 'http_pop'
+    type: 'http_pull'
     match: 'invoice.*' # Only events starting with "invoice." will be available
 ```
 
@@ -86,7 +86,7 @@ This example shows custom paths, multiple match patterns, and enabled coalescing
 ```yaml
 sink:
   data_warehouse_sync:
-    type: 'http_pop'
+    type: 'http_pull'
     path:
       extract: '/fetch'                 # Access via: /data_warehouse_sync/fetch
       mark_processed: '/acknowledge'    # Access via: /data_warehouse_sync/acknowledge

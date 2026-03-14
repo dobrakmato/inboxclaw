@@ -6,10 +6,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, select, StaticPool
 from datetime import datetime, timezone
 
-from src.database import Base, Event, HttpPopBatch, HttpPullBatchEvent
+from src.database import Base, Event, HttpPullBatch, HttpPullBatchEvent
 from src.services import AppServices
 from src.pipeline.notifier import EventNotifier
-from src.sinks.http_pop import HttpPopSink
+from src.sinks.http_pull import HttpPullSink
 
 @pytest.fixture
 def engine():
@@ -44,7 +44,7 @@ def client(services, engine):
             
     return TestClient(services.app)
 
-def test_http_pop_sink_init(services):
+def test_http_pull_sink_init(services):
     config = {
         "path": {
             "extract": "/get-them",
@@ -53,22 +53,22 @@ def test_http_pop_sink_init(services):
         "match": ["test.*"],
         "coalesce": ["test.*"]
     }
-    sink = HttpPopSink("my_pop", config, services)
-    assert sink.name == "my_pop"
-    assert sink.extract_path == "/my_pop/get-them"
-    assert sink.mark_processed_path == "/my_pop/done-with-them"
+    sink = HttpPullSink("my_pull", config, services)
+    assert sink.name == "my_pull"
+    assert sink.extract_path == "/my_pull/get-them"
+    assert sink.mark_processed_path == "/my_pull/done-with-them"
     assert sink.match_patterns == ["test.*"]
     assert sink.coalescer is not None
 
-def test_http_pop_sink_default_init(services):
-    sink = HttpPopSink("my_pop", {}, services)
-    assert sink.extract_path == "/my_pop/extract"
-    assert sink.mark_processed_path == "/my_pop/mark-processed"
+def test_http_pull_sink_default_init(services):
+    sink = HttpPullSink("my_pull", {}, services)
+    assert sink.extract_path == "/my_pull/extract"
+    assert sink.mark_processed_path == "/my_pull/mark-processed"
     assert sink.match_patterns == ["*"]
     assert sink.coalescer is None
 
-def test_http_pop_sink_match_patterns_property(services):
-    sink = HttpPopSink("my_pop", {"match": ["a", "b"]}, services)
+def test_http_pull_sink_match_patterns_property(services):
+    sink = HttpPullSink("my_pull", {"match": ["a", "b"]}, services)
     assert sink.match_patterns == ["a", "b"]
     
     # Test setter
@@ -76,8 +76,8 @@ def test_http_pop_sink_match_patterns_property(services):
     assert sink.match_patterns == ["c"]
 
 def test_extract_no_events(services, client):
-    HttpPopSink("my_pop", {}, services)
-    response = client.get("/my_pop/extract")
+    HttpPullSink("my_pull", {}, services)
+    response = client.get("/my_pull/extract")
     assert response.status_code == 200
     data = response.json()
     assert data["batch_id"] is None
@@ -85,7 +85,7 @@ def test_extract_no_events(services, client):
     assert data["remaining_events"] == 0
 
 def test_extract_with_selector_and_batch_size(services, client, db_session_maker):
-    HttpPopSink("my_pop", {"match": "*"}, services)
+    HttpPullSink("my_pull", {"match": "*"}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="calendar.new_event", entity_id="1")
@@ -96,7 +96,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
         session.commit()
 
     # 1. Test event_type exact match
-    response = client.get("/my_pop/extract?event_type=calendar.new_event")
+    response = client.get("/my_pull/extract?event_type=calendar.new_event")
     data = response.json()
     assert len(data["events"]) == 2
     assert data["remaining_events"] == 2 # still 2 remaining because not marked processed
@@ -104,9 +104,9 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     
     # 2. Test event_type wildcard
     # First mark previous as processed to clear them
-    client.post(f"/my_pop/mark-processed?batch_id={data['batch_id']}")
+    client.post(f"/my_pull/mark-processed?batch_id={data['batch_id']}")
     
-    response = client.get("/my_pop/extract?event_type=calendar.*")
+    response = client.get("/my_pull/extract?event_type=calendar.*")
     data = response.json()
     # Now calendar.new_event are marked processed, so only update_event remains
     assert len(data["events"]) == 1
@@ -119,16 +119,16 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
             session.add(Event(event_id=f"bulk_{i}", source_id=1, event_type="bulk", entity_id=str(i)))
         session.commit()
     
-    response = client.get("/my_pop/extract?event_type=bulk&batch_size=4")
+    response = client.get("/my_pull/extract?event_type=bulk&batch_size=4")
     data = response.json()
     assert len(data["events"]) == 4
     assert data["remaining_events"] == 10 # still 10 remaining until marked processed
     
     # Now mark the batch as processed to reduce remaining count
-    client.post(f"/my_pop/mark-processed?batch_id={data['batch_id']}")
+    client.post(f"/my_pull/mark-processed?batch_id={data['batch_id']}")
     
     # Now call again to verify remaining count decreased
-    response = client.get("/my_pop/extract?event_type=bulk&batch_size=4")
+    response = client.get("/my_pull/extract?event_type=bulk&batch_size=4")
     data = response.json()
     assert data["remaining_events"] == 6
     
@@ -140,7 +140,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
 
 def test_extract_respects_sink_match_patterns(services, client, db_session_maker):
     # Sink only allowed to see 'mail.*'
-    HttpPopSink("my_pop", {"match": "mail.*"}, services)
+    HttpPullSink("my_pull", {"match": "mail.*"}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="mail.new")
@@ -149,16 +149,16 @@ def test_extract_respects_sink_match_patterns(services, client, db_session_maker
         session.commit()
 
     # Requesting calendar.* should return nothing because sink is restricted to mail.*
-    response = client.get("/my_pop/extract?event_type=calendar.*")
+    response = client.get("/my_pull/extract?event_type=calendar.*")
     assert response.json()["events"] == []
 
     # Requesting mail.new should work
-    response = client.get("/my_pop/extract?event_type=mail.new")
+    response = client.get("/my_pull/extract?event_type=mail.new")
     assert len(response.json()["events"]) == 1
 
 def test_extract_with_multiple_sink_match_patterns(services, client, db_session_maker):
     # Sink allowed to see 'mail.*' or 'calendar.important'
-    HttpPopSink("my_pop", {"match": ["mail.*", "calendar.important"]}, services)
+    HttpPullSink("my_pull", {"match": ["mail.*", "calendar.important"]}, services)
     
     with db_session_maker() as session:
         session.add(Event(event_id="e1", source_id=1, event_type="mail.new"))
@@ -167,43 +167,43 @@ def test_extract_with_multiple_sink_match_patterns(services, client, db_session_
         session.commit()
 
     # Requesting calendar.* should ONLY return calendar.important
-    response = client.get("/my_pop/extract?event_type=calendar.*")
+    response = client.get("/my_pull/extract?event_type=calendar.*")
     data = response.json()
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "calendar.important"
 
-    client.post(f"/my_pop/mark-processed?batch_id={data['batch_id']}")
+    client.post(f"/my_pull/mark-processed?batch_id={data['batch_id']}")
 
     # Requesting * should return mail.new
-    response = client.get("/my_pop/extract?event_type=*")
+    response = client.get("/my_pull/extract?event_type=*")
     data = response.json()
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "mail.new"
 
 def test_extract_no_match_patterns_configured(services, client, db_session_maker):
-    sink = HttpPopSink("my_pop", {"match": []}, services)
+    sink = HttpPullSink("my_pull", {"match": []}, services)
     sink.match_patterns = [] # Ensure it is empty
     
     with db_session_maker() as session:
         session.add(Event(event_id="e1", source_id=1, event_type="any"))
         session.commit()
 
-    response = client.get("/my_pop/extract?event_type=*")
+    response = client.get("/my_pull/extract?event_type=*")
     assert response.json()["events"] == []
 
 def test_extract_with_multiple_sink_match_patterns_including_star(services, client, db_session_maker):
     # Sink allowed to see 'mail.*' or '*' (star makes others redundant but we test the branch)
-    HttpPopSink("my_pop", {"match": ["mail.*", "*"]}, services)
+    HttpPullSink("my_pull", {"match": ["mail.*", "*"]}, services)
     
     with db_session_maker() as session:
         session.add(Event(event_id="e1", source_id=1, event_type="calendar.any"))
         session.commit()
 
-    response = client.get("/my_pop/extract?event_type=calendar.*")
+    response = client.get("/my_pull/extract?event_type=calendar.*")
     assert len(response.json()["events"]) == 1
 
 def test_extract_with_events(services, client, db_session_maker):
-    HttpPopSink("my_pop", {}, services)
+    HttpPullSink("my_pull", {}, services)
     
     # Add some events
     with db_session_maker() as session:
@@ -212,7 +212,7 @@ def test_extract_with_events(services, client, db_session_maker):
         session.add_all([ev1, ev2])
         session.commit()
 
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     assert response.status_code == 200
     data = response.json()
     assert data["batch_id"] == 1
@@ -222,14 +222,14 @@ def test_extract_with_events(services, client, db_session_maker):
 
     # Verify batch was created and linked
     with db_session_maker() as session:
-        batch = session.get(HttpPopBatch, 1)
+        batch = session.get(HttpPullBatch, 1)
         assert batch is not None
         links = session.scalars(select(HttpPullBatchEvent).where(HttpPullBatchEvent.batch_id == 1)).all()
         assert len(links) == 2
         assert links[0].processed is False
 
 def test_extract_already_in_batch(services, client, db_session_maker):
-    HttpPopSink("my_pop", {}, services)
+    HttpPullSink("my_pull", {}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="type1", entity_id="ent1")
@@ -237,7 +237,7 @@ def test_extract_already_in_batch(services, client, db_session_maker):
         session.commit()
         session.refresh(ev1)
         
-        batch = HttpPopBatch()
+        batch = HttpPullBatch()
         session.add(batch)
         session.flush()
         batch_id = batch.id
@@ -246,22 +246,22 @@ def test_extract_already_in_batch(services, client, db_session_maker):
         session.commit()
 
     # Second extract should find the same event because it hasn't been marked processed
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     assert response.status_code == 200
     data = response.json()
     assert data["batch_id"] is not None
     assert data["events"][0]["event_id"] == "e1"
 
     # Now mark the first batch as processed
-    client.post(f"/my_pop/mark-processed?batch_id={batch_id}")
+    client.post(f"/my_pull/mark-processed?batch_id={batch_id}")
 
     # Third extract should still find nothing because it's now truly processed
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     assert response.status_code == 200
     assert response.json()["batch_id"] is None
 
 def test_mark_processed(services, client, db_session_maker):
-    HttpPopSink("my_pop", {}, services)
+    HttpPullSink("my_pull", {}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="type1")
@@ -269,7 +269,7 @@ def test_mark_processed(services, client, db_session_maker):
         session.commit()
         session.refresh(ev1)
         
-        batch = HttpPopBatch()
+        batch = HttpPullBatch()
         session.add(batch)
         session.flush()
         batch_id = batch.id
@@ -277,7 +277,7 @@ def test_mark_processed(services, client, db_session_maker):
         session.add(link)
         session.commit()
 
-    response = client.post(f"/my_pop/mark-processed?batch_id={batch_id}")
+    response = client.post(f"/my_pull/mark-processed?batch_id={batch_id}")
     assert response.status_code == 200
     assert response.json()["status"] == "success"
     assert response.json()["marked_count"] == 1
@@ -288,14 +288,14 @@ def test_mark_processed(services, client, db_session_maker):
         assert link.processed is True
 
 def test_mark_processed_invalid_batch(services, client):
-    HttpPopSink("my_pop", {}, services)
-    response = client.post("/my_pop/mark-processed?batch_id=999")
+    HttpPullSink("my_pull", {}, services)
+    response = client.post("/my_pull/mark-processed?batch_id=999")
     assert response.status_code == 404
     assert "Batch 999 not found" in response.json()["detail"]
 
 def test_extract_with_matching_patterns(services, client, db_session_maker):
     # Pattern ending with .*
-    HttpPopSink("my_pop", {"match": "gmail.*"}, services)
+    HttpPullSink("my_pull", {"match": "gmail.*"}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="gmail.message")
@@ -303,13 +303,13 @@ def test_extract_with_matching_patterns(services, client, db_session_maker):
         session.add_all([ev1, ev2])
         session.commit()
 
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     data = response.json()
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "gmail.message"
 
 def test_extract_with_exact_pattern(services, client, db_session_maker):
-    HttpPopSink("my_pop", {"match": "exact_type"}, services)
+    HttpPullSink("my_pull", {"match": "exact_type"}, services)
     
     with db_session_maker() as session:
         ev1 = Event(event_id="e1", source_id=1, event_type="exact_type")
@@ -317,14 +317,14 @@ def test_extract_with_exact_pattern(services, client, db_session_maker):
         session.add_all([ev1, ev2])
         session.commit()
 
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     data = response.json()
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "exact_type"
 
 def test_extract_with_coalesce(services, client, db_session_maker):
     # Coalesce all
-    HttpPopSink("my_pop", {"coalesce": ["*"]}, services)
+    HttpPullSink("my_pull", {"coalesce": ["*"]}, services)
     
     with db_session_maker() as session:
         # Two events of same type and entity_id
@@ -334,7 +334,7 @@ def test_extract_with_coalesce(services, client, db_session_maker):
         session.add_all([ev1, ev2])
         session.commit()
 
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     data = response.json()
     # Coalescer returns 1 event if they match
     assert len(data["events"]) == 1
@@ -348,10 +348,10 @@ def test_extract_with_coalesce(services, client, db_session_maker):
     assert data["batch_id"] == 1
 
 def test_handle_mark_processed_already_processed(services, client, db_session_maker):
-    HttpPopSink("my_pop", {}, services)
+    HttpPullSink("my_pull", {}, services)
     
     with db_session_maker() as session:
-        batch = HttpPopBatch()
+        batch = HttpPullBatch()
         session.add(batch)
         session.flush()
         batch_id = batch.id
@@ -359,13 +359,13 @@ def test_handle_mark_processed_already_processed(services, client, db_session_ma
         session.add(link)
         session.commit()
 
-    response = client.post(f"/my_pop/mark-processed?batch_id={batch_id}")
+    response = client.post(f"/my_pull/mark-processed?batch_id={batch_id}")
     assert response.status_code == 200
     assert response.json()["marked_count"] == 0
 
 def test_extract_no_matching_patterns(services, client, db_session_maker):
     # Empty match list (should not happen normally but let's test)
-    sink = HttpPopSink("my_pop", {"match": []}, services)
+    sink = HttpPullSink("my_pull", {"match": []}, services)
     # Override match_patterns to be empty to trigger the logic
     sink.match_patterns = []
     
@@ -374,12 +374,12 @@ def test_extract_no_matching_patterns(services, client, db_session_maker):
         session.add(ev1)
         session.commit()
 
-    response = client.get("/my_pop/extract")
+    response = client.get("/my_pull/extract")
     assert len(response.json()["events"]) == 0
 
 def test_extract_with_selector_no_match_sink(services, client, db_session_maker):
     # Sink only matches 'mail.*'
-    HttpPopSink("my_pop", {"match": "mail.*"}, services)
+    HttpPullSink("my_pull", {"match": "mail.*"}, services)
     
     with db_session_maker() as session:
         session.add(Event(event_id="e1", source_id=1, event_type="calendar.new"))
@@ -390,13 +390,13 @@ def test_extract_with_selector_no_match_sink(services, client, db_session_maker)
     # match_clauses will be ['calendar.%']
     # sink_final_match is not True
     # Combination will be: and_(or_('calendar.%'), 'mail.%') which is False for 'calendar.new'
-    response = client.get("/my_pop/extract?event_type=calendar.*")
+    response = client.get("/my_pull/extract?event_type=calendar.*")
     assert response.json()["events"] == []
 
 def test_extract_no_match_in_count(services, client, db_session_maker):
     # This should trigger line 137 in _count_unprocessed_events
     # By providing a selector that doesn't match the sink's configuration
-    HttpPopSink("my_pop", {"match": "mail.*"}, services)
+    HttpPullSink("my_pull", {"match": "mail.*"}, services)
     with db_session_maker() as session:
         session.add(Event(event_id="e1", source_id=1, event_type="calendar.new"))
         session.commit()
@@ -416,7 +416,7 @@ def test_extract_no_match_in_count(services, client, db_session_maker):
     # So patterns is never empty if selector is provided.
     # If selector is NOT provided, patterns = self.match_patterns.
     # So we need self.match_patterns to be empty.
-    sink = HttpPopSink("my_pop_empty", {"match": []}, services)
+    sink = HttpPullSink("my_pull_empty", {"match": []}, services)
     sink.match_patterns = [] 
     
     with db_session_maker() as session:
@@ -436,12 +436,12 @@ def test_extract_no_match_in_count(services, client, db_session_maker):
     # This happens if sink_match_clauses is empty.
     # sink_match_clauses is empty if self.match_patterns is empty.
     
-    response = client.get("/my_pop_empty/extract")
+    response = client.get("/my_pull_empty/extract")
     assert response.json()["events"] == []
 
 def test_count_unprocessed_no_match(services, db_session_maker):
     # Directly test _count_unprocessed_events with empty match
-    sink = HttpPopSink("my_pop", {"match": []}, services)
+    sink = HttpPullSink("my_pull", {"match": []}, services)
     sink.match_patterns = []
     with db_session_maker() as session:
         count = sink._count_unprocessed_events(session)
@@ -449,7 +449,7 @@ def test_count_unprocessed_no_match(services, db_session_maker):
 
 def test_build_match_clauses_no_patterns(services):
     # Directly test _build_match_clauses with no patterns and a selector
-    sink = HttpPopSink("my_pop", {"match": []}, services)
+    sink = HttpPullSink("my_pull", {"match": []}, services)
     sink.match_patterns = []
     # Trigger line 187
     clauses = sink._build_match_clauses(selector="something")
@@ -458,5 +458,5 @@ def test_build_match_clauses_no_patterns(services):
     assert len(clauses) == 1
 
 def test_init_with_string_match(services):
-    sink = HttpPopSink("my_pop", {"match": "*"}, services)
+    sink = HttpPullSink("my_pull", {"match": "*"}, services)
     assert sink.match_patterns == ["*"]
