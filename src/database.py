@@ -17,6 +17,17 @@ class Source(Base):
     type = Column(String, nullable=False)
     cursor = Column(String)
 
+class SourceKV(Base):
+    __tablename__ = 'source_kv'
+    __table_args__ = (
+        UniqueConstraint('source_id', 'key', name='_source_key_uc'),
+    )
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey('sources.id'), nullable=False)
+    key = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 class Event(Base):
     __tablename__ = 'events'
     __table_args__ = (
