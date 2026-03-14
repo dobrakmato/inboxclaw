@@ -20,6 +20,14 @@ The Google Calendar source tracks event changes (creations, updates, deletions) 
 
 ## Configuration
 
+### Finding your Calendar ID
+
+If you want to monitor a calendar other than your `primary` one, you can list all available calendars (names and IDs) using the CLI:
+
+```bash
+python main.py google list-calendars --token-file data/google_token.json
+```
+
 ### Minimal Configuration
 
 ```yaml
