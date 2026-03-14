@@ -1,97 +1,200 @@
-import click
-import json
 import os
-import secrets
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict
+from urllib.parse import parse_qs, urlsplit, urlunsplit
+
+import click
 from google_auth_oauthlib.flow import InstalledAppFlow
+
 from src.cli import cli
 
-# Human-friendly aliases for Google Scopes
+# Human-friendly aliases for Google scopes.
 SCOPE_MAPPING: Dict[str, str] = {
     "gmail": "https://www.googleapis.com/auth/gmail.readonly",
     "drive": "https://www.googleapis.com/auth/drive.metadata.readonly",
     "calendar": "https://www.googleapis.com/auth/calendar.readonly",
-    "docs": "https://www.googleapis.com/auth/drive.metadata.readonly", # Docs info often comes from Drive metadata
+    "docs": "https://www.googleapis.com/auth/drive.metadata.readonly",
     "contacts": "https://www.googleapis.com/auth/contacts.readonly",
-    # Add more as needed
 }
 
-def build_client_config(client_id: str, client_secret: str) -> dict:
-    return {
-        "installed": {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost", "http://127.0.0.1"],
-        }
-    }
+REDIRECT_URI = "http://127.0.0.1:8765/"
+
+
+def resolve_scopes(scopes_input: str) -> list[str]:
+    scopes: list[str] = []
+
+    for raw in [s.strip() for s in scopes_input.split(",") if s.strip()]:
+        alias = raw.lower()
+
+        if alias in SCOPE_MAPPING:
+            scopes.append(SCOPE_MAPPING[alias])
+            continue
+
+        if raw.startswith("https://"):
+            scopes.append(raw)
+            continue
+
+        raise click.UsageError(
+            f"Unknown scope alias: '{raw}'. Available: {', '.join(SCOPE_MAPPING.keys())}"
+        )
+
+    if not scopes:
+        raise click.UsageError("At least one scope must be provided.")
+
+    return scopes
+
+
+def _normalized_path(path: str) -> str:
+    return path or "/"
+
+
+def normalize_authorization_response(
+        pasted_url: str,
+        expected_redirect_uri: str,
+) -> str:
+    raw = pasted_url.strip().strip('"').strip("'")
+    parsed = urlsplit(raw)
+    expected = urlsplit(expected_redirect_uri)
+
+    if not parsed.scheme or not parsed.netloc:
+        raise click.ClickException(
+            "Paste the full redirected URL, not just the code."
+        )
+
+    if (
+            parsed.scheme != expected.scheme
+            or (parsed.hostname or "").lower() != (expected.hostname or "").lower()
+            or parsed.port != expected.port
+            or _normalized_path(parsed.path) != _normalized_path(expected.path)
+    ):
+        raise click.ClickException(
+            "The pasted URL does not match the expected redirect URL.\n"
+            f"Expected base: {expected_redirect_uri}\n"
+            f"Got: {raw}"
+        )
+
+    params = parse_qs(parsed.query)
+
+    if "error" in params:
+        error = params["error"][0]
+        description = params.get("error_description", [""])[0]
+        details = f": {description}" if description else ""
+        raise click.ClickException(f"Google returned an OAuth error '{error}'{details}")
+
+    if "code" not in params:
+        raise click.ClickException(
+            "The pasted URL does not contain an authorization code."
+        )
+
+    # Drop any fragment just in case and return a clean URL.
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+
 
 @cli.group()
 def google():
     """Google API related commands."""
     pass
 
+
 @google.command()
-@click.option("--credentials-file", type=click.Path(exists=True), help="Path to Google OAuth credentials JSON file.")
-@click.option("--client-id", help="Google OAuth Client ID.")
-@click.option("--client-secret", help="Google OAuth Client Secret.")
-@click.option("--scopes", "scopes_input", required=True, help=f"Comma-delimited list of scope aliases (e.g., {', '.join(SCOPE_MAPPING.keys())}).")
-@click.option("--token", "token_path", required=True, type=click.Path(), help="Path where to save the token.")
-def auth(credentials_file: Optional[str], client_id: Optional[str], client_secret: Optional[str], scopes_input: str, token_path: str):
-    """Perform Google OAuth flow to obtain a token."""
-    aliases = [s.strip().lower() for s in scopes_input.split(",")]
-    scopes = []
-    
-    for alias in aliases:
-        if alias in SCOPE_MAPPING:
-            scopes.append(SCOPE_MAPPING[alias])
-        else:
-            # Check if user passed a raw URL (still allow for flexibility, but prioritize aliases)
-            if alias.startswith("https://"):
-                 scopes.append(alias)
-            else:
-                raise click.UsageError(f"Unknown scope alias: '{alias}'. Available: {', '.join(SCOPE_MAPPING.keys())}")
+@click.option(
+    "--credentials-file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to a Google OAuth Desktop App credentials JSON file.",
+)
+@click.option(
+    "--scopes",
+    "scopes_input",
+    required=True,
+    help=f"Comma-delimited list of scope aliases (e.g., {', '.join(SCOPE_MAPPING.keys())}).",
+)
+@click.option(
+    "--token",
+    "token_path",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Path where to save the token JSON.",
+)
+def auth(credentials_file: Path, scopes_input: str, token_path: Path):
+    """Perform Google OAuth flow to obtain and save a token."""
+    scopes = resolve_scopes(scopes_input)
 
-    if credentials_file:
-        flow = InstalledAppFlow.from_client_secrets_file(credentials_file, scopes)
-    elif client_id and client_secret:
-        client_config = build_client_config(client_id, client_secret)
-        flow = InstalledAppFlow.from_client_config(client_config, scopes)
-    else:
-        # Check environment variables
-        env_client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        env_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-        if env_client_id and env_client_secret:
-            client_config = build_client_config(env_client_id, env_client_secret)
-            flow = InstalledAppFlow.from_client_config(client_config, scopes)
-        else:
-            raise click.UsageError("Provide either --credentials-file or both --client-id and --client-secret (or GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET envs).")
+    # Required because the redirect URI is http://127.0.0.1:8765/.
+    # In this flow there is no local listener; the user pastes the final URL back.
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
-    # Manual flow as requested (copy & paste link)
-    redirect_uri = "http://127.0.0.1:8765/"
-    flow.redirect_uri = redirect_uri
-    
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-        state=secrets.token_urlsafe(32),
-    )
-    
-    click.echo("\nStep 1: Open this URL in your browser and finish Google sign-in:")
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            str(credentials_file),
+            scopes=scopes,
+            autogenerate_code_verifier=True,
+        )
+    except Exception as err:
+        raise click.ClickException(f"Failed to load credentials file: {err}") from err
+
+    flow.redirect_uri = REDIRECT_URI
+
+    try:
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+        )
+    except Exception as err:
+        raise click.ClickException(
+            f"Failed to generate authorization URL: {err}"
+        ) from err
+
+    click.echo("\nStep 1: Open this URL in your browser and complete Google sign-in:\n")
     click.echo(auth_url)
-    
-    click.echo("\nStep 2: After approval, the browser will redirect to a URL that might fail to load.")
-    click.echo(f"It should look like {redirect_uri}?code=...&scope=...")
-    authorization_response = click.prompt("\nPaste the full redirected URL")
-    
-    flow.fetch_token(authorization_response=authorization_response)
-    
-    token_file = Path(token_path)
-    token_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(token_file, "w") as f:
-        f.write(flow.credentials.to_json())
-    
-    click.echo(f"\nToken successfully saved to {token_path}")
+
+    click.echo(
+        "\nStep 2: After approval, Google will redirect the browser to a URL like:\n"
+        f"  {REDIRECT_URI}?code=...&scope=...\n"
+        "The page will likely fail to load. That is expected."
+    )
+
+    pasted_url = click.prompt("\nPaste the full redirected URL")
+    authorization_response = normalize_authorization_response(
+        pasted_url,
+        REDIRECT_URI,
+    )
+
+    try:
+        token_response = flow.fetch_token(
+            authorization_response=authorization_response,
+        )
+    except Exception as err:
+        raise click.ClickException(f"Failed to fetch token: {err}") from err
+
+    credentials = flow.credentials
+    if credentials is None:
+        raise click.ClickException("No credentials were produced by the OAuth flow.")
+
+    try:
+        token_file = token_path.expanduser().resolve()
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        token_file.write_text(credentials.to_json(), encoding="utf-8")
+    except Exception as err:
+        raise click.ClickException(
+            f"Failed to save credentials: {err}"
+        ) from err
+
+    click.echo(f"\nToken successfully saved to: {token_file}")
+
+    granted_scopes = set(credentials.scopes or [])
+    requested_scopes = set(scopes)
+    if granted_scopes and granted_scopes != requested_scopes:
+        click.secho(
+            "\n[NOTE] Granted scopes differ from requested scopes.",
+            fg="yellow",
+        )
+        click.echo("Granted scopes:")
+        for scope in sorted(granted_scopes):
+            click.echo(f"  - {scope}")
+
+    token_scope = token_response.get("scope", "")
+    if token_scope:
+        click.echo("\nToken scope returned by Google:")
+        click.echo(token_scope)
