@@ -1,13 +1,80 @@
 import pytest
 import os
 import yaml
-from src.config import load_config, Config
+from src.config import load_config, Config, Interval
+from pydantic import BaseModel
+
+class IntervalModel(BaseModel):
+    interval: Interval
+
+def test_interval_parsing():
+    # Test seconds as string
+    m = IntervalModel(interval="10s")
+    assert m.interval == 10.0
+
+    # Test minutes as string
+    m = IntervalModel(interval="5m")
+    assert m.interval == 300.0
+
+    # Test hours as string
+    m = IntervalModel(interval="1h")
+    assert m.interval == 3600.0
+
+    # Test float directly
+    m = IntervalModel(interval=15.5)
+    assert m.interval == 15.5
+
+    # Test integer directly
+    m = IntervalModel(interval=60)
+    assert m.interval == 60.0
+
+    # Test invalid interval
+    with pytest.raises(ValueError, match="Invalid interval"):
+        IntervalModel(interval="invalid")
+
+def test_load_config_with_intervals(tmp_path):
+    config_file = tmp_path / "config_intervals.yaml"
+    config_data = {
+        "database": {"retention_days": 30, "db_path": ":memory:"},
+        "sources": {
+            "gcal": {
+                "type": "google_calendar",
+                "token_file": "token.json",
+                "poll_interval": "10m"
+            },
+            "mocker": {
+                "type": "mock",
+                "interval": "5s"
+            }
+        },
+        "sink": {
+            "webhook_sink": {
+                "type": "webhook",
+                "match": "*",
+                "url": "http://localhost/hook",
+                "retry_interval": "1m"
+            },
+            "sse_sink": {
+                "type": "sse",
+                "match": "*",
+                "heartbeat_timeout": "45s"
+            }
+        }
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    
+    config = load_config(str(config_file))
+    assert config.sources["gcal"].poll_interval == 600.0
+    assert config.sources["mocker"].interval == 5.0
+    assert config.sink["webhook_sink"].retry_interval == 60.0
+    assert config.sink["sse_sink"].heartbeat_timeout == 45.0
 
 def test_load_config_defaults(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_data = {
         "database": {"retention_days": 30, "db_path": ":memory:"},
-        "sources": {"test_source": {"type": "gmail"}},
+        "sources": {"test_source": {"type": "gmail", "token_file": "dummy.json"}},
         "sink": {"test_sink": {"type": "sse", "match": "*"}}
     }
     with open(config_file, "w") as f:

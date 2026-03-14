@@ -1,7 +1,26 @@
 import os
+from typing import Dict, List, Optional, Union, Literal, Annotated
+
 import yaml
-from pydantic import BaseModel, Field, ConfigDict, RootModel
-from typing import Dict, List, Any, Optional, Union, Literal, Annotated
+from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
+from pytimeparse import parse as parse_time
+
+
+def parse_interval(value) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    parsed = parse_time(value)  # pytimeparse or your wrapper
+    if parsed is not None:
+        return float(parsed)
+
+    try:
+        return float(value)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Invalid interval: {value!r}") from e
+
+
+Interval = Annotated[float, BeforeValidator(parse_interval)]
 
 class DatabaseConfig(BaseModel):
     retention_days: int = Field(alias="days", default=30)
@@ -16,7 +35,7 @@ class BaseSourceConfig(BaseModel):
 
 class GoogleSourceConfig(BaseSourceConfig):
     token_file: str
-    poll_interval: str = "5m"
+    poll_interval: Interval = "5m"
 
 class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
@@ -58,7 +77,7 @@ class WebhookSinkConfig(BaseSinkConfig):
     type: Literal["webhook"] = "webhook"
     url: str
     max_retries: int = 3
-    retry_interval: float = 10.0
+    retry_interval: Interval = 10.0
 
 class HttpPopSinkConfig(BaseSinkConfig):
     type: Literal["http_pop"] = "http_pop"
@@ -68,7 +87,7 @@ class HttpPopSinkConfig(BaseSinkConfig):
 class SSESinkConfig(BaseSinkConfig):
     type: Literal["sse"] = "sse"
     path: str = ""
-    heartbeat_timeout: float = 30.0
+    heartbeat_timeout: Interval = 30.0
     coalesce: Optional[List[str]] = None
 
 SinkConfig = Annotated[

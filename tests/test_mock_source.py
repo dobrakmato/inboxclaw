@@ -48,6 +48,25 @@ async def test_mock_source_generation(mock_services, db_session_maker):
         session.commit()
         source_id = source.id
 
+    # Mock services.writer.write_events to actually write to DB
+    def mock_write_events(source_id, new_events):
+        with db_session_maker() as session:
+            for ne in new_events:
+                event = Event(
+                    source_id=source_id,
+                    event_id=ne.event_id,
+                    event_type=ne.event_type,
+                    entity_id=ne.entity_id,
+                    data=ne.data,
+                    occurred_at=ne.occurred_at
+                )
+                session.add(event)
+            session.commit()
+            # Notify
+            mock_services.notifier.notify()
+
+    mock_services.writer.write_events.side_effect = mock_write_events
+
     config = {"interval": 0.05}
     source_instance = MockSource("test_mock", config, mock_services, source_id)
     

@@ -3,9 +3,6 @@ import logging
 import random
 import uuid
 from datetime import datetime, timezone
-from typing import Union
-
-from pytimeparse import parse as parse_time
 
 from src.config import MockSourceConfig
 from src.pipeline.writer import NewEvent
@@ -13,19 +10,6 @@ from src.services import AppServices
 
 logger = logging.getLogger(__name__)
 
-def parse_interval(interval: Union[int, float, str]) -> float:
-    """Parse a numeric or human-readable interval into seconds."""
-    if isinstance(interval, (int, float)):
-        return float(interval)
-    
-    parsed = parse_time(interval)
-    if parsed is None:
-        try:
-            return float(interval)
-        except (ValueError, TypeError):
-            logger.warning(f"Failed to parse interval '{interval}', defaulting to 10s")
-            return 10.0
-    return float(parsed)
 
 class MockSource:
     def __init__(self, name: str, config: MockSourceConfig, services: AppServices, source_id: int):
@@ -33,7 +17,11 @@ class MockSource:
         self.config = config
         self.services = services
         self.source_id = source_id
-        self.interval = parse_interval(config.interval)
+        if isinstance(config, dict):
+            from src.config import parse_interval
+            self.interval = parse_interval(config.get("interval", 10))
+        else:
+            self.interval = config.interval
         self.task: asyncio.Task | None = None
 
     async def start(self):

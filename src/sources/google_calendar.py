@@ -2,7 +2,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-import pytimeparse
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -24,7 +23,6 @@ class GoogleCalendarSource:
         self.source_id = source_id
         self.token_file = config.token_file
         self.poll_interval = config.poll_interval
-        self.poll_interval_seconds = pytimeparse.parse(self.poll_interval) or 600
         self.calendar_id = config.calendar_id
 
     def get_credentials(self) -> Credentials:
@@ -124,4 +122,4 @@ class GoogleCalendarSource:
         logger.info(f"Starting Google Calendar source: {self.name} polling every {self.poll_interval}")
         while True:
             await self.fetch_and_publish()
-            await asyncio.sleep(self.poll_interval_seconds)
+            await asyncio.sleep(self.poll_interval)
