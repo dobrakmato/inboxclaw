@@ -28,18 +28,14 @@ class GmailSource:
         return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     def _initialize_history_id(self, service) -> bool:
-        """First run: get the latest historyId using messages().list() with 1 message."""
+        """First run: get the current historyId using getProfile()."""
         logger.info(f"No cursor for {self.name}, initializing historyId")
-        results = service.users().messages().list(userId='me', maxResults=1).execute()
-        messages = results.get('messages', [])
-        if messages:
-            msg_id = messages[0]['id']
-            msg = service.users().messages().get(userId='me', id=msg_id, format='minimal').execute()
-            initial_history_id = msg.get('historyId')
-            if initial_history_id:
-                self.cursor.set_cursor(self.source_id, str(initial_history_id))
-                logger.info(f"Initialized historyId for {self.name} to {initial_history_id}")
-                return True
+        profile = service.users().getProfile(userId='me').execute()
+        initial_history_id = profile.get('historyId')
+        if initial_history_id:
+            self.cursor.set_cursor(self.source_id, str(initial_history_id))
+            logger.info(f"Initialized historyId for {self.name} to {initial_history_id}")
+            return True
         return False
 
     def _get_message_metadata(self, service, msg_id: str) -> dict:
@@ -155,7 +151,13 @@ class GmailSource:
                         if any(l in self.config.exclude_label_ids for l in label_ids):
                             continue
 
-                        msg = self._get_message_metadata(service, msg_id)
+                        try:
+                            msg = self._get_message_metadata(service, msg_id)
+                        except HttpError as e:
+                            if e.resp.status == 404:
+                                logger.warning(f"Message {msg_id} not found in {self.name}, skipping")
+                                continue
+                            raise
                         # Re-check labels after metadata fetch
                         label_ids = msg.get('labelIds', [])
                         if any(l in self.config.exclude_label_ids for l in label_ids):
