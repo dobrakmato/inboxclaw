@@ -86,10 +86,11 @@ class SSESink:
                         events = self.coalescer.coalesce(events)
                     
                     for event in events:
+                        import json
                         yield {
                             "event": "message",
                             "id": str(event.id),
-                            "data": self._format_event(event)
+                            "data": json.dumps(self._format_event(event))
                         }
 
                 # Wait for a notification OR a timeout for heartbeats

@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
+from typing import List
 from fastapi import FastAPI
 from sqlalchemy.orm import sessionmaker
 from src.config import Config
@@ -11,3 +13,23 @@ class AppServices:
     config: Config
     db_session_maker: sessionmaker
     notifier: EventNotifier
+    background_tasks: List[asyncio.Task] = field(default_factory=list)
+
+    def add_task(self, coro) -> asyncio.Task:
+        """Create and track a background task."""
+        task = asyncio.create_task(coro)
+        self.background_tasks.append(task)
+        # Clean up finished tasks from the list to avoid memory leaks
+        task.add_done_callback(lambda t: self.background_tasks.remove(t) if t in self.background_tasks else None)
+        return task
+
+    async def stop_tasks(self):
+        """Cancel all background tasks and wait for them to finish."""
+        if not self.background_tasks:
+            return
+            
+        for task in self.background_tasks[:]:
+            task.cancel()
+        
+        await asyncio.gather(*self.background_tasks, return_exceptions=True)
+        self.background_tasks.clear()

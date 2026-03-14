@@ -1,3 +1,4 @@
+import os
 import yaml
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, List, Any, Optional
@@ -25,7 +26,9 @@ class Config(BaseModel):
     sources: Dict[str, Optional[Dict[str, Any]]]
     sink: Dict[str, Dict[str, Any]]
 
-def load_config(path: str = "config.yaml") -> Config:
+def load_config(path: str = None) -> Config:
+    if path is None:
+        path = os.environ.get("CONFIG_PATH", "config.yaml")
     with open(path, "r") as f:
         data = yaml.safe_load(f)
     return Config(**data)

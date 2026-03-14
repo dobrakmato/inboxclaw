@@ -25,6 +25,8 @@
    - Avoid deprecated functions (e.g. `datetime.utcnow()` should be `datetime.now(timezone.utc)`).
    - Use Pydantic's `v2` syntax for models and validation.
    - Organize files in a clear, modular structure under `src/`.
+   - **Background Task Management**: Always use `AppServices.add_task(coroutine)` to register background tasks (polling, delivery loops) instead of `asyncio.create_task()` directly. This ensures tasks are tracked and correctly shut down.
+   - **Configurable Intervals**: Support human-readable interval strings (e.g., "5s", "1m", "1d") in configuration using `pytimeparse`.
 
 5. **Logging**
    - Use the standard `logging` module.

@@ -42,7 +42,7 @@ class WebhookSink:
         if self._task is not None:
             return
 
-        self._task = asyncio.create_task(self._run_loop())
+        self._task = self.services.add_task(self._run_loop())
         logger.info("Webhook sink '%s' started, targeting %s", self.name, self.url)
 
     async def stop(self) -> None:

@@ -10,6 +10,7 @@ from src.config import load_config, Config
 from src.services import AppServices
 from src.database import init_db, Source
 from src.sources.gmail import GmailSource
+from src.sources.mock import MockSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pop import HttpPopSink
@@ -48,6 +49,14 @@ def init_sources(services: AppServices):
             if s_type == "gmail":
                 logger.info(f"Initializing Gmail source: {name} (id={source_id})")
                 sources[name] = GmailSource(name, s_config, services, source_id)
+            elif s_type == "mock":
+                logger.info(f"Initializing Mock source: {name} (id={source_id})")
+                source_instance = MockSource(name, s_config, services, source_id)
+                sources[name] = source_instance
+                # Since MockSource runs in background, we need to start it.
+                # In FastAPI app we can create task here if it's already running, 
+                # but init_sources is called from lifespan.
+                services.add_task(source_instance.start())
             else:
                 logger.warning(f"Unknown source type {s_type} for {name}")
 
@@ -64,7 +73,7 @@ def init_sinks(services: AppServices):
             sink = WebhookSink(name, snk_config, services)
             sinks[name] = sink
             # Start the background task
-            asyncio.create_task(sink.start())
+            services.add_task(sink.start())
         elif snk_type == "http_pop":
             logger.info(f"Initializing HTTP Pop sink: {name}")
             sinks[name] = HttpPopSink(name, snk_config, services)
@@ -93,6 +102,7 @@ async def lifespan(app: FastAPI):
     logger.info("App initialized.")
     yield
     logger.info("Shutting down ingest pipeline...")
+    await services.stop_tasks()
 
 app = FastAPI(title="Ingest Pipeline", lifespan=lifespan)
 

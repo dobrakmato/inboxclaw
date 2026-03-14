@@ -2,10 +2,12 @@
 1. Load config + init logger
 2. Create database instance
 3. Create http server instance
-4. Create sources according to config.yaml table, pass database and http server instance to them (so they can register endpoints + work with data)
-5. Each source has name + type. Name is just for config and logging, type determines which source class gets initialized. name is from key, if type is not present, its assumed that name == type.
-6. Inner config map of the source get passed to the source class to init itself
-7. Create sinks according to config.yaml table. key is name, type determines which sink class gets initialzied. name is from key, if type is not present its assumed that name == type. pass database and http server instance to them (so they can registr endpoints + work with database)
+4. Create `AppServices` to manage shared dependencies and background tasks
+5. Create sources according to config.yaml table, pass `AppServices` instance to them
+6. Each source has name + type. Name is just for config and logging, type determines which source class gets initialized. name is from key, if type is not present, its assumed that name == type.
+7. Inner config map of the source get passed to the source class to init itself
+8. Create sinks according to config.yaml table. key is name, type determines which sink class gets initialzied. name is from key, if type is not present its assumed that name == type. pass `AppServices` instance to them.
+9. During shutdown (FastAPI lifespan), all registered background tasks are cancelled and awaited.
 
 # Event sources
 1. They receive events by whatever means (expose endpoint on fastapi), short polling http resources, connect to web socket, ...
@@ -38,11 +40,12 @@
 - [ ] Stats.fm
 - [ ] Steam
 - [ ] Chrome Web History
+- [x] [MockSource](docs/source-mock.md)
 
 # Sinks
-- [ ] Http Pop
-- [x] Webhook
-- [x] SSE
+- [x] [Http Pop](docs/sink-http-pop.md)
+- [x] [Webhook](docs/sink-webhook.md)
+- [x] [SSE](docs/sink-sse.md)
 
 # Data Model
 
