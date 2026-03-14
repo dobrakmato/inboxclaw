@@ -69,7 +69,8 @@ python main.py google auth --scopes gmail --token data/gmail_token.json
 
 | Parameter | Value | Description |
 | :--- | :--- | :--- |
-| **Type** | `gmail.message_added` | Triggered when a new email is received. |
+| **Type** | `gmail.message_received` | Triggered when a new email is received. |
+| **Type** | `gmail.message_sent` | Triggered when a new email is sent. |
 | **Type** | `gmail.message_deleted` | Triggered when an email is deleted. |
 | **Type** | `gmail.label_added` | Triggered when a label is added to an email. |
 | **Type** | `gmail.label_removed` | Triggered when a label is removed from an email. |
@@ -77,7 +78,7 @@ python main.py google auth --scopes gmail --token data/gmail_token.json
 
 ### Data Payloads
 
-#### gmail.message_added
+#### gmail.message_received / gmail.message_sent
 
 The `data` field contains:
 

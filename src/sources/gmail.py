@@ -51,8 +51,8 @@ class GmailSource:
             metadataHeaders=['From', 'To', 'Subject', 'Date']
         ).execute()
 
-    def _create_message_added_event(self, msg_id: str, msg: dict) -> NewEvent:
-        """Construct a NewEvent from Gmail message data."""
+    def _create_message_event(self, msg_id: str, msg: dict) -> NewEvent:
+        """Construct a NewEvent (message_sent or message_received) from Gmail message data."""
         label_ids = msg.get('labelIds', [])
         payload = msg.get('payload', {})
         headers_list = payload.get('headers', [])
@@ -63,9 +63,11 @@ class GmailSource:
         if internal_date:
             occurred_at = datetime.fromtimestamp(int(internal_date) / 1000, tz=timezone.utc)
 
+        event_type = "gmail.message_sent" if "SENT" in label_ids else "gmail.message_received"
+
         return NewEvent(
             event_id=msg_id,
-            event_type="gmail.message_added",
+            event_type=event_type,
             entity_id=msg_id,
             data={
                 "threadId": msg.get("threadId"),
@@ -158,7 +160,7 @@ class GmailSource:
                         label_ids = msg.get('labelIds', [])
                         if any(l in self.config.exclude_label_ids for l in label_ids):
                             continue
-                        events.append(self._create_message_added_event(msg_id, msg))
+                        events.append(self._create_message_event(msg_id, msg))
 
                     # 2. Messages Deleted
                     for item in record.get('messagesDeleted', []):
