@@ -46,8 +46,10 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
 
 class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"
-    calendar_id: str = "primary"
-    compute_diff: bool = False
+    calendar_ids: List[str] = Field(default_factory=lambda: ["primary"])
+    max_event_age_days: Optional[float] = 1.0
+    show_deleted: bool = True
+    single_events: bool = True
 
 class GoogleDocsSourceConfig(GoogleSourceConfig):
     type: Literal["google_docs"] = "google_docs"

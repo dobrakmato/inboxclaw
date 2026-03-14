@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy import select, delete as sqa_delete
 from src.database import SourceKV
@@ -76,3 +77,17 @@ class SourceKVService:
             )
             session.commit()
             logger.debug(f"Deleted all KV for source {source_id}")
+
+    def delete_older_than(self, source_id: int, cutoff: datetime):
+        """
+        Delete values for the given source_id that were created before the cutoff.
+        """
+        with self.services.db_session_maker() as session:
+            session.execute(
+                sqa_delete(SourceKV).where(
+                    SourceKV.source_id == source_id,
+                    SourceKV.created_at < cutoff
+                )
+            )
+            session.commit()
+            logger.debug(f"Deleted old KV for source {source_id} older than {cutoff}")
