@@ -63,6 +63,45 @@ def test_coalescer_no_match():
     coalesced = coalescer.coalesce(events)
     assert len(coalesced) == 2
 
+def test_coalescer_meta_and_ordering():
+    coalescer = Coalescer()
+    t1 = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2023, 1, 1, 12, 5, 0, tzinfo=timezone.utc)
+    t3 = datetime(2023, 1, 1, 12, 10, 0, tzinfo=timezone.utc)
+    
+    events = [
+        Event(event_id="2", event_type="type1", entity_id="a", created_at=t2, meta={"initial": "meta"}),
+        Event(event_id="1", event_type="type1", entity_id="a", created_at=t1),
+        Event(event_id="3", event_type="type1", entity_id="a", created_at=t3),
+    ]
+    
+    coalesced = coalescer.coalesce(events)
+    assert len(coalesced) == 1
+    
+    ev = coalesced[0]
+    assert ev.event_id == "3"
+    assert ev.meta["coalesced_events"] == 3
+    assert ev.meta["first_event_at"] == t1.isoformat()
+    assert ev.meta["last_event_at"] == t3.isoformat()
+    # Ensure it keeps old meta if latest one had it (oops, in my test case ev id "3" has no meta, 
+    # but the one with meta was at t2. Let's adjust the test to check for that).
+    
+def test_coalescer_meta_preservation():
+    coalescer = Coalescer()
+    t1 = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2023, 1, 1, 12, 10, 0, tzinfo=timezone.utc)
+    
+    events = [
+        Event(event_id="1", event_type="type1", entity_id="a", created_at=t1),
+        Event(event_id="2", event_type="type1", entity_id="a", created_at=t2, meta={"important": "data"}),
+    ]
+    
+    coalesced = coalescer.coalesce(events)
+    assert len(coalesced) == 1
+    ev = coalesced[0]
+    assert ev.meta["important"] == "data"
+    assert ev.meta["coalesced_events"] == 2
+
 def test_coalescer_match_patterns_property():
     coalescer = Coalescer(match_patterns=["a.*"])
     assert coalescer.match_patterns == ["a.*"]

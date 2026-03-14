@@ -42,8 +42,21 @@ class Coalescer:
         coalesced_events: List[Event] = []
         for ev_list in grouped.values():
             if len(ev_list) > 1:
+                # Sequence by created_at to ensure we find the latest one correctly
+                # and have the first and last timestamps.
+                sorted_evs = sorted(ev_list, key=lambda e: e.created_at)
+                
                 # Merge logic - take the latest one
-                latest_ev = max(ev_list, key=lambda e: e.created_at)
+                latest_ev = sorted_evs[-1]
+                
+                # Update meta
+                if latest_ev.meta is None:
+                    latest_ev.meta = {}
+                
+                latest_ev.meta["coalesced_events"] = len(ev_list)
+                latest_ev.meta["first_event_at"] = sorted_evs[0].created_at.isoformat()
+                latest_ev.meta["last_event_at"] = sorted_evs[-1].created_at.isoformat()
+                
                 coalesced_events.append(latest_ev)
             else:
                 coalesced_events.extend(ev_list)
