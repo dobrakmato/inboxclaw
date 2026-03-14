@@ -2,24 +2,16 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from src.database import Event
+from src.schemas import NewEvent
 
 if TYPE_CHECKING:
     from src.services import AppServices
 
 logger = logging.getLogger(__name__)
-
-class NewEvent(BaseModel):
-    """
-    Data Transfer Object for a new event.
-    """
-    event_id: str
-    event_type: str
-    data: Dict[str, Any]
-    entity_id: Optional[str] = None
-    occurred_at: Optional[datetime] = None
 
 class EventWriter:
     """
@@ -33,7 +25,12 @@ class EventWriter:
         Internal method to write a single event to the database if it doesn't already exist.
         Returns True if the event was newly created, False if it was a duplicate.
         """
-        existing = session.scalar(select(Event).where(Event.event_id == event.event_id))
+        existing = session.scalar(
+            select(Event).where(
+                Event.event_id == event.event_id,
+                Event.source_id == source_id
+            )
+        )
         if existing:
             return False
 
@@ -46,6 +43,7 @@ class EventWriter:
             occurred_at=event.occurred_at
         )
         session.add(new_event)
+        session.flush()
         return True
 
     def write_events(self, source_id: int, events: List[NewEvent]) -> int:
@@ -54,16 +52,28 @@ class EventWriter:
         Returns the number of new events created.
         """
         new_count = 0
+        seen_ids = set()
         with self.services.db_session_maker() as session:
             for event in events:
-                created = self._write_event_internal(
-                    session=session,
-                    source_id=source_id,
-                    event=event
-                )
-                if created:
-                    new_count += 1
-                    logger.debug(f"Queued new event: {event.event_id}")
+                if event.event_id in seen_ids:
+                    logger.warning(f"Duplicate event_id {event.event_id} in current batch for source {source_id}, skipping.")
+                    continue
+                seen_ids.add(event.event_id)
+
+                try:
+                    # Use a savepoint to allow continuing on IntegrityError if it happens on flush
+                    with session.begin_nested():
+                        created = self._write_event_internal(
+                            session=session,
+                            source_id=source_id,
+                            event=event
+                        )
+                        if created:
+                            new_count += 1
+                            logger.debug(f"Queued new event: {event.event_id}")
+                except IntegrityError:
+                    logger.warning(f"Duplicate event_id {event.event_id} for source {source_id} (integrity error), skipping.")
+                    continue
             
             if new_count > 0:
                 session.commit()

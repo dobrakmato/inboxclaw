@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, JSON, ForeignKey, select, text, delete
-from sqlalchemy.orm import sessionmaker, relationship, DeclarativeBase
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, JSON, ForeignKey, select, text, delete, UniqueConstraint
+from sqlalchemy.orm import sessionmaker, relationship, DeclarativeBase, reconstructor
 from sqlalchemy import event
 from datetime import datetime, timezone, timedelta
 import os
@@ -19,15 +19,17 @@ class Source(Base):
 
 class Event(Base):
     __tablename__ = 'events'
+    __table_args__ = (
+        UniqueConstraint('source_id', 'event_id', name='_source_event_uc'),
+    )
     id = Column(Integer, primary_key=True)
-    event_id = Column(String, unique=True, nullable=False)
+    event_id = Column(String, nullable=False)
     source_id = Column(Integer, ForeignKey('sources.id'), nullable=False) 
     event_type = Column(String, nullable=False)
     entity_id = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     occurred_at = Column(DateTime)
     data = Column(JSON)
-    meta = Column(JSON)
 
 class HttpWebhookDelivery(Base):
     __tablename__ = 'http_webhook_deliveries'

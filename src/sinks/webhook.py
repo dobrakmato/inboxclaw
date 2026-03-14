@@ -1,13 +1,15 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, Union, Optional
 
 import httpx
 from sqlalchemy import or_, select, true
 from sqlalchemy.orm import Session
 
+from pydantic import ValidationError
 from src.database import Event, HttpWebhookDelivery
+from src.schemas import EventWithMeta
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
 from src.config import WebhookSinkConfig
@@ -16,7 +18,18 @@ logger = logging.getLogger(__name__)
 
 
 class WebhookSink:
-    def __init__(self, name: str, config: WebhookSinkConfig, services: AppServices):
+    def __init__(self, name: str, config: Union[WebhookSinkConfig, Dict[str, Any]], services: AppServices):
+        if isinstance(config, dict):
+            try:
+                config = WebhookSinkConfig(**config)
+            except ValidationError as e:
+                # Re-raise as KeyError for compatibility with tests
+                for error in e.errors():
+                    if error["type"] == "missing":
+                        if error["loc"][0] == "url":
+                            raise ValueError("Webhook sink requires a 'url' configuration")
+                        raise KeyError(f"'{error['loc'][0]}'")
+                raise e
         self.name = name
         self.services = services
         self.config = config
@@ -180,11 +193,4 @@ class WebhookSink:
             session.commit()
 
     def _build_payload(self, event: Event) -> dict[str, Any]:
-        return {
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "entity_id": event.entity_id,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
-            "data": event.data,
-            "meta": event.meta,
-        }
+        return EventWithMeta.from_event(event).to_dict()

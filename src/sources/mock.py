@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from src.config import MockSourceConfig
-from src.pipeline.writer import NewEvent
+from src.schemas import NewEvent
 from src.services import AppServices
 
 logger = logging.getLogger(__name__)

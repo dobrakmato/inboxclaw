@@ -34,9 +34,9 @@ def test_coalescer_simple():
     now = datetime.now(timezone.utc)
     
     events = [
-        Event(event_id="1", event_type="type1", entity_id="a", created_at=now),
-        Event(event_id="2", event_type="type1", entity_id="a", created_at=now),
-        Event(event_id="3", event_type="type2", entity_id="b", created_at=now),
+        Event(id=1, event_id="1", event_type="type1", entity_id="a", created_at=now),
+        Event(id=2, event_id="2", event_type="type1", entity_id="a", created_at=now),
+        Event(id=3, event_id="3", event_type="type2", entity_id="b", created_at=now),
     ]
     
     coalesced, _ = coalescer.coalesce(events)
@@ -56,8 +56,8 @@ def test_coalescer_no_match():
     coalescer = Coalescer(match_patterns=["matched.*"])
     now = datetime.now(timezone.utc)
     events = [
-        Event(event_id="1", event_type="other", entity_id="a", created_at=now),
-        Event(event_id="2", event_type="other", entity_id="a", created_at=now),
+        Event(id=1, event_id="1", event_type="other", entity_id="a", created_at=now),
+        Event(id=2, event_id="2", event_type="other", entity_id="a", created_at=now),
     ]
     # Should NOT coalesce because "other" doesn't match "matched.*"
     coalesced, _ = coalescer.coalesce(events)
@@ -69,10 +69,12 @@ def test_coalescer_meta_and_ordering():
     t2 = datetime(2023, 1, 1, 12, 5, 0, tzinfo=timezone.utc)
     t3 = datetime(2023, 1, 1, 12, 10, 0, tzinfo=timezone.utc)
     
+    e2 = Event(id=2, event_id="2", event_type="type1", entity_id="a", created_at=t2)
+    e2.meta = {"initial": "meta"}
     events = [
-        Event(event_id="2", event_type="type1", entity_id="a", created_at=t2, meta={"initial": "meta"}),
-        Event(event_id="1", event_type="type1", entity_id="a", created_at=t1),
-        Event(event_id="3", event_type="type1", entity_id="a", created_at=t3),
+        e2,
+        Event(id=1, event_id="1", event_type="type1", entity_id="a", created_at=t1),
+        Event(id=3, event_id="3", event_type="type1", entity_id="a", created_at=t3),
     ]
     
     coalesced, _ = coalescer.coalesce(events)
@@ -91,9 +93,11 @@ def test_coalescer_meta_preservation():
     t1 = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     t2 = datetime(2023, 1, 1, 12, 10, 0, tzinfo=timezone.utc)
     
+    e2 = Event(id=2, event_id="2", event_type="type1", entity_id="a", created_at=t2)
+    e2.meta = {"important": "data"}
     events = [
-        Event(event_id="1", event_type="type1", entity_id="a", created_at=t1),
-        Event(event_id="2", event_type="type1", entity_id="a", created_at=t2, meta={"important": "data"}),
+        Event(id=1, event_id="1", event_type="type1", entity_id="a", created_at=t1),
+        e2,
     ]
     
     coalesced, _ = coalescer.coalesce(events)
@@ -107,8 +111,8 @@ def test_coalescer_no_entity_id_should_not_coalesce():
     now = datetime.now(timezone.utc)
     
     events = [
-        Event(event_id="1", event_type="type1", entity_id=None, created_at=now),
-        Event(event_id="2", event_type="type1", entity_id=None, created_at=now),
+        Event(id=1, event_id="1", event_type="type1", entity_id=None, created_at=now),
+        Event(id=2, event_id="2", event_type="type1", entity_id=None, created_at=now),
     ]
     
     coalesced, _ = coalescer.coalesce(events)

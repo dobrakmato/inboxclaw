@@ -7,7 +7,7 @@ from googleapiclient.errors import HttpError
 
 from src.config import GmailSourceConfig
 from src.pipeline.cursor import SourceCursor
-from src.pipeline.writer import NewEvent
+from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
 
@@ -93,7 +93,6 @@ class GmailSource:
 
     def _create_label_event(self, event_type: str, msg_id: str, thread_id: str, history_id: str, changed_labels: list, all_labels: list) -> NewEvent:
         suffix = "lab-add" if "added" in event_type else "lab-rem"
-        key = "addedLabelIds" if "added" in event_type else "removedLabelIds"
         return NewEvent(
             event_id=f"{msg_id}-{history_id}-{suffix}",
             event_type=event_type,
@@ -101,8 +100,8 @@ class GmailSource:
             data={
                 "threadId": thread_id,
                 "messageId": msg_id,
-                key: changed_labels,
-                "newLabelIds": all_labels
+                "labelIds": changed_labels,
+                "allLabelIds": all_labels
             }
         )
 

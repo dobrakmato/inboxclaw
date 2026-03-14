@@ -1,11 +1,12 @@
 import logging
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import Request, Query
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select, and_
-from sqlalchemy.orm import Session
+from pydantic import ValidationError
 from src.database import Event
+from src.schemas import EventWithMeta
 from src.pipeline.coalescer import Coalescer
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
@@ -14,7 +15,16 @@ from src.config import SSESinkConfig
 logger = logging.getLogger(__name__)
 
 class SSESink:
-    def __init__(self, name: str, config: SSESinkConfig, services: AppServices):
+    def __init__(self, name: str, config: Union[SSESinkConfig, Dict[str, Any]], services: AppServices):
+        if isinstance(config, dict):
+            try:
+                config = SSESinkConfig(**config)
+            except ValidationError as e:
+                # Re-raise as KeyError for compatibility with tests
+                for error in e.errors():
+                    if error["type"] == "missing":
+                        raise KeyError(f"'{error['loc'][0]}'")
+                raise e
         self.name = name
         self.config = config
         self.services = services
@@ -136,13 +146,5 @@ class SSESink:
             
             return list(session.scalars(stmt).all())
 
-    def _format_event(self, event: Event) -> Dict[str, Any]:
-        return {
-            "id": event.id,
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "entity_id": event.entity_id,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
-            "data": event.data,
-            "meta": event.meta
-        }
+    def _format_event(self, event: Union[Event, EventWithMeta]) -> Dict[str, Any]:
+        return EventWithMeta.from_event(event).to_dict()

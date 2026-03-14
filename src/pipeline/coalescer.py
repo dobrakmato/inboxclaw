@@ -1,5 +1,7 @@
-from typing import List, Dict, Tuple, Optional
+from datetime import datetime
+from typing import List, Dict, Tuple, Optional, Any
 from src.database import Event
+from src.schemas import EventWithMeta
 from src.pipeline.matcher import EventMatcher
 
 class Coalescer:
@@ -12,7 +14,7 @@ class Coalescer:
     def match_patterns(self) -> List[str]:
         return self.matcher.patterns
 
-    def coalesce(self, events: List[Event]) -> Tuple[List[Event], Dict[Optional[int], List[Optional[int]]]]:
+    def coalesce(self, events: List[Event]) -> Tuple[List[EventWithMeta], Dict[Optional[int], List[Optional[int]]]]:
         """
         Groups events by (event_type, entity_id).
         Only events matching the matcher patterns are coalesced.
@@ -36,7 +38,7 @@ class Coalescer:
             source_ids_map[ev.id] = [ev.id]
 
         if not to_coalesce:
-            return others, source_ids_map
+            return [EventWithMeta.from_event(e) for e in others], source_ids_map
 
         grouped: Dict[Tuple[str, str], List[Event]] = {}
         for event in to_coalesce:
@@ -45,7 +47,7 @@ class Coalescer:
                 grouped[key] = []
             grouped[key].append(event)
 
-        coalesced_events: List[Event] = []
+        coalesced_events: List[EventWithMeta] = []
         for ev_list in grouped.values():
             if len(ev_list) > 1:
                 # Sequence by created_at to ensure we find the latest one correctly
@@ -55,19 +57,20 @@ class Coalescer:
                 # Merge logic - take the latest one
                 latest_ev = sorted_evs[-1]
                 
-                # Update meta
-                if latest_ev.meta is None:
-                    latest_ev.meta = {}
+                # Build meta
+                meta = getattr(latest_ev, "meta", {}).copy()
+                meta["coalesced_events"] = len(ev_list)
+                meta["first_event_at"] = sorted_evs[0].created_at.isoformat()
+                meta["last_event_at"] = sorted_evs[-1].created_at.isoformat()
                 
-                latest_ev.meta["coalesced_events"] = len(ev_list)
-                latest_ev.meta["first_event_at"] = sorted_evs[0].created_at.isoformat()
-                latest_ev.meta["last_event_at"] = sorted_evs[-1].created_at.isoformat()
-                
-                coalesced_events.append(latest_ev)
-                source_ids_map[latest_ev.id] = [ev.id for ev in ev_list]
+                dto = EventWithMeta.from_event(latest_ev, meta=meta)
+                coalesced_events.append(dto)
+                source_ids_map[dto.id] = [ev.id for ev in ev_list]
             else:
-                coalesced_events.extend(ev_list)
                 for ev in ev_list:
-                    source_ids_map[ev.id] = [ev.id]
+                    dto = EventWithMeta.from_event(ev)
+                    coalesced_events.append(dto)
+                    source_ids_map[dto.id] = [ev.id]
 
-        return others + coalesced_events, source_ids_map
+        result_events = [EventWithMeta.from_event(e) for e in others] + coalesced_events
+        return result_events, source_ids_map

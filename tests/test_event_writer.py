@@ -1,7 +1,8 @@
 import pytest
 import logging
 from unittest.mock import MagicMock
-from src.pipeline.writer import NewEvent, EventWriter
+from src.pipeline.writer import EventWriter
+from src.schemas import NewEvent
 from src.database import init_db, Event, Source
 from src.services import AppServices
 from src.config import Config, DatabaseConfig, ServerConfig
@@ -90,3 +91,64 @@ def test_multiple_events_single_entity(services, session_maker):
     with session_maker() as session:
         db_events = session.query(Event).filter_by(entity_id="entity_A").all()
         assert len(db_events) == 2
+
+def test_event_writer_same_id_different_sources(services, session_maker):
+    writer = services.writer
+    
+    # Setup: Create two sources in the DB
+    with session_maker() as session:
+        src1 = Source(id=1, name="source1", type="mock")
+        src2 = Source(id=2, name="source2", type="mock")
+        session.add_all([src1, src2])
+        session.commit()
+
+    events1 = [
+        NewEvent(event_id="common_id", event_type="test.type", data={"source": 1}),
+    ]
+    events2 = [
+        NewEvent(event_id="common_id", event_type="test.type", data={"source": 2}),
+    ]
+    
+    # First write from source 1
+    new_count1 = writer.write_events(1, events1)
+    assert new_count1 == 1
+    
+    # Second write from source 2 with SAME event_id
+    new_count2 = writer.write_events(2, events2)
+    assert new_count2 == 1 # Now allowed as source_id is different
+    
+    with session_maker() as session:
+        db_events = session.query(Event).all()
+        assert len(db_events) == 2
+        for e in db_events:
+            assert e.event_id == "common_id"
+
+def test_event_writer_integrity_error_handling(services, session_maker):
+    writer = services.writer
+    source_id = 1
+    
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+    
+    with session_maker() as session:
+        # Manually add an event to the DB
+        ev = Event(event_id="duplicate", source_id=source_id, event_type="test", data={})
+        session.add(ev)
+        session.commit()
+
+    # Now try to write a list containing the duplicate and some new ones
+    events = [
+        NewEvent(event_id="duplicate", event_type="test", data={"v": "new"}),
+        NewEvent(event_id="really_new", event_type="test", data={}),
+    ]
+    
+    new_count = writer.write_events(source_id, events)
+    
+    # Should skip "duplicate" and only write "really_new"
+    assert new_count == 1
+    
+    with session_maker() as session:
+        assert session.query(Event).count() == 2
+        assert session.query(Event).filter_by(event_id="really_new").first() is not None

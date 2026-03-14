@@ -71,7 +71,7 @@ SourceConfig = Annotated[
 
 class BaseSinkConfig(BaseModel):
     type: str
-    match: Union[str, List[str]]
+    match: Union[str, List[str]] = "*"
     model_config = ConfigDict(extra="forbid")
 
 class WebhookSinkConfig(BaseSinkConfig):

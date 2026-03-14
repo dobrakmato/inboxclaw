@@ -1,9 +1,11 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import HTTPException, Query
 from sqlalchemy import select, and_, not_, or_
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 from src.database import Event, HttpPopBatch, HttpPullBatchEvent
+from src.schemas import EventWithMeta
 from src.services import AppServices
 from src.pipeline.coalescer import Coalescer
 from src.pipeline.matcher import EventMatcher
@@ -12,7 +14,16 @@ from src.config import HttpPopSinkConfig
 logger = logging.getLogger(__name__)
 
 class HttpPopSink:
-    def __init__(self, name: str, config: HttpPopSinkConfig, services: AppServices):
+    def __init__(self, name: str, config: Union[HttpPopSinkConfig, Dict[str, Any]], services: AppServices):
+        if isinstance(config, dict):
+            try:
+                config = HttpPopSinkConfig(**config)
+            except ValidationError as e:
+                # Re-raise as KeyError for compatibility with tests
+                for error in e.errors():
+                    if error["type"] == "missing":
+                        raise KeyError(f"'{error['loc'][0]}'")
+                raise e
         self.name = name
         self.config = config
         self.services = services
@@ -190,13 +201,5 @@ class HttpPopSink:
         return [clause]
 
 
-    def _format_event(self, event: Event) -> Dict[str, Any]:
-        return {
-            "id": event.id,
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "entity_id": event.entity_id,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
-            "data": event.data,
-            "meta": event.meta
-        }
+    def _format_event(self, event: Union[Event, EventWithMeta]) -> Dict[str, Any]:
+        return EventWithMeta.from_event(event).to_dict()

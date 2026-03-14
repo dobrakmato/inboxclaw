@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.config import GoogleCalendarSourceConfig
-from src.pipeline.writer import NewEvent
+from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
 
