@@ -1,21 +1,84 @@
 import os
 import yaml
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Dict, List, Any, Optional
+from pydantic import BaseModel, Field, ConfigDict, RootModel
+from typing import Dict, List, Any, Optional, Union, Literal, Annotated
 
 class DatabaseConfig(BaseModel):
     retention_days: int = Field(alias="days", default=30)
     db_path: str = "./data/data.db"
     model_config = ConfigDict(populate_by_name=True)
 
-class SourceConfig(BaseModel):
-    type: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
+# --- Source Configurations ---
 
-class SinkConfig(BaseModel):
+class BaseSourceConfig(BaseModel):
     type: str
-    match: Any # Can be str or list of str
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
+
+class GoogleSourceConfig(BaseSourceConfig):
+    token_file: str
+    poll_interval: str = "5m"
+
+class GmailSourceConfig(GoogleSourceConfig):
+    type: Literal["gmail"] = "gmail"
+
+class GoogleDriveSourceConfig(GoogleSourceConfig):
+    type: Literal["google_drive"] = "google_drive"
+
+class GoogleCalendarSourceConfig(GoogleSourceConfig):
+    type: Literal["google_calendar"] = "google_calendar"
+    calendar_id: str = "primary"
+    compute_diff: bool = False
+
+class GoogleDocsSourceConfig(GoogleSourceConfig):
+    type: Literal["google_docs"] = "google_docs"
+
+class MockSourceConfig(BaseSourceConfig):
+    type: Literal["mock"] = "mock"
+    interval: Interval = "10s"
+
+SourceConfig = Annotated[
+    Union[
+        GmailSourceConfig,
+        GoogleDriveSourceConfig,
+        GoogleCalendarSourceConfig,
+        GoogleDocsSourceConfig,
+        MockSourceConfig
+    ],
+    Field(discriminator="type")
+]
+
+# --- Sink Configurations ---
+
+class BaseSinkConfig(BaseModel):
+    type: str
+    match: Union[str, List[str]]
+    model_config = ConfigDict(extra="forbid")
+
+class WebhookSinkConfig(BaseSinkConfig):
+    type: Literal["webhook"] = "webhook"
+    url: str
+    max_retries: int = 3
+    retry_interval: float = 10.0
+
+class HttpPopSinkConfig(BaseSinkConfig):
+    type: Literal["http_pop"] = "http_pop"
+    path: Dict[str, str] = Field(default_factory=lambda: {"extract": "extract", "mark_processed": "mark-processed"})
+    coalesce: Optional[List[str]] = None
+
+class SSESinkConfig(BaseSinkConfig):
+    type: Literal["sse"] = "sse"
+    path: str = ""
+    heartbeat_timeout: float = 30.0
+    coalesce: Optional[List[str]] = None
+
+SinkConfig = Annotated[
+    Union[
+        WebhookSinkConfig,
+        HttpPopSinkConfig,
+        SSESinkConfig
+    ],
+    Field(discriminator="type")
+]
 
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
@@ -24,12 +87,23 @@ class ServerConfig(BaseModel):
 class Config(BaseModel):
     server: ServerConfig = ServerConfig()
     database: DatabaseConfig
-    sources: Dict[str, Optional[Dict[str, Any]]]
-    sink: Dict[str, Dict[str, Any]]
+    sources: Dict[str, SourceConfig]
+    sink: Dict[str, SinkConfig]
 
 def load_config(path: str = None) -> Config:
     if path is None:
         path = os.environ.get("CONFIG_PATH", "config.yaml")
     with open(path, "r") as f:
         data = yaml.safe_load(f)
+    
+    # Pre-process sources and sinks to ensure 'type' is set
+    if "sources" in data:
+        for name, cfg in data["sources"].items():
+            if isinstance(cfg, dict) and "type" not in cfg:
+                cfg["type"] = name
+    if "sink" in data:
+        for name, cfg in data["sink"].items():
+            if isinstance(cfg, dict) and "type" not in cfg:
+                cfg["type"] = name
+
     return Config(**data)

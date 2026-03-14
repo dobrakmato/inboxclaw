@@ -10,22 +10,21 @@ from sqlalchemy.orm import Session
 from src.database import Event, HttpWebhookDelivery
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
+from src.config import WebhookSinkConfig
 
 logger = logging.getLogger(__name__)
 
 
 class WebhookSink:
-    def __init__(self, name: str, config: dict[str, Any], services: AppServices):
+    def __init__(self, name: str, config: WebhookSinkConfig, services: AppServices):
         self.name = name
         self.services = services
+        self.config = config
 
-        self.url = config.get("url")
-        if not self.url:
-            raise ValueError(f"Webhook sink '{name}' requires a 'url' configuration.")
-
-        self.matcher = EventMatcher(config.get("match", "*"))
-        self.max_retries = int(config.get("max_retries", 3))
-        self.retry_interval = float(config.get("retry_interval", 10.0))
+        self.url = config.url
+        self.matcher = EventMatcher(config.match)
+        self.max_retries = config.max_retries
+        self.retry_interval = config.retry_interval
         self._task: asyncio.Task | None = None
 
     @property

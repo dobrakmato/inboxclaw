@@ -1,12 +1,15 @@
 import asyncio
+import logging
 import random
 import uuid
-import logging
-from typing import Any, Dict, Union
 from datetime import datetime, timezone
+from typing import Union
+
 from pytimeparse import parse as parse_time
+
+from src.config import MockSourceConfig
+from src.pipeline.writer import NewEvent
 from src.services import AppServices
-from src.database import Event
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +28,12 @@ def parse_interval(interval: Union[int, float, str]) -> float:
     return float(parsed)
 
 class MockSource:
-    def __init__(self, name: str, config: Dict[str, Any], services: AppServices, source_id: int):
+    def __init__(self, name: str, config: MockSourceConfig, services: AppServices, source_id: int):
         self.name = name
         self.config = config
         self.services = services
         self.source_id = source_id
-        self.interval = parse_interval(config.get("interval", 10))
+        self.interval = parse_interval(config.interval)
         self.task: asyncio.Task | None = None
 
     async def start(self):
@@ -55,19 +58,13 @@ class MockSource:
         
         logger.info(f"MockSource '{self.name}' generating event {event_id} with value {random_value}")
         
-        with self.services.db_session_maker() as session:
-            event = Event(
-                event_id=event_id,
-                source_id=self.source_id,
-                event_type="mock.random_number",
-                entity_id=f"mock-{self.name}",
-                data={"number": random_value},
-                occurred_at=datetime.now(timezone.utc)
-            )
-            session.add(event)
-            session.commit()
-        
-        self.services.notifier.notify()
+        self.services.writer.write_events(self.source_id, [NewEvent(
+            event_id=event_id,
+            event_type="mock.random_number",
+            entity_id=f"mock-{self.name}",
+            data={"number": random_value},
+            occurred_at=datetime.now(timezone.utc)
+        )])
 
     def stop(self):
         """Stop generating events."""

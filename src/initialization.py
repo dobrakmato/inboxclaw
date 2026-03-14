@@ -3,6 +3,9 @@ from sqlalchemy import select
 from src.services import AppServices
 from src.database import Source
 from src.sources.gmail import GmailSource
+from src.sources.google_drive import GoogleDriveSource
+from src.sources.google_calendar import GoogleCalendarSource
+from src.sources.google_docs import GoogleDocsSource
 from src.sources.mock import MockSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
@@ -14,9 +17,7 @@ def init_sources(services: AppServices):
     """Initialize sources based on configuration."""
     with services.db_session_maker() as session:
         for name, s_config in services.config.sources.items():
-            if s_config is None:
-                s_config = {}
-            s_type = s_config.get("type", name)
+            s_type = s_config.type
             
             # Ensure source exists in DB
             source = session.scalar(select(Source).where(Source.name == name))
@@ -30,7 +31,24 @@ def init_sources(services: AppServices):
             
             if s_type == "gmail":
                 logger.info(f"Initializing Gmail source: {name} (id={source_id})")
-                services.sources[name] = GmailSource(name, s_config, services, source_id)
+                source_instance = GmailSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "google_drive":
+                logger.info(f"Initializing Google Drive source: {name} (id={source_id})")
+                source_instance = GoogleDriveSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "google_calendar":
+                logger.info(f"Initializing Google Calendar source: {name} (id={source_id})")
+                source_instance = GoogleCalendarSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "google_docs":
+                logger.info(f"Initializing Google Docs source: {name} (id={source_id})")
+                source_instance = GoogleDocsSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
             elif s_type == "mock":
                 logger.info(f"Initializing Mock source: {name} (id={source_id})")
                 source_instance = MockSource(name, s_config, services, source_id)
@@ -42,7 +60,7 @@ def init_sources(services: AppServices):
 def init_sinks(services: AppServices):
     """Initialize sinks based on configuration."""
     for name, snk_config in services.config.sink.items():
-        snk_type = snk_config.get("type", name)
+        snk_type = snk_config.type
         
         if snk_type == "sse":
             logger.info(f"Initializing SSE sink: {name}")

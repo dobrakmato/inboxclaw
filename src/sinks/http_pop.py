@@ -7,26 +7,27 @@ from src.database import Event, HttpPopBatch, HttpPullBatchEvent
 from src.services import AppServices
 from src.pipeline.coalescer import Coalescer
 from src.pipeline.matcher import EventMatcher
+from src.config import HttpPopSinkConfig
 
 logger = logging.getLogger(__name__)
 
 class HttpPopSink:
-    def __init__(self, name: str, config: Dict[str, Any], services: AppServices):
+    def __init__(self, name: str, config: HttpPopSinkConfig, services: AppServices):
         self.name = name
         self.config = config
         self.services = services
         
-        paths = config.get("path", {})
+        paths = config.path
         extract_path_suffix = paths.get("extract", "extract").lstrip("/")
         mark_processed_suffix = paths.get("mark_processed", "mark-processed").lstrip("/")
         
         self.extract_path = f"/{name}/{extract_path_suffix}"
         self.mark_processed_path = f"/{name}/{mark_processed_suffix}"
         
-        self.matcher = EventMatcher(config.get("match", ["*"]))
+        self.matcher = EventMatcher(config.match)
         self.coalescer = None
-        if "coalesce" in config:
-            self.coalescer = Coalescer(match_patterns=config.get("coalesce"))
+        if config.coalesce:
+            self.coalescer = Coalescer(match_patterns=config.coalesce)
             
         self.setup_endpoints()
 

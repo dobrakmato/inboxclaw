@@ -9,18 +9,19 @@ from src.database import Event
 from src.pipeline.coalescer import Coalescer
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
+from src.config import SSESinkConfig
 
 logger = logging.getLogger(__name__)
 
 class SSESink:
-    def __init__(self, name: str, config: Dict[str, Any], services: AppServices):
+    def __init__(self, name: str, config: SSESinkConfig, services: AppServices):
         self.name = name
         self.config = config
         self.services = services
         
         # Determine the base path from sink name, then append path from config if provided
         base_path = f"/{name}"
-        config_path = config.get("path", "")
+        config_path = config.path
         if config_path:
             # Join paths ensuring no double slashes
             self.path = f"{base_path.rstrip('/')}/{config_path.lstrip('/')}"
@@ -29,11 +30,11 @@ class SSESink:
             # might be sensitive to it.
             self.path = f"{base_path}/"
             
-        self.matcher = EventMatcher(config.get("match", "*"))
-        self.heartbeat_timeout = float(config.get("heartbeat_timeout", 30.0))
+        self.matcher = EventMatcher(config.match)
+        self.heartbeat_timeout = config.heartbeat_timeout
         self.coalescer = None
-        if "coalesce" in config:
-            self.coalescer = Coalescer(match_patterns=config.get("coalesce"))
+        if config.coalesce:
+            self.coalescer = Coalescer(match_patterns=config.coalesce)
         self.setup_endpoints()
 
     @property

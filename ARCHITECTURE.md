@@ -30,10 +30,10 @@
 
 
 # Data Sources
-- [ ] Google Drive
-- [ ] Gmail
-- [ ] Google Calendar
-- [ ] Google Docs
+- [x] [Google Drive](docs/source-google-drive.md)
+- [x] [Gmail](docs/source-gmail.md)
+- [x] [Google Calendar](docs/source-google-calendar.md)
+- [x] [Google Docs](docs/source-google-docs.md)
 - [ ] Faktury Online
 - [ ] Fio Banka
 - [ ] Asana
