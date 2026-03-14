@@ -2,14 +2,13 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.config import GmailSourceConfig
 from src.pipeline.writer import NewEvent
 from src.services import AppServices
+from src.utils.google_auth import get_google_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +21,9 @@ class GmailSource:
         self.token_file = config.token_file
         self.poll_interval = config.poll_interval
 
-    def get_credentials(self) -> Credentials:
-        if not self.token_file:
-            raise ValueError(f"No token_file configured for Gmail source {self.name}")
-        
-        creds = Credentials.from_authorized_user_file(self.token_file)
-        
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(self.token_file, "w") as f:
-                f.write(creds.to_json())
-        
-        return creds
-
     async def fetch_and_publish(self):
         try:
-            creds = self.get_credentials()
+            creds = get_google_credentials(self.token_file, self.name)
             # build() can be slow/blocking, but we are in an async task, so it's okay for now
             # In a highly scalable system, we might want to run it in a thread pool
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)

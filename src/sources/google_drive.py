@@ -2,8 +2,6 @@ import asyncio
 import logging
 from datetime import datetime
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from sqlalchemy import update
@@ -12,6 +10,7 @@ from src.config import GoogleDriveSourceConfig
 from src.database import Source
 from src.pipeline.writer import NewEvent
 from src.services import AppServices
+from src.utils.google_auth import get_google_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -24,22 +23,9 @@ class GoogleDriveSource:
         self.token_file = config.token_file
         self.poll_interval = config.poll_interval
 
-    def get_credentials(self) -> Credentials:
-        if not self.token_file:
-            raise ValueError(f"No token_file configured for Google Drive source {self.name}")
-        
-        creds = Credentials.from_authorized_user_file(self.token_file)
-        
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(self.token_file, "w") as f:
-                f.write(creds.to_json())
-        
-        return creds
-
     async def fetch_and_publish(self):
         try:
-            creds = self.get_credentials()
+            creds = get_google_credentials(self.token_file, self.name)
             service = build("drive", "v3", credentials=creds, cache_discovery=False)
             
             # Get current cursor (startPageToken) if not exists
