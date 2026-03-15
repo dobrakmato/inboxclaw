@@ -1,11 +1,10 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Union
 
 import httpx
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select
 
 from pydantic import ValidationError
 from src.database import Event, HttpWebhookDelivery
@@ -132,9 +131,16 @@ class WebhookSink:
         )
 
     def _retryable_clause(self):
+        retry_cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.retry_interval)
         return or_(
             HttpWebhookDelivery.id.is_(None),
-            HttpWebhookDelivery.tries < self.max_retries,
+            and_(
+                HttpWebhookDelivery.tries < self.max_retries,
+                or_(
+                    HttpWebhookDelivery.last_try.is_(None),
+                    HttpWebhookDelivery.last_try <= retry_cutoff,
+                ),
+            ),
         )
 
 

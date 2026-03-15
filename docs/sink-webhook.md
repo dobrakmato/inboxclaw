@@ -1,6 +1,6 @@
 # Webhook Sink (The Push-Based Delivery Model)
 
-The Webhook Sink is a proactive delivery system that automatically pushes events to your external application or service. Unlike "pull-based" systems (like HTTP Pop), where your application must periodically request data, the Webhook Sink initiates an HTTP POST request to a URL you specify as soon as an event enters the pipeline. This ensures near real-time data synchronization.
+The Webhook Sink is a proactive delivery system that automatically pushes events to your external application or service. Unlike "pull-based" systems (like HTTP Pull), where your application must periodically request data, the Webhook Sink initiates an HTTP POST request to a URL you specify as soon as an event enters the pipeline. This ensures near real-time data synchronization.
 
 ### Is this the right choice for you?
 
@@ -42,7 +42,7 @@ sequenceDiagram
         Sink->>DB: Mark as Delivered
     else Failure (4xx/5xx or Timeout)
         App-->>Sink: 500 Error / No Response
-        Sink->>DB: Increment Retry Count & Set Next Try
+        Sink->>DB: Increment Retry Count & Record Last Try
         Note over Sink: Wait for Retry Interval
         Note over Sink, App: Delivery Attempt 2 (and so on...)
     end
@@ -61,8 +61,8 @@ To prevent the sink from being overwhelmed by very old events (e.g., after a lon
 
 #### Reliable Retries
 Network blips and temporary server outages happen.
-- **Max Retries**: The sink will try to deliver the event multiple times (default is 3) before giving up.
-- **Retry Interval**: Between attempts, the sink waits for a specified period (default is 10 seconds) to allow the receiving system to recover.
+- **Max Retries**: The sink will attempt delivery up to `max_retries` times total (default is 3) before giving up.
+- **Retry Interval**: A failed event is retried only after `retry_interval` has elapsed since the previous attempt (default is 10 seconds).
 - **Persistence**: Delivery status and retry counts are tracked in the pipeline database, ensuring no event is lost even if the pipeline service restarts.
 
 ---
@@ -70,7 +70,7 @@ Network blips and temporary server outages happen.
 ## Configuration (`config.yaml`)
 
 ### Minimal Configuration
-The only mandatory field is the target `url`. By default, it will push all events (`*`) with 3 retries.
+The only mandatory field is the target `url`. By default, it will push all events (`*`) with up to 3 delivery attempts.
 
 ```yaml
 sink:
@@ -99,7 +99,7 @@ sink:
     type: 'webhook'
     url: 'https://audit-service.internal/ingest'
     max_retries: 10
-    retry_interval: 60.0  # Wait 60 seconds between retries
+    retry_interval: '1m'  # You can use seconds (60.0) or human-readable intervals
     ttl_enabled: true
     default_ttl: '24h'    # Expire most events after 1 day
     event_ttl:
@@ -119,6 +119,7 @@ When the sink sends data to your URL, it uses an HTTP **POST** request with a `a
 **Request Structure:**
 ```json
 {
+  "id": 42,
   "event_id": "evt_12345",
   "event_type": "user.auth.login",
   "entity_id": "user_99",
@@ -135,5 +136,5 @@ When the sink sends data to your URL, it uses an HTTP **POST** request with a `a
 
 ### Handling the Response
 - **Success**: Return any `2xx` status code (e.g., `200 OK`, `202 Accepted`) to confirm receipt. The sink will mark the event as delivered.
-- **Retry**: Return a `4xx` or `5xx` status code if your system is temporarily unable to process the event. The sink will attempt delivery again later based on your `max_retries` setting.
+- **Retry**: Any non-`2xx` response (including `3xx`, `4xx`, or `5xx`) is treated as a failed attempt and will be retried based on `max_retries` and `retry_interval`.
 - **Timeout**: The sink waits up to 10 seconds for a response. If your server takes longer, it will be treated as a failure and triggered for retry.

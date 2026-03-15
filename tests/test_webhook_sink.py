@@ -4,7 +4,7 @@ import httpx
 from unittest.mock import AsyncMock, patch
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from src.database import Base, Event, Source, HttpWebhookDelivery, Sink
 from src.sinks.webhook import WebhookSink
@@ -109,7 +109,8 @@ async def test_webhook_sink_retry(services, db_session_maker, sink_id):
 
     sink_config = {
         "url": "http://example.com/webhook",
-        "max_retries": 2
+        "max_retries": 2,
+        "retry_interval": 0,
     }
     sink = WebhookSink("test_sink", sink_config, services, sink_id)
 
@@ -140,6 +141,54 @@ async def test_webhook_sink_retry(services, db_session_maker, sink_id):
             delivery = session.scalar(select(HttpWebhookDelivery).where(HttpWebhookDelivery.event_id == event_db_id))
             assert delivery.tries == 2 # Remains 2
             assert delivery.delivered is False
+
+
+@pytest.mark.asyncio
+async def test_webhook_sink_respects_retry_interval(services, db_session_maker, sink_id):
+    with db_session_maker() as session:
+        source = Source(name="test_source", type="test")
+        session.add(source)
+        session.commit()
+
+        event = Event(
+            event_id="evt_retry_interval",
+            source_id=source.id,
+            event_type="test.event",
+            entity_id="entity_retry_interval",
+            data={}
+        )
+        session.add(event)
+        session.commit()
+        event_db_id = event.id
+
+    sink = WebhookSink(
+        "test_sink",
+        {
+            "url": "http://example.com/webhook",
+            "max_retries": 3,
+            "retry_interval": 60,
+        },
+        services,
+        sink_id,
+    )
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(500, content=b"Error")
+
+        await sink.process_pending_events()
+        await sink.process_pending_events()
+
+        assert mock_post.call_count == 1
+
+        with db_session_maker() as session:
+            delivery = session.scalar(select(HttpWebhookDelivery).where(HttpWebhookDelivery.event_id == event_db_id))
+            assert delivery.tries == 1
+
+            delivery.last_try = datetime.now(timezone.utc) - timedelta(seconds=61)
+            session.commit()
+
+        await sink.process_pending_events()
+        assert mock_post.call_count == 2
 
 @pytest.mark.asyncio
 async def test_webhook_sink_filtering(services, db_session_maker, sink_id):
