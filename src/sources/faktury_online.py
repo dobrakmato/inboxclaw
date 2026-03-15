@@ -128,6 +128,7 @@ class FakturyOnlineSource:
         # (Though we only fetch last N days, so 'deletion' might just be 'getting old')
         previous_codes_raw = self.services.kv.get(self.source_id, "active_codes") or []
         previous_codes = set(previous_codes_raw)
+        initialized = self.services.kv.get(self.source_id, "initialized")
 
         for inv in invoices:
             code = inv["code"]
@@ -140,15 +141,18 @@ class FakturyOnlineSource:
             cached_snapshot = self.services.kv.get(self.source_id, f"invoice:{code}")
             
             if not cached_snapshot:
-                # Created
-                logger.info(f"[{self.name}] New invoice detected: {code}")
-                self._write_event(NewEvent(
-                    event_id=f"faktury:{code}:created:{datetime.now(timezone.utc).timestamp()}",
-                    event_type="faktury.invoice.created",
-                    entity_id=code,
-                    data={"invoice": current_detail},
-                    occurred_at=datetime.now(timezone.utc)
-                ))
+                if initialized:
+                    # Created
+                    logger.info(f"[{self.name}] New invoice detected: {code}")
+                    self._write_event(NewEvent(
+                        event_id=f"faktury:{code}:created:{datetime.now(timezone.utc).timestamp()}",
+                        event_type="faktury.invoice.created",
+                        entity_id=code,
+                        data={"invoice": current_detail},
+                        occurred_at=datetime.now(timezone.utc)
+                    ))
+                else:
+                    logger.debug(f"[{self.name}] First poll, skipping creation event for {code}")
             else:
                 # Check for updates
                 diff = self._compute_diff(cached_snapshot, current_detail)
@@ -174,18 +178,21 @@ class FakturyOnlineSource:
         # But usually invoices aren't deleted that often.
         deleted_codes = previous_codes - current_codes
         for code in deleted_codes:
-            logger.info(f"[{self.name}] Invoice deleted (or missing): {code}")
-            last_known = self.services.kv.get(self.source_id, f"invoice:{code}")
-            self._write_event(NewEvent(
-                event_id=f"faktury:{code}:deleted:{datetime.now(timezone.utc).timestamp()}",
-                event_type="faktury.invoice.deleted",
-                entity_id=code,
-                data={"last_known_state": last_known},
-                occurred_at=datetime.now(timezone.utc)
-            ))
+            if initialized:
+                logger.info(f"[{self.name}] Invoice deleted (or missing): {code}")
+                last_known = self.services.kv.get(self.source_id, f"invoice:{code}")
+                self._write_event(NewEvent(
+                    event_id=f"faktury:{code}:deleted:{datetime.now(timezone.utc).timestamp()}",
+                    event_type="faktury.invoice.deleted",
+                    entity_id=code,
+                    data={"last_known_state": last_known},
+                    occurred_at=datetime.now(timezone.utc)
+                ))
             self.services.kv.delete(self.source_id, f"invoice:{code}")
 
         self.services.kv.set(self.source_id, "active_codes", list(current_codes))
+        if not initialized:
+            self.services.kv.set(self.source_id, "initialized", True)
 
     async def run(self):
         """Main loop for the source."""
