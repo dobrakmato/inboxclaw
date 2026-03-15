@@ -97,7 +97,8 @@ def delete_old_events(session_maker: sessionmaker, retention_days: int):
             stmt = delete(Event).where(Event.created_at < cutoff)
             result = session.execute(stmt)
             session.commit()
-            logger.info(f"Deleted {result.rowcount} old events (retention: {retention_days} days)")
+            if result.rowcount > 0:
+                logger.info(f"Deleted {result.rowcount} old events (retention: {retention_days} days)")
         except Exception as e:
             session.rollback()
             logger.error(f"Error deleting old events: {e}")
