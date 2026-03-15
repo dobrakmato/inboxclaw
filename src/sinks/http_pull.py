@@ -1,8 +1,7 @@
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union
 from fastapi import HTTPException, Query
-from sqlalchemy import select, and_, not_, or_, true
+from sqlalchemy import select, and_, not_
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from src.database import Event, HttpPullBatch, HttpPullBatchEvent
@@ -48,7 +47,11 @@ class HttpPullSink:
         @self.services.app.get(self.extract_path)
         async def extract(
             event_type: Optional[str] = Query(None, description="Filter by event type (supports * and .*)"),
-            batch_size: Optional[int] = Query(None, description="Limit the number of events to extract")
+            batch_size: Optional[int] = Query(
+                None,
+                ge=1,
+                description="Limit the number of events to extract (must be >= 1)"
+            )
         ):
             return self.handle_extract(event_type=event_type, batch_size=batch_size)
 

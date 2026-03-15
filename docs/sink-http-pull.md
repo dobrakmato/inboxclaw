@@ -137,7 +137,7 @@ Retrieves a batch of unprocessed events based on the sink's configuration.
 
 **Optional Parameters:**
 - `event_type`: Filter by a specific event type (e.g., `?event_type=sales.order.created`). Supports wildcards like `sales.*`.
-- `batch_size`: Limit the number of events returned in the batch (e.g., `?batch_size=50`).
+- `batch_size`: Limit the number of events returned in the batch (e.g., `?batch_size=50`). Must be a positive integer (`>= 1`).
 
 **Response Example:**
 ```json
@@ -153,7 +153,7 @@ Retrieves a batch of unprocessed events based on the sink's configuration.
   "remaining_events": 42
 }
 ```
-*Note: If `remaining_events` is greater than 0, it indicates more data is waiting. You should continue polling until this count reaches 0.*
+*Note: `remaining_events` is the total number of currently unprocessed matching events at extraction time (including events in the current response until you confirm the batch). If `remaining_events` is greater than 0, confirm the batch and continue polling until it reaches 0.*
 
 ### 2. Confirm Processing (Mark Processed)
 Confirms that a specific batch has been successfully handled.

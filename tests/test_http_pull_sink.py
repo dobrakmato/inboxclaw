@@ -146,6 +146,19 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     assert data["events"][2]["event_id"] == "bulk_6"
     assert data["events"][3]["event_id"] == "bulk_7"
 
+def test_extract_rejects_non_positive_batch_size(services, client, db_session_maker, sink_id):
+    HttpPullSink("my_pull", {"match": "*"}, services, sink_id)
+
+    with db_session_maker() as session:
+        session.add(Event(event_id="e1", source_id=1, event_type="type1", entity_id="ent1"))
+        session.commit()
+
+    response_zero = client.get("/my_pull/extract?batch_size=0")
+    assert response_zero.status_code == 422
+
+    response_negative = client.get("/my_pull/extract?batch_size=-1")
+    assert response_negative.status_code == 422
+
 def test_extract_respects_sink_match_patterns(services, client, db_session_maker, sink_id):
     # Sink only allowed to see 'mail.*'
     HttpPullSink("my_pull", {"match": "mail.*"}, services, sink_id)
