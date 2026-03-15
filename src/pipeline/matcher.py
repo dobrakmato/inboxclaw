@@ -89,16 +89,52 @@ class EventMatcher:
         now = datetime.now(timezone.utc)
         ttl_clauses = []
 
-        specific_patterns_used = []
+        exact_rules = []
+        prefix_rules = []
+        wildcard_rules = []
         for pattern, ttl in event_ttl.items():
+            if pattern == "*":
+                wildcard_rules.append((pattern, ttl))
+            elif pattern.endswith(".*"):
+                prefix_rules.append((pattern, ttl))
+            else:
+                exact_rules.append((pattern, ttl))
+
+        matched_exact_clauses = []
+        for pattern, ttl in exact_rules:
             pattern_clause = EventMatcher._pattern_to_clause(pattern)
             ttl_clauses.append(and_(pattern_clause, Event.created_at > now - timedelta(seconds=ttl)))
-            specific_patterns_used.append(pattern)
+            matched_exact_clauses.append(pattern_clause)
 
-        # Default TTL applies to anything NOT matching specific patterns
-        if specific_patterns_used:
-            not_specific_clause = not_(or_(*[EventMatcher._pattern_to_clause(p) for p in specific_patterns_used]))
-            ttl_clauses.append(and_(not_specific_clause, Event.created_at > now - timedelta(seconds=default_ttl)))
+        matched_prefix_clauses = []
+        for pattern, ttl in sorted(prefix_rules, key=lambda item: len(item[0]), reverse=True):
+            pattern_clause = EventMatcher._pattern_to_clause(pattern)
+            exclusions = []
+            if matched_exact_clauses:
+                exclusions.append(or_(*matched_exact_clauses))
+            if matched_prefix_clauses:
+                exclusions.append(or_(*matched_prefix_clauses))
+
+            if exclusions:
+                pattern_clause = and_(pattern_clause, not_(or_(*exclusions)))
+
+            ttl_clauses.append(and_(pattern_clause, Event.created_at > now - timedelta(seconds=ttl)))
+            matched_prefix_clauses.append(EventMatcher._pattern_to_clause(pattern))
+
+        matched_specific_clauses = matched_exact_clauses + matched_prefix_clauses
+        if wildcard_rules:
+            wildcard_ttl = wildcard_rules[0][1]
+            wildcard_clause = true()
+            if matched_specific_clauses:
+                wildcard_clause = not_(or_(*matched_specific_clauses))
+            ttl_clauses.append(and_(wildcard_clause, Event.created_at > now - timedelta(seconds=wildcard_ttl)))
+        elif matched_specific_clauses:
+            ttl_clauses.append(
+                and_(
+                    not_(or_(*matched_specific_clauses)),
+                    Event.created_at > now - timedelta(seconds=default_ttl),
+                )
+            )
         else:
             ttl_clauses.append(Event.created_at > now - timedelta(seconds=default_ttl))
 

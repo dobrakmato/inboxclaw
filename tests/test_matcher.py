@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, select, true, false, and_, or_
 from sqlalchemy.orm import sessionmaker
 from src.database import Base, Event
@@ -109,3 +110,53 @@ def test_matcher_complex_interaction():
         stmt = select(Event).where(m.build_sqlalchemy_clause("system.boot"))
         results = session.scalars(stmt).all()
         assert len(results) == 0
+
+
+def test_ttl_clause_prefers_exact_match_over_prefix_match():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    with Session() as session:
+        from src.database import Source
+
+        session.add(Source(id=1, name="test", type="test"))
+        now = datetime.now(timezone.utc)
+        session.add_all([
+            Event(
+                event_id="1",
+                source_id=1,
+                event_type="inventory.update",
+                entity_id="i1",
+                created_at=now - timedelta(minutes=10),
+            ),
+            Event(
+                event_id="2",
+                source_id=1,
+                event_type="inventory.create",
+                entity_id="i2",
+                created_at=now - timedelta(minutes=10),
+            ),
+            Event(
+                event_id="3",
+                source_id=1,
+                event_type="other.event",
+                entity_id="i3",
+                created_at=now - timedelta(minutes=10),
+            ),
+        ])
+        session.commit()
+
+        ttl_clause = EventMatcher.build_ttl_clause(
+            ttl_enabled=True,
+            default_ttl=3600,
+            event_ttl={
+                "inventory.*": 900,
+                "inventory.update": 60,
+            },
+        )
+
+        results = session.scalars(select(Event).where(ttl_clause)).all()
+        event_ids = {event.event_id for event in results}
+
+        assert event_ids == {"2", "3"}

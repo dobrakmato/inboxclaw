@@ -35,7 +35,7 @@
 - [x] [Google Calendar](docs/source-google-calendar.md)
 - [x] [Faktury Online](docs/source-faktury-online.md)
 - [x] [Home Assistant](docs/source-home-assistant.md)
-- [ ] Fio Banka
+- [x] [Fio Banka](docs/source-fio-banka.md)
 - [ ] Asana
 - [ ] Stats.fm
 - [ ] Steam
