@@ -83,13 +83,20 @@ class MockSourceConfig(BaseSourceConfig):
     type: Literal["mock"] = "mock"
     interval: Interval = "10s"
 
+class HomeAssistantSourceConfig(BaseSourceConfig):
+    type: Literal["home_assistant"] = "home_assistant"
+    url: str
+    access_token: str = Field(default_factory=lambda: os.environ.get("HOME_ASSISTANT_TOKEN", ""))
+    entity_ids: List[str]
+
 SourceConfig = Annotated[
     Union[
         GmailSourceConfig,
         GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig,
         FakturyOnlineSourceConfig,
-        MockSourceConfig
+        MockSourceConfig,
+        HomeAssistantSourceConfig
     ],
     Field(discriminator="type")
 ]

@@ -7,6 +7,7 @@ from src.sources.google_drive import GoogleDriveSource
 from src.sources.google_calendar import GoogleCalendarSource
 from src.sources.faktury_online import FakturyOnlineSource
 from src.sources.mock import MockSource
+from src.sources.home_assistant import HomeAssistantSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
@@ -55,6 +56,11 @@ def init_sources(services: AppServices):
                 source_instance = MockSource(name, s_config, services, source_id)
                 services.sources[name] = source_instance
                 services.add_task(source_instance.start())
+            elif s_type == "home_assistant":
+                logger.info(f"Initializing Home Assistant source: {name} (id={source_id})")
+                source_instance = HomeAssistantSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
             else:
                 logger.warning(f"Unknown source type {s_type} for {name}")
 
