@@ -79,6 +79,13 @@ class FakturyOnlineSourceConfig(BaseSourceConfig):
     poll_interval: Interval = "6h"
     max_days_back: int = 30
 
+class FioSourceConfig(BaseSourceConfig):
+    type: Literal["fio"] = "fio"
+    token: str = Field(default_factory=lambda: os.environ.get("FIO_TOKEN", ""))
+    poll_interval: Interval = "30m"
+    max_days_back: int = 15
+    look_ahead_days: int = 5
+
 class MockSourceConfig(BaseSourceConfig):
     type: Literal["mock"] = "mock"
     interval: Interval = "10s"
@@ -95,6 +102,7 @@ SourceConfig = Annotated[
         GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig,
         FakturyOnlineSourceConfig,
+        FioSourceConfig,
         MockSourceConfig,
         HomeAssistantSourceConfig
     ],
@@ -118,6 +126,9 @@ class HttpPullSinkConfig(BaseSinkConfig):
     type: Literal["http_pull"] = "http_pull"
     path: Dict[str, str] = Field(default_factory=lambda: {"extract": "extract", "mark_processed": "mark-processed"})
     coalesce: Optional[List[str]] = None
+    ttl_enabled: bool = True
+    default_ttl: Interval = "1h"
+    event_ttl: Dict[str, Interval] = Field(default_factory=dict)
 
 class SSESinkConfig(BaseSinkConfig):
     type: Literal["sse"] = "sse"
