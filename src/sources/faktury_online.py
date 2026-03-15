@@ -4,9 +4,9 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, Dict, List
 import httpx
-from pydantic import BaseModel
 
 from src.config import FakturyOnlineSourceConfig
+from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.diff import DictDiff
 
@@ -113,6 +113,10 @@ class FakturyOnlineSource:
         """Compute what changed between two snapshots."""
         return DictDiff.compute(old, new, exclude={"status"})
 
+    def _write_event(self, event: NewEvent) -> None:
+        """Persist a single event using the batch writer API."""
+        self.services.writer.write_events(self.source_id, [event])
+
     async def poll(self):
         """Poll for changes and emit events."""
         logger.info(f"[{self.name}] Polling for invoices...")
@@ -138,20 +142,19 @@ class FakturyOnlineSource:
             if not cached_snapshot:
                 # Created
                 logger.info(f"[{self.name}] New invoice detected: {code}")
-                await self.services.writer.write_event(
+                self._write_event(NewEvent(
                     event_id=f"faktury:{code}:created:{datetime.now(timezone.utc).timestamp()}",
                     event_type="faktury.invoice.created",
                     entity_id=code,
                     data={"invoice": current_detail},
-                    source_id=self.source_id,
                     occurred_at=datetime.now(timezone.utc)
-                )
+                ))
             else:
                 # Check for updates
                 diff = self._compute_diff(cached_snapshot, current_detail)
                 if diff:
                     logger.info(f"[{self.name}] Invoice updated: {code}")
-                    await self.services.writer.write_event(
+                    self._write_event(NewEvent(
                         event_id=f"faktury:{code}:updated:{datetime.now(timezone.utc).timestamp()}",
                         event_type="faktury.invoice.updated",
                         entity_id=code,
@@ -159,9 +162,8 @@ class FakturyOnlineSource:
                             "changes": diff,
                             "snapshot": current_detail
                         },
-                        source_id=self.source_id,
                         occurred_at=datetime.now(timezone.utc)
-                    )
+                    ))
             
             # Update cache
             self.services.kv.set(self.source_id, f"invoice:{code}", current_detail)
@@ -174,14 +176,13 @@ class FakturyOnlineSource:
         for code in deleted_codes:
             logger.info(f"[{self.name}] Invoice deleted (or missing): {code}")
             last_known = self.services.kv.get(self.source_id, f"invoice:{code}")
-            await self.services.writer.write_event(
+            self._write_event(NewEvent(
                 event_id=f"faktury:{code}:deleted:{datetime.now(timezone.utc).timestamp()}",
                 event_type="faktury.invoice.deleted",
                 entity_id=code,
                 data={"last_known_state": last_known},
-                source_id=self.source_id,
                 occurred_at=datetime.now(timezone.utc)
-            )
+            ))
             self.services.kv.delete(self.source_id, f"invoice:{code}")
 
         self.services.kv.set(self.source_id, "active_codes", list(current_codes))

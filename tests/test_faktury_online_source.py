@@ -1,16 +1,16 @@
+import asyncio
 import pytest
-import json
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
 from src.sources.faktury_online import FakturyOnlineSource
 from src.config import FakturyOnlineSourceConfig
+from src.schemas import NewEvent
 
 @pytest.fixture
 def mock_services():
     services = MagicMock()
     services.kv = MagicMock()
     services.writer = MagicMock()
-    services.writer.write_event = AsyncMock()
+    services.writer.write_events = MagicMock()
     return services
 
 @pytest.fixture
@@ -40,11 +40,14 @@ async def test_faktury_online_created(mock_services, config):
                 await source.poll()
                 
                 # Check if event was written
-                mock_services.writer.write_event.assert_called()
-                args, kwargs = mock_services.writer.write_event.call_args
-                assert kwargs["event_type"] == "faktury.invoice.created"
-                assert kwargs["entity_id"] == "code1"
-                assert kwargs["data"]["invoice"] == detail
+                mock_services.writer.write_events.assert_called_once()
+                source_id, events = mock_services.writer.write_events.call_args.args
+                assert source_id == 1
+                assert len(events) == 1
+                assert isinstance(events[0], NewEvent)
+                assert events[0].event_type == "faktury.invoice.created"
+                assert events[0].entity_id == "code1"
+                assert events[0].data["invoice"] == detail
                 
                 # Check cache set
                 mock_services.kv.set.assert_any_call(1, "invoice:code1", detail)
@@ -74,12 +77,13 @@ async def test_faktury_online_updated(mock_services, config):
                 await source.poll()
                 
                 # Check if updated event was written
-                mock_services.writer.write_event.assert_called()
-                args, kwargs = mock_services.writer.write_event.call_args
-                assert kwargs["event_type"] == "faktury.invoice.updated"
-                assert "changes" in kwargs["data"]
-                assert kwargs["data"]["changes"]["invoice_paid"]["before"] == "nie"
-                assert kwargs["data"]["changes"]["invoice_paid"]["after"] == "ano"
+                mock_services.writer.write_events.assert_called_once()
+                _, events = mock_services.writer.write_events.call_args.args
+                event = events[0]
+                assert event.event_type == "faktury.invoice.updated"
+                assert "changes" in event.data
+                assert event.data["changes"]["invoice_paid"]["before"] == "nie"
+                assert event.data["changes"]["invoice_paid"]["after"] == "ano"
 
 @pytest.mark.asyncio
 async def test_faktury_online_deleted(mock_services, config):
@@ -100,10 +104,48 @@ async def test_faktury_online_deleted(mock_services, config):
             await source.poll()
             
             # Check if deleted event was written
-            mock_services.writer.write_event.assert_called()
-            args, kwargs = mock_services.writer.write_event.call_args
-            assert kwargs["event_type"] == "faktury.invoice.deleted"
-            assert kwargs["entity_id"] == "code1"
+            mock_services.writer.write_events.assert_called_once()
+            _, events = mock_services.writer.write_events.call_args.args
+            event = events[0]
+            assert event.event_type == "faktury.invoice.deleted"
+            assert event.entity_id == "code1"
             
             # Check cache delete
             mock_services.kv.delete.assert_any_call(1, "invoice:code1")
+
+
+@pytest.mark.asyncio
+async def test_run_accepts_string_poll_interval(mock_services):
+    config = FakturyOnlineSourceConfig(
+        type="faktury_online",
+        api_key="test_key",
+        email="test@example.com",
+        poll_interval="10s",
+    )
+    source = FakturyOnlineSource("test_faktury", config, mock_services, 1)
+
+    with patch.object(source, "poll", new=AsyncMock()) as poll_mock:
+        with patch("src.sources.faktury_online.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)) as sleep_mock:
+            with pytest.raises(asyncio.CancelledError):
+                await source.run()
+
+    poll_mock.assert_awaited_once()
+    sleep_mock.assert_awaited_once_with(10.0)
+
+
+@pytest.mark.asyncio
+async def test_run_accepts_default_poll_interval(mock_services):
+    config = FakturyOnlineSourceConfig(
+        type="faktury_online",
+        api_key="test_key",
+        email="test@example.com",
+    )
+    source = FakturyOnlineSource("test_faktury", config, mock_services, 1)
+
+    with patch.object(source, "poll", new=AsyncMock()) as poll_mock:
+        with patch("src.sources.faktury_online.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)) as sleep_mock:
+            with pytest.raises(asyncio.CancelledError):
+                await source.run()
+
+    poll_mock.assert_awaited_once()
+    sleep_mock.assert_awaited_once_with(21600.0)

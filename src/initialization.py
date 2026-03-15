@@ -10,6 +10,7 @@ from src.sources.mock import MockSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
+from src.sinks.win11toast import Win11ToastSink
 
 logger = logging.getLogger("ingest-pipeline")
 
@@ -74,5 +75,10 @@ def init_sinks(services: AppServices):
         elif snk_type == "http_pull":
             logger.info(f"Initializing HTTP Pull sink: {name}")
             services.sinks[name] = HttpPullSink(name, snk_config, services)
+        elif snk_type == "win11toast":
+            logger.info(f"Initializing Win11 toast sink: {name}")
+            sink = Win11ToastSink(name, snk_config, services)
+            services.sinks[name] = sink
+            services.add_task(sink.start())
         else:
             logger.warning(f"Sink type {snk_type} for {name} not implemented yet.")

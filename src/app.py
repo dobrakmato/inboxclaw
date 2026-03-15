@@ -1,6 +1,7 @@
 import logging
 import contextlib
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.config import load_config
 from src.services import AppServices
 from src.database import init_db
@@ -42,6 +43,14 @@ async def lifespan(app: FastAPI):
     await services.stop_tasks()
 
 app = FastAPI(title="Ingest Pipeline", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():

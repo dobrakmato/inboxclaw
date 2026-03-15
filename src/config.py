@@ -35,7 +35,7 @@ class DatabaseConfig(BaseModel):
 
 class BaseSourceConfig(BaseModel):
     type: str
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_default=True)
 
 class GoogleSourceConfig(BaseSourceConfig):
     token_file: str
@@ -47,6 +47,25 @@ class GmailSourceConfig(GoogleSourceConfig):
 
 class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"
+    bootstrap_mode: Literal["baseline_only", "full_snapshot"] = "baseline_only"
+    track_shared_drives: bool = False
+    restrict_to_my_drive: bool = False
+    include_removed: bool = True
+    include_corpus_removals: bool = False
+    update_quiet_window: Interval = "60s"
+    update_max_session: Interval = "10m"
+    emit_file_removed: bool = True
+    emit_file_deleted_only_when_confirmed: bool = True
+    emit_permission_changed: bool = True
+    eligible_mime_types_for_content_diff: List[str] = Field(
+        default_factory=lambda: [
+            "application/vnd.google-apps.document",
+            "text/plain",
+            "text/markdown",
+            "text/html",
+        ]
+    )
+    max_diffable_file_bytes: int = 10 * 1024 * 1024  # 10MB
 
 class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"
@@ -84,7 +103,7 @@ SourceConfig = Annotated[
 class BaseSinkConfig(BaseModel):
     type: str
     match: Union[str, List[str]] = "*"
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_default=True)
 
 class WebhookSinkConfig(BaseSinkConfig):
     type: Literal["webhook"] = "webhook"
@@ -103,11 +122,16 @@ class SSESinkConfig(BaseSinkConfig):
     heartbeat_timeout: Interval = 30.0
     coalesce: Optional[List[str]] = None
 
+class Win11ToastSinkConfig(BaseSinkConfig):
+    type: Literal["win11toast"] = "win11toast"
+    max_body_length: int = 220
+
 SinkConfig = Annotated[
     Union[
         WebhookSinkConfig,
         HttpPullSinkConfig,
-        SSESinkConfig
+        SSESinkConfig,
+        Win11ToastSinkConfig,
     ],
     Field(discriminator="type")
 ]

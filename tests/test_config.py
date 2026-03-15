@@ -58,6 +58,11 @@ def test_load_config_with_intervals(tmp_path):
                 "type": "sse",
                 "match": "*",
                 "heartbeat_timeout": "45s"
+            },
+            "toast_sink": {
+                "type": "win11toast",
+                "match": ["google.*"],
+                "max_body_length": 180
             }
         }
     }
@@ -69,6 +74,7 @@ def test_load_config_with_intervals(tmp_path):
     assert config.sources["mocker"].interval == 5.0
     assert config.sink["webhook_sink"].retry_interval == 60.0
     assert config.sink["sse_sink"].heartbeat_timeout == 45.0
+    assert config.sink["toast_sink"].max_body_length == 180
 
 def test_load_config_defaults(tmp_path):
     config_file = tmp_path / "config.yaml"
