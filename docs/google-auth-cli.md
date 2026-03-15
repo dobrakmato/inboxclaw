@@ -34,13 +34,15 @@ The tool will print a long URL.
 
 Use these short names with the `--scopes` parameter to grant specific permissions:
 
-| Alias      | Permission Granted                    | Use Case                                        |
-|:-----------|:--------------------------------------|:------------------------------------------------|
-| `gmail`    | Read-only access to emails            | Fetching recent emails from your inbox.         |
-| `calendar` | Read-only access to calendar events   | Monitoring your schedule for new events.        |
-| `drive`    | Read-only access to file metadata     | Tracking changes to files in your Google Drive. |
-| `docs`     | Read-only access to document metadata | Monitoring modifications to Google Docs.        |
-| `contacts` | Read-only access to contacts          | Accessing your contact list information.        |
+| Alias            | Permission Granted                   | Use Case                                                               |
+|:-----------------|:-------------------------------------|:-----------------------------------------------------------------------|
+| `gmail`          | Read-only access to emails           | Fetching recent emails from your inbox.                                |
+| `calendar`       | Read-only access to calendar events  | Monitoring your schedule for new events.                               |
+| `drive`          | Read-only access to files            | Tracking changes **and** fetching file content for detailed text diffs. |
+| `drive_metadata` | Read-only access to file metadata    | Tracking metadata changes only (name, move, etc.) without content.     |
+| `docs`           | Read-only access to files            | Monitoring modifications to Google Docs, including content changes.    |
+| `contacts`       | Read-only access to contacts         | Accessing your contact list information.                               |
+| `all`            | Multiple permissions                 | Conveniently grants `gmail`, `drive`, `calendar`, and `contacts`.      |
 
 > **Note**: You can combine multiple aliases using commas (e.g., `--scopes "gmail,calendar"`).
 

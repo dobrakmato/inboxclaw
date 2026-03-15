@@ -67,7 +67,7 @@ async def test_removed_change_emits_removed_event_name(services):
         "fileId": "f1",
         "lastKnownName": None,
         "lastKnownMimeType": None,
-        "lastKnownParentIds": None,
+        "lastKnownParentIds": [],
     }
 
 
@@ -87,6 +87,9 @@ async def test_created_event_contains_delta_fields_only(services):
             "version": "1",
             "trashed": False,
             "ownedByMe": True,
+            "description": "My Roadmap",
+            "contentHints": {"indexableText": "This is a roadmap"},
+            "lastModifyingUser": {"displayName": "Bob"},
         }
     )
 
@@ -105,5 +108,74 @@ async def test_created_event_contains_delta_fields_only(services):
         "mimeType": "application/vnd.google-apps.document",
         "parentIds": ["folder-1"],
         "createdTime": "2026-03-14T11:00:00Z",
+        "modificationDate": "2026-03-14T11:00:00Z",
+        "description": "My Roadmap",
+        "indexableText": "This is a roadmap",
+        "lastModifyingUser": {"displayName": "Bob"},
     }
     assert "file" not in event.data
+
+
+@pytest.mark.asyncio
+async def test_initial_fetch_calls_bootstrap(services):
+    config = make_config(bootstrap_mode="baseline_only")
+    source = GoogleDriveSource("drive", config, services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._bootstrap_repository = MagicMock()
+    source._flush_debounced_updates = MagicMock(return_value=[])
+
+    services.cursor.get_last_cursor.return_value = None
+    service.changes().getStartPageToken().execute.return_value = {"startPageToken": "start-token"}
+
+    await source.fetch_and_publish()
+
+    source._bootstrap_repository.assert_called_once_with(service)
+    services.cursor.set_cursor.assert_called_once_with(1, "start-token")
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_repository_populates_kv(services):
+    config = make_config(bootstrap_mode="baseline_only")
+    source = GoogleDriveSource("drive", config, services, source_id=1)
+    service = MagicMock()
+
+    service.files().list().execute.side_effect = [
+        {
+            "files": [
+                {
+                    "id": "f1",
+                    "name": "File 1",
+                    "mimeType": "text/plain",
+                    "version": "1",
+                },
+                {
+                    "id": "f2",
+                    "name": "File 2",
+                    "mimeType": "application/pdf",
+                    "version": "5",
+                },
+            ],
+            "nextPageToken": None,
+        }
+    ]
+
+    source._bootstrap_repository(service)
+
+    assert services.kv.set.call_count == 2
+    # Check if correct keys and snapshots were set
+    call_args_list = services.kv.set.call_args_list
+    
+    # f1
+    assert call_args_list[0][0][0] == 1  # source_id
+    assert "gdrive:file:f1" in call_args_list[0][0][1] # key
+    snapshot1 = call_args_list[0][0][2]
+    assert snapshot1["file_id"] == "f1"
+    assert snapshot1["name"] == "File 1"
+
+    # f2
+    assert call_args_list[1][0][0] == 1
+    assert "gdrive:file:f2" in call_args_list[1][0][1]
+    snapshot2 = call_args_list[1][0][2]
+    assert snapshot2["file_id"] == "f2"
+    assert snapshot2["name"] == "File 2"

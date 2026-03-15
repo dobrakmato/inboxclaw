@@ -40,6 +40,26 @@ This source uses a two-layer runtime model:
 
 Google Docs and similar files can generate many small updates during active editing. Without debounce, one editing session can create noisy event bursts. Debounce collapses these into cleaner, more useful update events.
 
+### Initial Synchronization (Bootstrapping)
+
+When you first connect a Google Drive source, it needs to know about your existing files so it doesn't report them all as "newly created" the first time they change.
+
+The `bootstrap_mode` setting controls this behavior:
+- **`baseline_only` (Recommended)**: The source performs a quick crawl of your Drive to record the current state of all files. No events are emitted during this phase. Future changes will be compared against this baseline.
+- **`full_snapshot`**: Similar to `baseline_only`, but also fetches and caches the text content of documents. This allows the very first update event after bootstrapping to include a text diff. This process is slower and uses more API quota.
+- **`off`**: No initial crawl. The source will only start tracking changes from the moment it is first run. **Note**: This will cause all existing files to emit a `file_created` event the first time they are modified after the source starts.
+
+### Authentication and Scopes
+
+To fetch the content of files (required for `snippetBefore` and `snippetAfter` in events), the source requires the `https://www.googleapis.com/auth/drive.readonly` scope. 
+
+When using the CLI to authorize, ensure you use the `drive` alias (which now points to the full readonly scope) rather than `drive_metadata`:
+```bash
+python main.py google auth --credentials-file data/credentials.json --scopes "drive,gmail,calendar" --token "data/google_token.json"
+```
+
+If you only want to track metadata changes (names, moves) and don't need text diffs, you can use `drive_metadata` scope and disable content fetching in `config.yaml` by setting `eligible_mime_types_for_content_diff: []`.
+
 ## Configuration
 
 ### Minimal Configuration
@@ -60,16 +80,12 @@ sources:
     type: "google_drive"
     token_file: "data/google_token.json"
     poll_interval: "30s"
-    bootstrap_mode: "baseline_only" # baseline_only | full_snapshot
-    track_shared_drives: false
+    bootstrap_mode: "baseline_only"
     restrict_to_my_drive: false
     include_removed: true
     include_corpus_removals: false
     update_quiet_window: "60s"
     update_max_session: "10m"
-    emit_file_removed: true
-    emit_file_deleted_only_when_confirmed: true # reserved for Drive Activity enrichment phase
-    emit_permission_changed: true # reserved for Drive Activity/permission-diff enrichment phase
 ```
 
 ### Configuration options explained
@@ -78,18 +94,14 @@ sources:
 |:----------------------------------------|:--------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------|
 | `token_file`                            | Path to OAuth token JSON used to call Google APIs.                  | Use a separate token file per environment (dev/stage/prod) to avoid credential mixups.                      |
 | `poll_interval`                         | How often this source checks Google Drive for new changes.          | Supports human-readable values like `"30s"`, `"2m"`, `"10m"`. Shorter = fresher events, higher API usage.   |
-| `bootstrap_mode`                        | Initial startup strategy.                                           | `baseline_only` starts from now (future-only). `full_snapshot` is for initial inventory/backfill workflows. |
-| `track_shared_drives`                   | Whether shared-drive tracking behavior is enabled.                  | Keep `false` if your use case is only personal My Drive content.                                            |
 | `restrict_to_my_drive`                  | Corpus scope preference.                                            | `true` keeps scope focused on My Drive. `false` allows wider visibility where available.                    |
 | `include_removed`                       | Includes removal entries from Drive changes feed.                   | Usually keep enabled for auditability and troubleshooting.                                                  |
 | `include_corpus_removals`               | Requests corpus-removal details when available.                     | Enable when you need more visibility into “removed from corpus” cases.                                      |
+| `bootstrap_mode`                         | How to handle initial synchronization when first starting.          | `baseline_only` (default): fast, avoids "created" noise. `full_snapshot`: also caches text content. `off`: start fresh from now. |
 | `update_quiet_window`                   | Quiet period before emitting debounced `google.drive.file_updated`. | If new edits arrive before this window ends, flush is delayed to avoid noisy update bursts.                 |
 | `update_max_session`                    | Maximum wait time before forcing an update flush.                   | Prevents heavily edited files from staying pending forever.                                                 |
 | `eligible_mime_types_for_content_diff`  | List of MIME types eligible for paragraph-level text diffing.       | Defaults to Google Docs and standard `text/*` files.                                                        |
 | `max_diffable_file_bytes`               | Size limit for content fetching and diffing.                        | Prevents memory issues with giant text files. Default is usually 5-10MB.                                    |
-| `emit_file_removed`                     | Enables/disables `google.drive.file_removed` emission.              | Recommended `true` for observability of raw removal signals.                                                |
-| `emit_file_deleted_only_when_confirmed` | Conservative deletion policy switch.                                | Keep `true` if you do not want to treat every removal as a confirmed delete.                                |
-| `emit_permission_changed`               | Reserved for future enrichment-based permission events.             | Polling v1 does not emit `google.drive.file_permission_changed`; keep this as a forward-compatible toggle.  |
 
 ## How to choose configuration values (real-life examples)
 
@@ -118,7 +130,6 @@ Why: fewer polling cycles reduce operational load and API usage.
   - `poll_interval: "30s"`
   - `include_removed: true`
   - `include_corpus_removals: true`
-  - `emit_file_removed: true`
   - `update_quiet_window: "45s"`
   - `update_max_session: "10m"`
 
@@ -127,7 +138,6 @@ Why: this keeps removal visibility while still collapsing noisy edit bursts into
 ### Example D: Personal-drive-only ingestion
 - Goal: avoid shared-drive complexity.
 - Suggested values:
-  - `track_shared_drives: false`
   - `restrict_to_my_drive: true`
 
 Why: narrows scope and makes behavior easier to reason about in single-user setups.
@@ -159,7 +169,12 @@ Why: narrows scope and makes behavior easier to reason about in single-user setu
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
     "parentIds": ["0AExampleFolder"],
-    "createdTime": "2026-03-15T00:40:10Z"
+    "createdTime": "2026-03-15T00:40:10Z",
+    "description": "Quarterly roadmap",
+    "lastModifyingUser": {
+      "displayName": "Alice",
+      "emailAddress": "alice@example.com"
+    }
   }
 }
 ```
@@ -176,11 +191,16 @@ Why: narrows scope and makes behavior easier to reason about in single-user setu
     "fileId": "1AbCd",
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
+    "parentIds": ["0AExampleFolder"],
     "previousVersion": "21",
     "currentVersion": "27",
     "sessionStartedAt": "2026-03-15T00:46:12Z",
     "lastChangeSeenAt": "2026-03-15T00:47:56Z",
     "rawChangeCount": 4,
+    "lastModifyingUser": {
+      "displayName": "Alice",
+      "emailAddress": "alice@example.com"
+    },
     "snippetBefore": "Old paragraph content...",
     "snippetAfter": "New paragraph content...",
     "changedBlockCount": 1,
@@ -219,8 +239,13 @@ Why: narrows scope and makes behavior easier to reason about in single-user setu
     "fileId": "1AbCd",
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
+    "parentIds": ["0ANewFolder"],
     "parentIdsBefore": ["0AExampleFolder"],
-    "parentIdsAfter": ["0ANewFolder"]
+    "parentIdsAfter": ["0ANewFolder"],
+    "lastModifyingUser": {
+      "displayName": "Alice",
+      "emailAddress": "alice@example.com"
+    }
   }
 }
 ```
@@ -259,4 +284,4 @@ The `data` object contains event-specific deltas, not the full Drive `file` obje
 - `file_updated`: adds `previousVersion`, `currentVersion`, `sessionStartedAt`, `lastChangeSeenAt`, `rawChangeCount`.
   - For text files, also includes: `snippetBefore`, `snippetAfter`, `changedBlockCount`, `addedCharCount`, `removedCharCount`.
 
-> `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in polling v1. They should be added only after Drive Activity or permission-snapshot enrichment is implemented.
+> `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in polling v1.

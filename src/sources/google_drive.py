@@ -96,6 +96,7 @@ class GoogleDriveSource:
             "fileId": file_id,
             "name": snapshot.name if snapshot else None,
             "mimeType": snapshot.mime_type if snapshot else None,
+            "parentIds": snapshot.parents if snapshot else [],
         }
 
     def _build_event_data(
@@ -106,30 +107,41 @@ class GoogleDriveSource:
         previous: Optional[DriveFileSnapshot],
         current: Optional[DriveFileSnapshot],
     ) -> dict[str, Any]:
+        common = self._common_fields(file_id, current or previous)
+        
+        if current:
+            if current.modified_time:
+                common["modificationDate"] = current.modified_time
+            if current.description:
+                common["description"] = current.description
+            if current.indexable_text:
+                common["indexableText"] = current.indexable_text
+            if current.last_modifying_user:
+                common["lastModifyingUser"] = current.last_modifying_user
+
         if event_type == GoogleDriveEventType.FILE_CREATED and current is not None:
             return {
-                **self._common_fields(file_id, current),
-                "parentIds": current.parents,
+                **common,
                 "createdTime": current.created_time,
             }
 
         if event_type == GoogleDriveEventType.FILE_MOVED and previous is not None and current is not None:
             return {
-                **self._common_fields(file_id, current),
+                **common,
                 "parentIdsBefore": previous.parents,
                 "parentIdsAfter": current.parents,
             }
 
         if event_type in {GoogleDriveEventType.FILE_TRASHED, GoogleDriveEventType.FILE_UNTRASHED} and previous is not None and current is not None:
             return {
-                **self._common_fields(file_id, current),
+                **common,
                 "trashedBefore": previous.trashed,
                 "trashedAfter": current.trashed,
             }
 
         if event_type == GoogleDriveEventType.FILE_SHARED_WITH_YOU and current is not None:
             return {
-                **self._common_fields(file_id, current),
+                **common,
                 "sharedWithMeTime": current.shared_with_me_time,
                 "sharingUser": current.sharing_user,
             }
@@ -139,13 +151,13 @@ class GoogleDriveSource:
                 "fileId": file_id,
                 "lastKnownName": previous.name if previous else None,
                 "lastKnownMimeType": previous.mime_type if previous else None,
-                "lastKnownParentIds": previous.parents if previous else None,
+                "lastKnownParentIds": previous.parents if previous else [],
             }
 
-        return self._common_fields(file_id, current or previous)
+        return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
-        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,sharedWithMeTime,sharingUser(displayName,emailAddress)"
+        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress)"
         try:
             return service.files().get(fileId=file_id, fields=fields, supportsAllDrives=True).execute()
         except HttpError as e:
@@ -214,8 +226,6 @@ class GoogleDriveSource:
             current,
             removed=removed,
         ):
-            if event_type == GoogleDriveEventType.FILE_REMOVED and not self.config.emit_file_removed:
-                continue
             event_data = self._build_event_data(
                 event_type=event_type,
                 file_id=file_id,
@@ -236,6 +246,14 @@ class GoogleDriveSource:
 
         if self.classifier.has_update_signal(previous, current):
             existing_state = self._get_debounce_state(file_id)
+            if not existing_state:
+                # Save snapshot before update session starts to detect parent changes
+                if previous:
+                    self.services.kv.set(self.source_id, f"gdrive:snapshot_before_update:{file_id}", previous.to_dict())
+                elif current:
+                     # This shouldn't happen with has_update_signal, but for safety
+                     pass
+
             dirty_state = self.debounce.mark_dirty(
                 existing_state,
                 now=now,
@@ -291,13 +309,31 @@ class GoogleDriveSource:
             current_snapshot = snapshot
             data = {
                 **self._common_fields(file_id, current_snapshot),
-                "previousVersion": state.start_version,
-                "currentVersion": state.latest_version or current_snapshot.version,
-                "sessionStartedAt": state.session_started_at,
-                "lastChangeSeenAt": state.last_change_seen_at,
                 "rawChangeCount": state.raw_change_count,
+                "modificationDate": current_snapshot.modified_time,
             }
-            
+
+            if state.raw_change_count > 1:
+                data["session"] = {
+                    "sessionStartedAt": state.session_started_at,
+                    "lastChangeSeenAt": state.last_change_seen_at,
+                }
+
+            if current_snapshot.description:
+                data["description"] = current_snapshot.description
+            if current_snapshot.indexable_text:
+                data["indexableText"] = current_snapshot.indexable_text
+            if current_snapshot.last_modifying_user:
+                data["lastModifyingUser"] = current_snapshot.last_modifying_user
+
+            # Check for parent changes during the update session
+            previous_snapshot = self.services.kv.get(self.source_id, f"gdrive:snapshot_before_update:{file_id}")
+            if previous_snapshot and isinstance(previous_snapshot, dict):
+                prev_parents = sorted(previous_snapshot.get("parents", []) or [])
+                if prev_parents != current_snapshot.parents:
+                    data["parentIdsBefore"] = prev_parents
+                    data["parentIdsAfter"] = current_snapshot.parents
+
             # If it's a text file and we have snapshots, compute diff
             is_text = any(current_snapshot.mime_type.startswith(t.replace("*", "")) for t in self.config.eligible_mime_types_for_content_diff) or current_snapshot.mime_type in self.config.eligible_mime_types_for_content_diff
             if is_text and current_snapshot.content_snapshot:
@@ -305,7 +341,7 @@ class GoogleDriveSource:
                     state.start_content_snapshot,
                     current_snapshot.content_snapshot
                 )
-                data.update(diff)
+                data["change"] = diff
 
             events.append(
                 NewEvent(
@@ -317,7 +353,50 @@ class GoogleDriveSource:
                 )
             )
             self._clear_debounce_state(file_id)
+            self.services.kv.delete(self.source_id, f"gdrive:snapshot_before_update:{file_id}")
         return events
+
+    def _bootstrap_repository(self, service):
+        """Populates the local cache with the current state of files without emitting events."""
+        logger.info(f"Bootstrapping Google Drive source: {self.name} (mode: {self.config.bootstrap_mode})")
+        
+        query = "trashed = false"
+        if self.config.restrict_to_my_drive:
+            query += " and 'me' in owners"
+
+        next_page_token = None
+        count = 0
+        while True:
+            results = service.files().list(
+                q=query,
+                pageSize=100,
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners, trashed, sharedWithMeTime)",
+                pageToken=next_page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
+
+            for file_resource in results.get("files", []):
+                file_id = file_resource.get("id")
+                snapshot = DriveFileSnapshot.from_file_resource(file_resource)
+                
+                # In full_snapshot mode, we also fetch text content
+                if self.config.bootstrap_mode == "full_snapshot":
+                    is_text = snapshot.mime_type.startswith("text/") or "document" in snapshot.mime_type
+                    if is_text:
+                        content = self._fetch_text_content(service, file_id, snapshot.mime_type)
+                        if content is not None:
+                            snapshot.content_snapshot = content
+                            snapshot.content_hash = self.diff_calc.get_hash(content)
+
+                self._set_cached_snapshot(file_id, snapshot)
+                count += 1
+
+            next_page_token = results.get("nextPageToken")
+            if not next_page_token:
+                break
+        
+        logger.info(f"Finished bootstrapping {self.name}: cached {count} files")
 
     async def fetch_and_publish(self):
         try:
@@ -325,12 +404,15 @@ class GoogleDriveSource:
             page_token = self.services.cursor.get_last_cursor(self.source_id)
 
             if not page_token:
+                # First time initialization
+                if self.config.bootstrap_mode != "off":
+                    self._bootstrap_repository(service)
+
                 response = service.changes().getStartPageToken().execute()
                 page_token = response.get('startPageToken')
                 logger.info(f"Initialized Google Drive startPageToken: {page_token} for {self.name}")
                 self.services.cursor.set_cursor(self.source_id, page_token)
-                if self.config.bootstrap_mode == "baseline_only":
-                    return
+                return
 
             next_page_token = page_token
             new_start_page_token = None

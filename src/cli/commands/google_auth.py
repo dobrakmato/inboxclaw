@@ -11,10 +11,12 @@ from src.cli import cli
 # Human-friendly aliases for Google scopes.
 SCOPE_MAPPING: Dict[str, str] = {
     "gmail": "https://www.googleapis.com/auth/gmail.readonly",
-    "drive": "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "drive": "https://www.googleapis.com/auth/drive.readonly",
+    "drive_metadata": "https://www.googleapis.com/auth/drive.metadata.readonly",
     "calendar": "https://www.googleapis.com/auth/calendar.readonly",
-    "docs": "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "docs": "https://www.googleapis.com/auth/drive.readonly",
     "contacts": "https://www.googleapis.com/auth/contacts.readonly",
+    "all": "gmail,drive,calendar,contacts",
 }
 
 REDIRECT_URI = "http://127.0.0.1:8765/"
@@ -23,11 +25,24 @@ REDIRECT_URI = "http://127.0.0.1:8765/"
 def resolve_scopes(scopes_input: str) -> list[str]:
     scopes: list[str] = []
 
-    for raw in [s.strip() for s in scopes_input.split(",") if s.strip()]:
+    to_process = [s.strip() for s in scopes_input.split(",") if s.strip()]
+    seen_aliases = set()
+
+    while to_process:
+        raw = to_process.pop(0)
         alias = raw.lower()
 
+        if alias in seen_aliases:
+            continue
+        seen_aliases.add(alias)
+
         if alias in SCOPE_MAPPING:
-            scopes.append(SCOPE_MAPPING[alias])
+            mapped_value = SCOPE_MAPPING[alias]
+            if "," in mapped_value:
+                # Recursive alias like "all"
+                to_process.extend([s.strip() for s in mapped_value.split(",") if s.strip()])
+            else:
+                scopes.append(mapped_value)
             continue
 
         if raw.startswith("https://"):

@@ -30,11 +30,15 @@ class DriveFileSnapshot:
     owned_by_me: bool
     shared_with_me_time: Optional[str]
     sharing_user: Optional[dict[str, str]]
+    description: Optional[str] = None
+    indexable_text: Optional[str] = None
+    last_modifying_user: Optional[dict[str, str]] = None
     content_hash: Optional[str] = None
     content_snapshot: Optional[str] = None
 
     @classmethod
     def from_file_resource(cls, file_resource: dict[str, Any]) -> "DriveFileSnapshot":
+        content_hints = file_resource.get("contentHints", {})
         return cls(
             file_id=file_resource.get("id", ""),
             name=file_resource.get("name", ""),
@@ -47,6 +51,9 @@ class DriveFileSnapshot:
             owned_by_me=bool(file_resource.get("ownedByMe", False)),
             shared_with_me_time=file_resource.get("sharedWithMeTime"),
             sharing_user=file_resource.get("sharingUser"),
+            description=file_resource.get("description"),
+            indexable_text=content_hints.get("indexableText"),
+            last_modifying_user=file_resource.get("lastModifyingUser"),
         )
 
     @classmethod
@@ -63,6 +70,9 @@ class DriveFileSnapshot:
             owned_by_me=bool(data.get("owned_by_me", False)),
             shared_with_me_time=data.get("shared_with_me_time"),
             sharing_user=data.get("sharing_user"),
+            description=data.get("description"),
+            indexable_text=data.get("indexable_text"),
+            last_modifying_user=data.get("last_modifying_user"),
             content_hash=data.get("content_hash"),
             content_snapshot=data.get("content_snapshot"),
         )
@@ -80,6 +90,9 @@ class DriveFileSnapshot:
             "owned_by_me": self.owned_by_me,
             "shared_with_me_time": self.shared_with_me_time,
             "sharing_user": self.sharing_user,
+            "description": self.description,
+            "indexable_text": self.indexable_text,
+            "last_modifying_user": self.last_modifying_user,
             "content_hash": self.content_hash,
             "content_snapshot": self.content_snapshot,
         }
@@ -150,7 +163,12 @@ class DriveTransitionClassifier:
     def has_update_signal(self, previous: Optional[DriveFileSnapshot], current: Optional[DriveFileSnapshot]) -> bool:
         if previous is None or current is None:
             return False
-        return previous.version != current.version or previous.modified_time != current.modified_time
+        
+        # Don't emit updates for folders
+        if current.mime_type == "application/vnd.google-apps.folder":
+            return False
+            
+        return previous.modified_time != current.modified_time
 
     @staticmethod
     def _shared_with_you_changed(previous: DriveFileSnapshot, current: DriveFileSnapshot) -> bool:
@@ -245,9 +263,13 @@ class DriveTextDiffCalculator:
             
             # Collect first snippet
             if snippet_before is None and i1 < i2:
-                snippet_before = old_blocks[i1][:self.max_snippet_chars]
+                snippet_before = old_blocks[i1]
+                if len(snippet_before) > self.max_snippet_chars:
+                    snippet_before = snippet_before[:self.max_snippet_chars] + "... (truncated)"
             if snippet_after is None and j1 < j2:
-                snippet_after = new_blocks[j1][:self.max_snippet_chars]
+                snippet_after = new_blocks[j1]
+                if len(snippet_after) > self.max_snippet_chars:
+                    snippet_after = snippet_after[:self.max_snippet_chars] + "... (truncated)"
         
         return {
             "changedBlockCount": changed_block_count,

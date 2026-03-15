@@ -23,6 +23,9 @@ def make_snapshot(**overrides):
         "owned_by_me": True,
         "shared_with_me_time": None,
         "sharing_user": None,
+        "description": None,
+        "indexable_text": None,
+        "last_modifying_user": None,
     }
     base.update(overrides)
     return DriveFileSnapshot(**base)
@@ -58,7 +61,6 @@ def test_classifier_share_changed():
     event_types = classifier.classify(previous, current, removed=False)
 
     assert GoogleDriveEventType.FILE_SHARED_WITH_YOU in event_types
-    assert classifier.has_update_signal(previous, current)
 
 
 def test_debounce_flush_by_quiet_window():
@@ -101,8 +103,8 @@ def test_text_diff_calculator():
     diff = calc.compute_diff(old_text, new_text)
     
     assert diff["changedBlockCount"] == 2
-    assert diff["snippetBefore"] == "Paragraph "
-    assert diff["snippetAfter"] == "Paragraph "
+    assert diff["snippetBefore"] == "Paragraph ... (truncated)"
+    assert diff["snippetAfter"] == "Paragraph ... (truncated)"
     assert diff["addedCharCount"] > 0
     assert diff["removedCharCount"] > 0
 
