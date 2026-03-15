@@ -72,5 +72,5 @@ class Coalescer:
                     coalesced_events.append(dto)
                     source_ids_map[dto.id] = [ev.id]
 
-        result_events = [EventWithMeta.from_event(e) for e in others] + coalesced_events
+        result_events = coalesced_events + [EventWithMeta.from_event(e) for e in others]
         return result_events, source_ids_map

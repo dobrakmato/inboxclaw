@@ -1,7 +1,8 @@
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union
 from fastapi import HTTPException, Query
-from sqlalchemy import select, and_, not_, or_
+from sqlalchemy import select, and_, not_, or_, true
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from src.database import Event, HttpPullBatch, HttpPullBatchEvent
@@ -14,7 +15,7 @@ from src.config import HttpPullSinkConfig
 logger = logging.getLogger(__name__)
 
 class HttpPullSink:
-    def __init__(self, name: str, config: Union[HttpPullSinkConfig, Dict[str, Any]], services: AppServices):
+    def __init__(self, name: str, config: Union[HttpPullSinkConfig, Dict[str, Any]], services: AppServices, sink_id: int):
         if isinstance(config, dict):
             try:
                 config = HttpPullSinkConfig(**config)
@@ -27,6 +28,7 @@ class HttpPullSink:
         self.name = name
         self.config = config
         self.services = services
+        self.sink_id = sink_id
         
         paths = config.path
         extract_path_suffix = paths.get("extract", "extract").lstrip("/")
@@ -71,10 +73,8 @@ class HttpPullSink:
                 # Apply batch_size limit AFTER coalescing
                 if batch_size is not None and batch_size > 0:
                     emitted_events = coalesced_events[:batch_size]
-                    remaining_coalesced = coalesced_events[batch_size:]
                 else:
                     emitted_events = coalesced_events
-                    remaining_coalesced = []
                 
                 # We must link ALL source events that contributed to the EMITTED coalesced events
                 for ev in emitted_events:
@@ -83,21 +83,19 @@ class HttpPullSink:
                 events_to_return = emitted_events
                 
                 # Calculate remaining_count:
-                # It should be the number of potential EMITTED events that would remain 
-                # AFTER the current batch events are marked processed.
-                # Since we fetched ALL unprocessed matching events (fetch_size is None), 
-                # remaining_coalesced contains all other potential emitted events.
-                remaining_count = len(remaining_coalesced)
+                # When coalescing, it's the total number of COALESCED events available 
+                # among ALL matching unprocessed source events.
+                # Since fetch_size is None, we have them all in 'coalesced_events'.
+                remaining_count = len(coalesced_events)
             else:
                 events_to_return = events
                 source_ids_to_link = [e.id for e in events]
                 
-                # If not coalescing, remaining_count is:
-                # total unprocessed events (including those in the current batch because they are not yet processed)
+                # If not coalescing, remaining_count is total unprocessed events matching criteria
                 remaining_count = self._count_unprocessed_events(session, event_type=event_type)
             
             # Create a new batch
-            batch = HttpPullBatch()
+            batch = HttpPullBatch(sink_id=self.sink_id)
             session.add(batch)
             session.flush() # Get batch.id
             
@@ -124,7 +122,7 @@ class HttpPullSink:
         with self.services.db_session_maker() as session:
             # Check if batch exists
             batch = session.get(HttpPullBatch, batch_id)
-            if not batch:
+            if not batch or batch.sink_id != self.sink_id:
                 raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
             # Mark all events in this batch as processed
@@ -149,18 +147,27 @@ class HttpPullSink:
         event_type: Optional[str] = None, 
         batch_size: Optional[int] = None
     ) -> List[Event]:
-        # Events that are NOT in ANY HttpPullBatchEvent WHERE processed is True
-        subq = select(HttpPullBatchEvent.event_id).where(HttpPullBatchEvent.processed == True)
+        # Events that are NOT in ANY HttpPullBatchEvent WHERE processed is True FOR THIS SINK
+        subq = (
+            select(HttpPullBatchEvent.event_id)
+            .join(HttpPullBatch, HttpPullBatch.id == HttpPullBatchEvent.batch_id)
+            .where(and_(HttpPullBatchEvent.processed == True, HttpPullBatch.sink_id == self.sink_id))
+        )
         
         # Build match clause
         final_match = self.matcher.build_sqlalchemy_clause(event_type)
 
-        stmt = select(Event).where(
-            and_(
-                not_(Event.id.in_(subq)),
-                final_match
+        conditions = [
+            not_(Event.id.in_(subq)),
+            final_match,
+            EventMatcher.build_ttl_clause(
+                self.config.ttl_enabled,
+                self.config.default_ttl,
+                self.config.event_ttl
             )
-        ).order_by(Event.id.asc())
+        ]
+
+        stmt = select(Event).where(and_(*conditions)).order_by(Event.id.asc())
         
         if batch_size is not None and batch_size > 0:
             stmt = stmt.limit(batch_size)
@@ -169,15 +176,25 @@ class HttpPullSink:
 
     def _count_unprocessed_events(self, session: Session, event_type: Optional[str] = None) -> int:
         from sqlalchemy import func
-        subq = select(HttpPullBatchEvent.event_id).where(HttpPullBatchEvent.processed == True)
+        # Events that are NOT in ANY HttpPullBatchEvent WHERE processed is True FOR THIS SINK
+        subq = (
+            select(HttpPullBatchEvent.event_id)
+            .join(HttpPullBatch, HttpPullBatch.id == HttpPullBatchEvent.batch_id)
+            .where(and_(HttpPullBatchEvent.processed == True, HttpPullBatch.sink_id == self.sink_id))
+        )
         final_match = self.matcher.build_sqlalchemy_clause(event_type)
             
-        stmt = select(func.count(Event.id)).where(
-            and_(
-                not_(Event.id.in_(subq)),
-                final_match
+        conditions = [
+            not_(Event.id.in_(subq)),
+            final_match,
+            EventMatcher.build_ttl_clause(
+                self.config.ttl_enabled,
+                self.config.default_ttl,
+                self.config.event_ttl
             )
-        )
+        ]
+
+        stmt = select(func.count(Event.id)).where(and_(*conditions))
         return session.scalar(stmt) or 0
 
 

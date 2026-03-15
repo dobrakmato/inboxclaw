@@ -109,3 +109,30 @@ def test_load_config_overrides(tmp_path):
     assert config.server.port == 9000
     assert config.database.retention_days == 60
     assert config.database.db_path == "other.db"
+
+def test_http_pull_ttl_config(tmp_path):
+    config_file = tmp_path / "config_ttl.yaml"
+    config_data = {
+        "database": {"retention_days": 30, "db_path": ":memory:"},
+        "sources": {},
+        "sink": {
+            "puller": {
+                "type": "http_pull",
+                "ttl_enabled": True,
+                "default_ttl": "2h",
+                "event_ttl": {
+                    "urgent": "5m",
+                    "gmail.*": "15m"
+                }
+            }
+        }
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    
+    config = load_config(str(config_file))
+    pull_config = config.sink["puller"]
+    assert pull_config.ttl_enabled is True
+    assert pull_config.default_ttl == 7200.0
+    assert pull_config.event_ttl["urgent"] == 300.0
+    assert pull_config.event_ttl["gmail.*"] == 900.0

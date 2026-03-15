@@ -17,6 +17,13 @@ The HTTP Pull Sink is a robust and reliable mechanism for retrieving event data 
 ### 1. The Pull and Confirm Lifecycle
 The Pull Sink ensures data integrity through a simple, atomic request-response cycle. Crucially, **events remain in the "Unprocessed" state and will be returned by subsequent `GET /extract` calls until they are explicitly confirmed.**
 
+#### Complete Separation for Multiple Sinks
+The pipeline supports multiple HTTP Pull sinks simultaneously. Each sink has its own independent "delivered" state in the database. This means if you have `sink_a` and `sink_b` both matching the same event:
+- `sink_a` can pull and confirm the event.
+- `sink_b` will still see the same event as unprocessed until it pulls and confirms it for itself.
+
+This allows different downstream systems to process the same stream of events at their own pace without interference.
+
 ```mermaid
 sequenceDiagram
     participant App as Your Application
@@ -81,7 +88,7 @@ sink:
 ```
 
 ### Full Configuration Example
-This example shows custom paths, multiple match patterns, and enabled coalescing.
+This example shows custom paths, multiple match patterns, enabled coalescing, and TTL configuration.
 
 ```yaml
 sink:
@@ -95,7 +102,29 @@ sink:
       - 'inventory.update'             # Match specific inventory updates
     coalesce:
       - 'inventory.update'             # Merge multiple inventory updates for the same item
+    ttl_enabled: true                  # Enable Time-To-Live (TTL) for events
+    default_ttl: '2h'                  # Default TTL of 2 hours for all matched events
+    event_ttl:
+      'sales.order.created': '24h'     # Specific TTL for order creation events (24 hours)
+      'inventory.*': '15m'             # Prefix TTL for all inventory events (15 minutes)
 ```
+
+---
+
+## Time-To-Live (TTL)
+
+The HTTP Pull Sink supports an optional **Time-To-Live (TTL)** for events. When TTL is enabled, events that are older than their defined TTL will be automatically excluded from the results of the `GET /extract` endpoint.
+
+### Why use TTL?
+- **Relevance**: Some events (like a temporary sensor reading) lose their value if they aren't processed within a short window.
+- **Queue Management**: Prevents your application from being overwhelmed by a large backlog of outdated events if it has been offline for a long period.
+
+### How TTL is Calculated
+1. **Exact Match**: If the event type (e.g., `sales.order.created`) matches a key in `event_ttl`, that TTL is used.
+2. **Prefix Match**: If the event type starts with a prefix defined in `event_ttl` (e.g., `inventory.*`), that TTL is used.
+3. **Default TTL**: If no specific or prefix match is found, the `default_ttl` is applied.
+
+*Note: TTL filtering is applied at the time of the `GET /extract` call based on the event's creation time in the pipeline database.*
 
 ---
 

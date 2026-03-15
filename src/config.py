@@ -116,19 +116,21 @@ class BaseSinkConfig(BaseModel):
     match: Union[str, List[str]] = "*"
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
-class WebhookSinkConfig(BaseSinkConfig):
+class TTLConfig(BaseModel):
+    ttl_enabled: bool = True
+    default_ttl: Interval = "1h"
+    event_ttl: Dict[str, Interval] = Field(default_factory=dict)
+
+class WebhookSinkConfig(BaseSinkConfig, TTLConfig):
     type: Literal["webhook"] = "webhook"
     url: str
     max_retries: int = 3
     retry_interval: Interval = 10.0
 
-class HttpPullSinkConfig(BaseSinkConfig):
+class HttpPullSinkConfig(BaseSinkConfig, TTLConfig):
     type: Literal["http_pull"] = "http_pull"
     path: Dict[str, str] = Field(default_factory=lambda: {"extract": "extract", "mark_processed": "mark-processed"})
     coalesce: Optional[List[str]] = None
-    ttl_enabled: bool = True
-    default_ttl: Interval = "1h"
-    event_ttl: Dict[str, Interval] = Field(default_factory=dict)
 
 class SSESinkConfig(BaseSinkConfig):
     type: Literal["sse"] = "sse"

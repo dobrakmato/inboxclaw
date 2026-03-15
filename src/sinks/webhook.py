@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Union, Optional
+from typing import Any, Dict, Union
 
 import httpx
-from sqlalchemy import or_, select, true
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from pydantic import ValidationError
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class WebhookSink:
-    def __init__(self, name: str, config: Union[WebhookSinkConfig, Dict[str, Any]], services: AppServices):
+    def __init__(self, name: str, config: Union[WebhookSinkConfig, Dict[str, Any]], services: AppServices, sink_id: int):
         if isinstance(config, dict):
             try:
                 config = WebhookSinkConfig(**config)
@@ -33,6 +33,7 @@ class WebhookSink:
         self.name = name
         self.services = services
         self.config = config
+        self.sink_id = sink_id
 
         self.url = config.url
         self.matcher = EventMatcher(config.match)
@@ -108,10 +109,18 @@ class WebhookSink:
         with self.services.db_session_maker() as session:
             stmt = (
                 select(Event)
-                .outerjoin(HttpWebhookDelivery, HttpWebhookDelivery.event_id == Event.id)
+                .outerjoin(
+                    HttpWebhookDelivery,
+                    (HttpWebhookDelivery.event_id == Event.id) & (HttpWebhookDelivery.sink_id == self.sink_id)
+                )
                 .where(self._not_delivered_clause())
                 .where(self._retryable_clause())
                 .where(self.matcher.build_sqlalchemy_clause())
+                .where(EventMatcher.build_ttl_clause(
+                    self.config.ttl_enabled,
+                    self.config.default_ttl,
+                    self.config.event_ttl
+                ))
                 .order_by(Event.created_at.asc())
             )
             return list(session.scalars(stmt).all())
@@ -176,12 +185,15 @@ class WebhookSink:
     def _record_delivery_attempt(self, event_id: int, delivered: bool) -> None:
         with self.services.db_session_maker() as session:
             delivery = session.scalar(
-                select(HttpWebhookDelivery).where(HttpWebhookDelivery.event_id == event_id)
+                select(HttpWebhookDelivery).where(
+                    (HttpWebhookDelivery.event_id == event_id) & (HttpWebhookDelivery.sink_id == self.sink_id)
+                )
             )
 
             if delivery is None:
                 delivery = HttpWebhookDelivery(
                     event_id=event_id,
+                    sink_id=self.sink_id,
                     tries=0,
                 )
                 session.add(delivery)

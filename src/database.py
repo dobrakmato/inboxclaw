@@ -28,6 +28,12 @@ class SourceKV(Base):
     value = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+class Sink(Base):
+    __tablename__ = 'sinks'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    type = Column(String, nullable=False)
+
 class Event(Base):
     __tablename__ = 'events'
     __table_args__ = (
@@ -45,21 +51,26 @@ class Event(Base):
 class HttpWebhookDelivery(Base):
     __tablename__ = 'http_webhook_deliveries'
     id = Column(Integer, primary_key=True)
-    event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"))
+    event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
+    sink_id = Column(Integer, ForeignKey('sinks.id', ondelete="CASCADE"), nullable=False)
     tries = Column(Integer, default=0)
     last_try = Column(DateTime)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     delivered = Column(Boolean, default=False)
+    __table_args__ = (
+        UniqueConstraint('event_id', 'sink_id', name='_event_sink_webhook_uc'),
+    )
 
 class HttpPullBatch(Base):
     __tablename__ = 'http_pull_batches'
     id = Column(Integer, primary_key=True)
+    sink_id = Column(Integer, ForeignKey('sinks.id', ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class HttpPullBatchEvent(Base):
     __tablename__ = 'http_pull_batch_events'
     id = Column(Integer, primary_key=True)
-    batch_id = Column(Integer, ForeignKey('http_pull_batches.id'), nullable=False)
+    batch_id = Column(Integer, ForeignKey('http_pull_batches.id', ondelete="CASCADE"), nullable=False)
     event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
     processed = Column(Boolean, default=False)
 

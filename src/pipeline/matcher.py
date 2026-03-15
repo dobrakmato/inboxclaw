@@ -1,5 +1,6 @@
-from typing import Any, List, Union, Optional
-from sqlalchemy import or_, and_, true, false
+from datetime import datetime, timezone, timedelta
+from typing import Any, List, Union, Optional, Dict
+from sqlalchemy import or_, and_, true, false, not_
 from src.database import Event
 
 class EventMatcher:
@@ -72,3 +73,41 @@ class EventMatcher:
         if len(clauses) == 1:
             return clauses[0]
         return or_(*clauses)
+
+    @staticmethod
+    def build_ttl_clause(
+        ttl_enabled: bool,
+        default_ttl: float,
+        event_ttl: Dict[str, float]
+    ) -> Any:
+        """
+        Builds an SQLAlchemy clause for TTL filtering.
+        """
+        if not ttl_enabled:
+            return true()
+
+        now = datetime.now(timezone.utc)
+        ttl_clauses = []
+
+        specific_patterns_used = []
+        for pattern, ttl in event_ttl.items():
+            pattern_clause = EventMatcher._pattern_to_clause(pattern)
+            ttl_clauses.append(and_(pattern_clause, Event.created_at > now - timedelta(seconds=ttl)))
+            specific_patterns_used.append(pattern)
+
+        # Default TTL applies to anything NOT matching specific patterns
+        if specific_patterns_used:
+            not_specific_clause = not_(or_(*[EventMatcher._pattern_to_clause(p) for p in specific_patterns_used]))
+            ttl_clauses.append(and_(not_specific_clause, Event.created_at > now - timedelta(seconds=default_ttl)))
+        else:
+            ttl_clauses.append(Event.created_at > now - timedelta(seconds=default_ttl))
+
+        return or_(*ttl_clauses)
+
+    @staticmethod
+    def _pattern_to_clause(pattern: str) -> Any:
+        if pattern == "*":
+            return true()
+        if pattern.endswith(".*"):
+            return Event.event_type.startswith(pattern[:-1])
+        return Event.event_type == pattern

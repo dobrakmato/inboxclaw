@@ -6,8 +6,16 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 
-from src.database import Base, Event, Source, HttpWebhookDelivery
+from src.database import Base, Event, Source, HttpWebhookDelivery, Sink
 from src.sinks.webhook import WebhookSink
+
+@pytest.fixture
+def sink_id(db_session_maker):
+    with db_session_maker() as session:
+        sink = Sink(name="test_sink", type="webhook")
+        session.add(sink)
+        session.commit()
+        return sink.id
 from src.services import AppServices
 from src.pipeline.notifier import EventNotifier
 
@@ -28,7 +36,7 @@ def services(db_session_maker):
     )
 
 @pytest.mark.asyncio
-async def test_webhook_sink_delivery(services, db_session_maker):
+async def test_webhook_sink_delivery(services, db_session_maker, sink_id):
     # Setup source
     with db_session_maker() as session:
         source = Source(name="test_source", type="test")
@@ -52,7 +60,7 @@ async def test_webhook_sink_delivery(services, db_session_maker):
         "url": "http://example.com/webhook",
         "match": "test.*"
     }
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
 
     # Mock httpx.AsyncClient.post
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
@@ -72,14 +80,16 @@ async def test_webhook_sink_delivery(services, db_session_maker):
     # Check database for delivery status
     with db_session_maker() as session:
         delivery = session.scalar(
-            select(HttpWebhookDelivery).where(HttpWebhookDelivery.event_id == event_db_id)
+            select(HttpWebhookDelivery).where(
+                (HttpWebhookDelivery.event_id == event_db_id) & (HttpWebhookDelivery.sink_id == sink_id)
+            )
         )
         assert delivery is not None
         assert delivery.delivered is True
         assert delivery.tries == 1
 
 @pytest.mark.asyncio
-async def test_webhook_sink_retry(services, db_session_maker):
+async def test_webhook_sink_retry(services, db_session_maker, sink_id):
     # Setup source and event
     with db_session_maker() as session:
         source = Source(name="test_source", type="test")
@@ -101,7 +111,7 @@ async def test_webhook_sink_retry(services, db_session_maker):
         "url": "http://example.com/webhook",
         "max_retries": 2
     }
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
 
     # Mock httpx.AsyncClient.post to fail
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
@@ -132,7 +142,7 @@ async def test_webhook_sink_retry(services, db_session_maker):
             assert delivery.delivered is False
 
 @pytest.mark.asyncio
-async def test_webhook_sink_filtering(services, db_session_maker):
+async def test_webhook_sink_filtering(services, db_session_maker, sink_id):
     # Setup events with different types
     with db_session_maker() as session:
         source = Source(name="test_source", type="test")
@@ -149,7 +159,7 @@ async def test_webhook_sink_filtering(services, db_session_maker):
         "url": "http://example.com/webhook",
         "match": "match.*"
     }
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = httpx.Response(200)
@@ -185,14 +195,14 @@ async def test_webhook_sink_filtering(services, db_session_maker):
              # Events already delivered: evt_match (1), exact.match (3), and now evt_no_match (2)
              assert len(delivered_event_ids) == 3
 
-def test_webhook_sink_config_error(services):
+def test_webhook_sink_config_error(services, sink_id):
     with pytest.raises(ValueError, match="requires a 'url' configuration"):
-        WebhookSink("test", {}, services)
+        WebhookSink("test", {}, services, sink_id)
 
 @pytest.mark.asyncio
-async def test_webhook_sink_start_stop(services):
+async def test_webhook_sink_start_stop(services, sink_id):
     sink_config = {"url": "http://example.com/webhook"}
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
     
     # Mock _run_loop to avoid actual execution
     with patch.object(sink, "_run_loop", new_callable=AsyncMock) as mock_run_loop:
@@ -212,9 +222,9 @@ async def test_webhook_sink_start_stop(services):
         await sink.stop()
 
 @pytest.mark.asyncio
-async def test_webhook_sink_run_loop_and_exception(services, db_session_maker):
+async def test_webhook_sink_run_loop_and_exception(services, db_session_maker, sink_id):
     sink_config = {"url": "http://example.com/webhook", "retry_interval": 0.1}
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
     
     with patch.object(sink, "process_pending_events", new_callable=AsyncMock) as mock_process:
         # Mock notifier.subscribe to return an event we can control
@@ -255,8 +265,8 @@ async def test_webhook_sink_run_loop_and_exception(services, db_session_maker):
             await sink._run_loop()
 
 @pytest.mark.asyncio
-async def test_webhook_sink_match_property(services):
-    sink = WebhookSink("webhook", {"url": "http://test", "match": "test.*"}, services)
+async def test_webhook_sink_match_property(services, sink_id):
+    sink = WebhookSink("webhook", {"url": "http://test", "match": "test.*"}, services, sink_id)
     assert sink.match == "test.*"
     
     # Test setter
@@ -267,7 +277,7 @@ async def test_webhook_sink_match_property(services):
     assert sink.match == "single"
 
 @pytest.mark.asyncio
-async def test_webhook_sink_delivery_exception(services, db_session_maker):
+async def test_webhook_sink_delivery_exception(services, db_session_maker, sink_id):
     with db_session_maker() as session:
         source = Source(name="test_source", type="test")
         session.add(source)
@@ -276,7 +286,7 @@ async def test_webhook_sink_delivery_exception(services, db_session_maker):
         session.commit()
 
     sink_config = {"url": "http://example.com/webhook"}
-    sink = WebhookSink("test_sink", sink_config, services)
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
 
     with patch("httpx.AsyncClient.post", side_effect=httpx.RequestError("Network error")):
         await sink.process_pending_events()

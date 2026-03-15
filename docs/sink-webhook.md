@@ -17,6 +17,12 @@ The Webhook Sink is a proactive delivery system that automatically pushes events
 ### 1. The Delivery and Retry Lifecycle
 The Webhook Sink manages the delivery process automatically, including handling temporary network failures or receiver downtime.
 
+#### Complete Separation for Multiple Sinks
+The pipeline supports multiple Webhook sinks simultaneously. Each sink has its own independent "delivered" state in the database. This means if you have `webhook_a` and `webhook_b` both matching the same event:
+- `webhook_a` will attempt delivery and track its own retries.
+- `webhook_b` will independently attempt its own delivery to its own URL.
+- Success or failure for `webhook_a` has no effect on `webhook_b`.
+
 ```mermaid
 sequenceDiagram
     participant P as Pipeline
@@ -46,6 +52,12 @@ sequenceDiagram
 
 #### Automatic Delivery
 The sink continuously monitors the pipeline for new events that match its configuration. When a match is found, it immediately attempts to "push" the data to the configured URL.
+
+#### Time-to-Live (TTL)
+To prevent the sink from being overwhelmed by very old events (e.g., after a long downtime), you can configure a Time-to-Live (TTL). Events older than the TTL will be ignored and not attempted for delivery.
+- **`ttl_enabled`**: Whether to enforce TTL (default is `true`).
+- **`default_ttl`**: The default age after which an event is considered "expired" (e.g., `"1h"`, `"1d"`).
+- **`event_ttl`**: Specific TTL values for different event types (e.g., `"critical.*": "7d"`).
 
 #### Reliable Retries
 Network blips and temporary server outages happen.
@@ -79,7 +91,7 @@ sink:
 ```
 
 ### Full Configuration Example
-This example shows a custom retry policy and multiple match patterns.
+This example shows a custom retry policy, multiple match patterns, and TTL settings.
 
 ```yaml
 sink:
@@ -88,6 +100,10 @@ sink:
     url: 'https://audit-service.internal/ingest'
     max_retries: 10
     retry_interval: 60.0  # Wait 60 seconds between retries
+    ttl_enabled: true
+    default_ttl: '24h'    # Expire most events after 1 day
+    event_ttl:
+      'security.*': '30d' # Keep security events for 30 days
     match:
       - 'user.auth.*'
       - 'payment.processed'

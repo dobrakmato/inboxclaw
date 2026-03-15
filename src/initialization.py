@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy import select
 from src.services import AppServices
-from src.database import Source
+from src.database import Source, Sink
 from src.sources.gmail import GmailSource
 from src.sources.google_drive import GoogleDriveSource
 from src.sources.google_calendar import GoogleCalendarSource
@@ -72,25 +72,36 @@ def init_sources(services: AppServices):
 
 def init_sinks(services: AppServices):
     """Initialize sinks based on configuration."""
-    for name, snk_config in services.config.sink.items():
-        snk_type = snk_config.type
-        
-        if snk_type == "sse":
-            logger.info(f"Initializing SSE sink: {name}")
-            services.sinks[name] = SSESink(name, snk_config, services)
-        elif snk_type == "webhook":
-            logger.info(f"Initializing Webhook sink: {name}")
-            sink = WebhookSink(name, snk_config, services)
-            services.sinks[name] = sink
-            # Start the background task
-            services.add_task(sink.start())
-        elif snk_type == "http_pull":
-            logger.info(f"Initializing HTTP Pull sink: {name}")
-            services.sinks[name] = HttpPullSink(name, snk_config, services)
-        elif snk_type == "win11toast":
-            logger.info(f"Initializing Win11 toast sink: {name}")
-            sink = Win11ToastSink(name, snk_config, services)
-            services.sinks[name] = sink
-            services.add_task(sink.start())
-        else:
-            logger.warning(f"Sink type {snk_type} for {name} not implemented yet.")
+    with services.db_session_maker() as session:
+        for name, snk_config in services.config.sink.items():
+            snk_type = snk_config.type
+            
+            # Ensure sink exists in DB
+            sink_row = session.scalar(select(Sink).where(Sink.name == name))
+            if not sink_row:
+                sink_row = Sink(name=name, type=snk_type)
+                session.add(sink_row)
+                session.commit()
+                session.refresh(sink_row)
+            
+            sink_id = sink_row.id
+            
+            if snk_type == "sse":
+                logger.info(f"Initializing SSE sink: {name}")
+                services.sinks[name] = SSESink(name, snk_config, services)
+            elif snk_type == "webhook":
+                logger.info(f"Initializing Webhook sink: {name} (id={sink_id})")
+                sink = WebhookSink(name, snk_config, services, sink_id)
+                services.sinks[name] = sink
+                # Start the background task
+                services.add_task(sink.start())
+            elif snk_type == "http_pull":
+                logger.info(f"Initializing HTTP Pull sink: {name} (id={sink_id})")
+                services.sinks[name] = HttpPullSink(name, snk_config, services, sink_id)
+            elif snk_type == "win11toast":
+                logger.info(f"Initializing Win11 toast sink: {name}")
+                sink = Win11ToastSink(name, snk_config, services)
+                services.sinks[name] = sink
+                services.add_task(sink.start())
+            else:
+                logger.warning(f"Sink type {snk_type} for {name} not implemented yet.")
