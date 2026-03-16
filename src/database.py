@@ -75,7 +75,7 @@ class HttpPullBatchEvent(Base):
     event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
     processed = Column(Boolean, default=False)
 
-def init_db(db_path: str):
+def init_db(db_path: str, echo: bool = False):
     # Ensure directory exists
     db_dir = os.path.dirname(db_path)
     if db_dir and not os.path.exists(db_dir):
@@ -83,7 +83,8 @@ def init_db(db_path: str):
         
     engine = create_engine(
         f'sqlite:///{db_path}',
-        connect_args={"check_same_thread": False}
+        connect_args={"check_same_thread": False},
+        echo=echo
     )
     
     # Enable foreign keys for SQLite

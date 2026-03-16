@@ -29,6 +29,7 @@ Interval = Annotated[float, BeforeValidator(parse_interval)]
 class DatabaseConfig(BaseModel):
     retention_days: int = Field(alias="days", default=30)
     db_path: str = "./data/data.db"
+    echo: bool = False
     model_config = ConfigDict(populate_by_name=True)
 
 # --- Source Configurations ---

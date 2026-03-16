@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     # Get config path from app state if it was set via CLI
     config_path = getattr(app.state, "config_path", None)
     config = load_config(config_path)
-    db_session_maker = init_db(config.database.db_path)
+    db_session_maker = init_db(config.database.db_path, echo=config.database.echo)
     
     services = AppServices(
         app=app,
