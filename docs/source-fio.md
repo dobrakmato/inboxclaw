@@ -72,12 +72,12 @@ sources:
 
 ### Configuration Reference
 
-| Parameter        | Type     | Default  | Description                                                                                  |
-|:-----------------|:---------|:---------|:---------------------------------------------------------------------------------------------|
-| `token`          | `string` | Env var  | Fio API token. Defaults to `FIO_TOKEN` environment variable.                                 |
-| `poll_interval`  | `string` | `"30m"`  | How often to check for new transactions. Supports human-readable intervals.                  |
-| `max_days_back`  | `int`    | `15`     | How far back to look on the very first sync.                                                 |
-| `look_ahead_days`| `int`    | `5`      | How many days into the future to look for pending/future-dated transactions.                 |
+| Parameter         | Type     | Default | Description                                                                  |
+|:------------------|:---------|:--------|:-----------------------------------------------------------------------------|
+| `token`           | `string` | Env var | Fio API token. Defaults to `FIO_TOKEN` environment variable.                 |
+| `poll_interval`   | `string` | `"30m"` | How often to check for new transactions. Supports human-readable intervals.  |
+| `max_days_back`   | `int`    | `15`    | How far back to look on the very first sync.                                 |
+| `look_ahead_days` | `int`    | `5`     | How many days into the future to look for pending/future-dated transactions. |
 
 ## Event Definitions
 

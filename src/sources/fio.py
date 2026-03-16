@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -103,6 +103,8 @@ class FioSource:
             # We'll set the cursor to the date of the latest transaction we found, 
             # or today if no transactions were found in the future.
             latest_tx_date = max(t.get("date", start_date) for t in transactions)
+            if isinstance(latest_tx_date, str):
+                latest_tx_date = date.fromisoformat(latest_tx_date)
             cursor_date = max(latest_tx_date, now.date())
             self.cursor_manager.set_cursor(self.source_id, cursor_date.isoformat())
         else:
@@ -139,11 +141,11 @@ class FioSource:
                             # Value is timestamp in ms (with timezone sometimes?)
                             # The docs say: rrrr-mm-dd+GMT but the example shows milliseconds 1340661600000
                             if isinstance(value, int):
-                                item["date"] = datetime.fromtimestamp(value / 1000, tz=timezone.utc).date()
+                                item["date"] = datetime.fromtimestamp(value / 1000, tz=timezone.utc).date().isoformat()
                             else:
                                 # Fallback if it's already a string
                                 try:
-                                    item["date"] = datetime.fromisoformat(str(value).split('+')[0]).date()
+                                    item["date"] = datetime.fromisoformat(str(value).split('+')[0]).date().isoformat()
                                 except:
                                     logger.warning(f"Could not parse Fio date: {value}")
                         elif col_id == 1: item["amount"] = value
@@ -198,7 +200,10 @@ class FioSource:
         if "date" in tx:
             # Transactions in Fio are dates, not datetimes. 
             # We'll set it to midnight UTC.
-            occurred_at = datetime.combine(tx["date"], datetime.min.time(), tzinfo=timezone.utc)
+            tx_date = tx["date"]
+            if isinstance(tx_date, str):
+                tx_date = date.fromisoformat(tx_date)
+            occurred_at = datetime.combine(tx_date, datetime.min.time(), tzinfo=timezone.utc)
 
         return NewEvent(
             event_id=event_id,
