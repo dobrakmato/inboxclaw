@@ -1,126 +1,142 @@
 # Gmail Source
 
-The Gmail source allows the ingest pipeline to fetch recent emails from a Google account and convert them into events.
+The Gmail source monitors a Google mailbox and emits events when emails are received, sent, deleted, or when labels change. It uses the Gmail History API for efficient incremental sync — only new changes are fetched on each poll.
 
-## Why use this source?
+Use this source to build workflows that react to incoming emails: ticket creation, archiving, notifications based on sender or subject, etc.
 
-This source is ideal for building workflows that respond to incoming emails, such as:
-- Automatic ticket creation from customer emails.
-- Archiving important communications.
-- Triggering notifications based on specific senders or subjects.
+## Getting Started
+
+### 1. Authorize access
+
+Generate a Google OAuth token with the `gmail` scope using the [Google Auth CLI](google-auth-cli.md):
+
+```bash
+python main.py google auth --scopes gmail --token data/google_token.json
+```
+
+### 2. Add the source to `config.yaml`
+
+```yaml
+sources:
+  my_gmail:
+    type: gmail
+    token_file: "data/google_token.json"
+```
+
+The source will start polling on startup. On the first run it initializes a `historyId` cursor from the most recent message and begins tracking changes from that point forward.
 
 ## Core Concepts
 
-### Polling
-The source periodically "polls" the Gmail API to check for new messages. You can configure how often this happens using a human-readable interval.
+### Incremental Sync
 
-### Incremental Sync (History API)
-Unlike simple listing, this source uses the Gmail `history.list` API. It maintains a `historyId` cursor in the database. On each poll, it only asks for changes that happened *after* that ID. This is much more efficient and reliable for busy mailboxes.
+The source uses Gmail's `history.list` API with a stored `historyId` cursor. Each poll fetches only the changes since the last cursor, making it efficient even for busy mailboxes. If the cursor expires (too old), the source re-initializes automatically.
 
-### Deduplication
-Each email has a unique `msg_id` from Google. The source uses this ID as the `event_id` and `entity_id` to ensure that each email is only published as an event once.
+### Label Filtering
+
+By default, messages with the `SPAM` label are skipped. You can customize this with `exclude_label_ids` — any message that has at least one matching label is ignored.
 
 ## Configuration
 
 ### Minimal Configuration
 
-To get started, you only need to provide the `token_file` (generated via the `google auth` CLI) and the polling interval.
-
 ```yaml
 sources:
-  my_inbox:
+  my_gmail:
     type: gmail
-    token_file: "data/gmail_token.json"
-    poll_interval: "10m"
+    token_file: "data/google_token.json"
 ```
+
+Defaults: `poll_interval: "10m"`, `exclude_label_ids: ["SPAM"]`.
 
 ### Full Configuration
 
-You can customize the polling interval and provide a list of label IDs to exclude. By default, `SPAM` messages are excluded.
-
 ```yaml
 sources:
-  customer_support:
+  my_gmail:
     type: gmail
-    token_file: "tokens/support_token.json"
+    token_file: "data/google_token.json"
     poll_interval: "1m"
     exclude_label_ids: ["SPAM", "TRASH", "CATEGORY_PROMOTIONS"]
 ```
 
-### Filtering by Label IDs
+### Configuration Reference
 
-The `exclude_label_ids` parameter allows you to skip emails that have specific Gmail labels. 
+| Parameter           | Type     | Default      | Description                                                                                  |
+|:--------------------|:---------|:-------------|:---------------------------------------------------------------------------------------------|
+| `token_file`        | `string` | Required     | Path to the Google OAuth2 token file (created via [Google Auth CLI](google-auth-cli.md)).     |
+| `poll_interval`     | `string` | `"10m"`      | How often to check for changes. Supports human-readable intervals (e.g. `"5m"`, `"30s"`).    |
+| `exclude_label_ids` | `list`   | `["SPAM"]`   | Messages with any of these labels are skipped. Common labels: `SPAM`, `TRASH`, `UNREAD`, `STARRED`, `IMPORTANT`, `INBOX`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`. |
 
-- **Default behavior**: If not specified, `exclude_label_ids` defaults to `["SPAM"]`.
-- **How it works**: If an email has *at least one* label that matches any ID in the `exclude_label_ids` list, the source will skip it.
-- **Common Labels**: `SPAM`, `TRASH`, `UNREAD`, `STARRED`, `IMPORTANT`, `INBOX`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`.
+## Event Definitions
 
-## OAuth Scopes Required
+| Type                    | Entity ID          | Description                                      |
+|:------------------------|:-------------------|:-------------------------------------------------|
+| `gmail.message_received`| Google Message ID  | A new email was received (not in SENT label).     |
+| `gmail.message_sent`    | Google Message ID  | A new email was sent (has SENT label).            |
+| `gmail.message_deleted` | Google Message ID  | An email was deleted.                             |
+| `gmail.label_added`     | Google Message ID  | One or more labels were added to an email.        |
+| `gmail.label_removed`   | Google Message ID  | One or more labels were removed from an email.    |
 
-To use this source, you must authorize the application with at least the following scope:
-- `gmail` (alias for `https://www.googleapis.com/auth/gmail.readonly`)
+### Event Examples
 
-Use the CLI to generate the token:
-```bash
-python main.py google auth --scopes gmail --token data/gmail_token.json
-```
-
-## Event Data structure
-
-| Parameter | Value | Description |
-| :--- | :--- | :--- |
-| **Type** | `gmail.message_received` | Triggered when a new email is received. |
-| **Type** | `gmail.message_sent` | Triggered when a new email is sent. |
-| **Type** | `gmail.message_deleted` | Triggered when an email is deleted. |
-| **Type** | `gmail.label_added` | Triggered when a label is added to an email. |
-| **Type** | `gmail.label_removed` | Triggered when a label is removed from an email. |
-| **Entity ID** | Google Message ID | Uniquely identifies the email message. |
-
-### Data Payloads
-
-#### gmail.message_received / gmail.message_sent
-
-The `data` field contains:
+#### `gmail.message_received` / `gmail.message_sent`
 
 ```json
 {
-  "threadId": "...",
-  "messageId": "...",
-  "snippet": "Brief preview of the email content...",
-  "from": "Sender Name <sender@example.com>",
-  "to": "Recipient <recipient@example.com>",
-  "subject": "Email Subject",
-  "date": "Date header from email",
-  "labelIds": ["INBOX", "UNREAD"]
+  "id": 10,
+  "event_id": "msg_abc123",
+  "event_type": "gmail.message_received",
+  "entity_id": "msg_abc123",
+  "created_at": "2024-03-15T10:00:00+00:00",
+  "data": {
+    "threadId": "thread_xyz",
+    "messageId": "msg_abc123",
+    "snippet": "Brief preview of the email content...",
+    "from": "Sender Name <sender@example.com>",
+    "to": "Recipient <recipient@example.com>",
+    "subject": "Email Subject",
+    "date": "Sat, 15 Mar 2024 10:00:00 +0000",
+    "labelIds": ["INBOX", "UNREAD"]
+  },
+  "meta": {}
 }
 ```
 
-The `occurred_at` field is set based on the time the message was received.
-
-#### gmail.message_deleted
-
-The `data` field contains:
+#### `gmail.message_deleted`
 
 ```json
 {
-  "threadId": "...",
-  "messageId": "...",
-  "historyId": "..."
+  "id": 11,
+  "event_id": "msg_abc123-deleted",
+  "event_type": "gmail.message_deleted",
+  "entity_id": "msg_abc123",
+  "created_at": "2024-03-15T10:05:00+00:00",
+  "data": {
+    "threadId": "thread_xyz",
+    "messageId": "msg_abc123"
+  },
+  "meta": {}
 }
 ```
 
-#### gmail.label_added / gmail.label_removed
-
-The `data` field contains:
+#### `gmail.label_added` / `gmail.label_removed`
 
 ```json
 {
-  "threadId": "...",
-  "messageId": "...",
-  "historyId": "...",
-  "labelIds": ["LABEL_ID"],
-  "allLabelIds": ["INBOX", "LABEL_ID"]
+  "id": 12,
+  "event_id": "msg_abc123-5001-lab-add",
+  "event_type": "gmail.label_added",
+  "entity_id": "msg_abc123",
+  "created_at": "2024-03-15T10:10:00+00:00",
+  "data": {
+    "threadId": "thread_xyz",
+    "messageId": "msg_abc123",
+    "labelIds": ["STARRED"],
+    "allLabelIds": ["INBOX", "STARRED"]
+  },
+  "meta": {}
 }
 ```
 
-`labelIds` contains the IDs of the labels that were just added or removed. `allLabelIds` contains the full set of labels on the message after the change.
+- `labelIds`: The labels that were just added or removed.
+- `allLabelIds`: The full set of labels on the message after the change.

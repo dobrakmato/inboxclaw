@@ -1,140 +1,118 @@
-# Webhook Sink (The Push-Based Delivery Model)
+# Webhook Sink
 
-The Webhook Sink is a proactive delivery system that automatically pushes events to your external application or service. Unlike "pull-based" systems (like HTTP Pull), where your application must periodically request data, the Webhook Sink initiates an HTTP POST request to a URL you specify as soon as an event enters the pipeline. This ensures near real-time data synchronization.
+The Webhook sink pushes events to your application in near real-time via HTTP POST. Whenever a matching event enters the pipeline, the sink sends it to the URL you configure and retries automatically on failure.
 
-### Is this the right choice for you?
+This is a good fit when you need low-latency delivery and your receiving endpoint is publicly reachable. It works well with serverless functions (AWS Lambda, Google Cloud Functions) and automation platforms (Zapier, Make.com). If your app is behind a firewall or you need to control the pace of delivery, use the [HTTP Pull sink](sink-http-pull.md) instead.
 
-| Use Case                                                                                                                                                     | Key Considerations                                                                                                                                                              |
-|:-------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Real-time Updates**: Data is delivered immediately after it is ingested, minimizing latency.                                                               | **Receiver Availability**: Your application must be online and reachable at the provided URL to receive data.                                                                   |
-| **Simplified Logic**: Your application doesn't need to implement polling or manage batching state; it just needs a single endpoint to receive POST requests. | **No Native Backpressure**: The sink will push data as it arrives. If your system is overwhelmed, it must handle the incoming traffic or return error codes to trigger retries. |
-| **Serverless/Functions**: Perfect for triggering AWS Lambda, Google Cloud Functions, or Zapier/Make.com workflows.                                           | **Firewall Configuration**: Requires your application to be accessible from the pipeline server (may require open ports or IP whitelisting).                                    |
+## Getting Started
 
----
-
-## How it Works
-
-### 1. The Delivery and Retry Lifecycle
-The Webhook Sink manages the delivery process automatically, including handling temporary network failures or receiver downtime.
-
-#### Complete Separation for Multiple Sinks
-The pipeline supports multiple Webhook sinks simultaneously. Each sink has its own independent "delivered" state in the database. This means if you have `webhook_a` and `webhook_b` both matching the same event:
-- `webhook_a` will attempt delivery and track its own retries.
-- `webhook_b` will independently attempt its own delivery to its own URL.
-- Success or failure for `webhook_a` has no effect on `webhook_b`.
-
-```mermaid
-sequenceDiagram
-    participant P as Pipeline
-    participant Sink as Webhook Sink
-    participant App as Your External App
-    participant DB as Pipeline Database
-
-    P->>DB: New event ingested
-    Sink->>DB: Scan for undelivered events
-    DB-->>Sink: Event Data
-    
-    Note over Sink, App: Delivery Attempt 1
-    Sink->>App: POST /your-webhook-url (JSON Payload)
-    
-    alt Success (2xx Response)
-        App-->>Sink: 200 OK
-        Sink->>DB: Mark as Delivered
-    else Failure (4xx/5xx or Timeout)
-        App-->>Sink: 500 Error / No Response
-        Sink->>DB: Increment Retry Count & Record Last Try
-        Note over Sink: Wait for Retry Interval
-        Note over Sink, App: Delivery Attempt 2 (and so on...)
-    end
-```
-
-### 2. Understanding Core Concepts
-
-#### Automatic Delivery
-The sink continuously monitors the pipeline for new events that match its configuration. When a match is found, it immediately attempts to "push" the data to the configured URL.
-
-#### Time-to-Live (TTL)
-To prevent the sink from being overwhelmed by very old events (e.g., after a long downtime), you can configure a Time-to-Live (TTL). Events older than the TTL will be ignored and not attempted for delivery.
-- **`ttl_enabled`**: Whether to enforce TTL (default is `true`).
-- **`default_ttl`**: The default age after which an event is considered "expired" (e.g., `"1h"`, `"1d"`).
-- **`event_ttl`**: Specific TTL values for different event types (e.g., `"critical.*": "7d"`).
-
-#### Reliable Retries
-Network blips and temporary server outages happen.
-- **Max Retries**: The sink will attempt delivery up to `max_retries` times total (default is 3) before giving up.
-- **Retry Interval**: A failed event is retried only after `retry_interval` has elapsed since the previous attempt (default is 10 seconds).
-- **Persistence**: Delivery status and retry counts are tracked in the pipeline database, ensuring no event is lost even if the pipeline service restarts.
-
----
-
-## Configuration (`config.yaml`)
-
-### Minimal Configuration
-The only mandatory field is the target `url`. By default, it will push all events (`*`) with up to 3 delivery attempts.
+Add a Webhook sink to your `config.yaml` with the target URL:
 
 ```yaml
 sink:
   my_webhook:
-    type: 'webhook'
-    url: 'https://api.myapp.com/events'
+    type: webhook
+    url: "https://api.myapp.com/events"
 ```
 
-### Named Sink with Filtering
-You can restrict the webhook to specific event types. This is useful for sending different events to different microservices.
+The sink will start delivering all events (`match: "*"`) to that URL immediately. Your endpoint must return a `2xx` status code to confirm receipt.
+
+## Core Concepts
+
+### Delivery and Retries
+
+The sink runs a background loop that watches for new events. When a matching event arrives, it sends an HTTP POST with a JSON body to your URL.
+
+- **Success**: Any `2xx` response marks the event as delivered.
+- **Failure**: Any non-`2xx` response (or a timeout after 10 seconds) counts as a failed attempt. The sink retries up to `max_retries` times (default: 3), waiting at least `retry_interval` (default: 10 seconds) between attempts.
+- **Persistence**: Delivery state and retry counts are stored in the database, so nothing is lost if the pipeline restarts.
+
+### TTL (Time-To-Live)
+
+TTL is **enabled by default** with a `default_ttl` of `1h`. Events older than their TTL are skipped and never attempted for delivery. This prevents the sink from trying to deliver a large backlog of stale events after a long downtime.
+
+To disable TTL and attempt delivery for all undelivered events regardless of age:
 
 ```yaml
 sink:
-  slack_notifications:
-    type: 'webhook'
-    url: 'https://hooks.slack.com/services/...'
-    match: 'alert.*' # Only push events starting with "alert."
+  my_webhook:
+    type: webhook
+    url: "https://example.com/events"
+    ttl_enabled: false
 ```
 
-### Full Configuration Example
-This example shows a custom retry policy, multiple match patterns, and TTL settings.
+TTL is resolved in order: exact match in `event_ttl` → longest prefix match in `event_ttl` → `default_ttl`.
+
+### Multiple Sinks
+
+You can run multiple Webhook sinks simultaneously. Each sink tracks delivery independently — success or failure for one sink has no effect on another, even if they match the same events.
+
+## Configuration
+
+### Minimal Configuration
 
 ```yaml
 sink:
-  critical_audit_log:
-    type: 'webhook'
-    url: 'https://audit-service.internal/ingest'
+  my_webhook:
+    type: webhook
+    url: "https://api.myapp.com/events"
+```
+
+Defaults: `match: "*"`, `max_retries: 3`, `retry_interval: 10s`, `ttl_enabled: true`, `default_ttl: "1h"`.
+
+### Full Configuration
+
+```yaml
+sink:
+  audit_log:
+    type: webhook
+    url: "https://audit-service.internal/ingest"
     max_retries: 10
-    retry_interval: '1m'  # You can use seconds (60.0) or human-readable intervals
-    ttl_enabled: true
-    default_ttl: '24h'    # Expire most events after 1 day
-    event_ttl:
-      'security.*': '30d' # Keep security events for 30 days
+    retry_interval: "1m"
     match:
-      - 'user.auth.*'
-      - 'payment.processed'
-      - 'security.breach'
+      - "user.auth.*"
+      - "payment.processed"
+      - "security.breach"
+    ttl_enabled: true
+    default_ttl: "24h"
+    event_ttl:
+      "security.*": "30d"
 ```
 
----
+### Configuration Reference
+
+| Parameter        | Type           | Default  | Description                                                                                      |
+|:-----------------|:---------------|:---------|:-------------------------------------------------------------------------------------------------|
+| `type`           | `string`       | —        | Must be `webhook`.                                                                               |
+| `url`            | `string`       | Required | The URL to POST events to.                                                                       |
+| `match`          | `string\|list` | `"*"`    | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.                              |
+| `max_retries`    | `int`          | `3`      | Maximum number of delivery attempts per event.                                                   |
+| `retry_interval` | `string`       | `10.0`   | Minimum wait between retries. Supports human-readable intervals (e.g. `"1m"`) or seconds.        |
+| `ttl_enabled`    | `bool`         | `true`   | Whether to skip events older than their TTL.                                                     |
+| `default_ttl`    | `string`       | `"1h"`   | Default TTL for events without a specific rule.                                                  |
+| `event_ttl`      | `dict`         | `{}`     | Per-type TTL overrides. Keys use the same matching patterns as `match`.                          |
 
 ## Webhook Payload
 
-When the sink sends data to your URL, it uses an HTTP **POST** request with a `application/json` body.
+The sink sends an HTTP POST with `Content-Type: application/json`. The body is a single event in the [standard envelope format](sinks-general.md#event-envelope):
 
-**Request Structure:**
 ```json
 {
   "id": 42,
   "event_id": "evt_12345",
   "event_type": "user.auth.login",
   "entity_id": "user_99",
-  "created_at": "2024-03-13T23:52:00Z",
+  "created_at": "2024-03-13T23:52:00+00:00",
   "data": {
     "ip_address": "192.168.1.1",
     "browser": "Chrome"
   },
-  "meta": {
-    "source": "auth-service-01"
-  }
+  "meta": {}
 }
 ```
 
 ### Handling the Response
-- **Success**: Return any `2xx` status code (e.g., `200 OK`, `202 Accepted`) to confirm receipt. The sink will mark the event as delivered.
-- **Retry**: Any non-`2xx` response (including `3xx`, `4xx`, or `5xx`) is treated as a failed attempt and will be retried based on `max_retries` and `retry_interval`.
-- **Timeout**: The sink waits up to 10 seconds for a response. If your server takes longer, it will be treated as a failure and triggered for retry.
+
+- **`2xx`**: Event is marked as delivered. No further attempts.
+- **Any other status** (including `3xx`, `4xx`, `5xx`): Treated as a failure. The sink will retry according to `max_retries` and `retry_interval`.
+- **Timeout**: The sink waits up to 10 seconds for a response. No response within that window is treated as a failure.

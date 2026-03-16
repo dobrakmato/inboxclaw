@@ -1,70 +1,55 @@
-# Sources in Ingest Pipeline
+# Sources
 
-Sources are the entry points of data into the system. They are responsible for fetching data from external systems (like Google APIs) and publishing it as **Events** to the internal pipeline.
+Sources connect external systems (Google APIs, bank APIs, home automation, etc.) to the ingest pipeline. Each source periodically checks for new data, converts it into structured **events**, and stores them in the pipeline database for sinks to consume.
 
-### How they work
+If you want to get data *into* the pipeline, you configure a source. If you want to get data *out*, see [Sinks](sinks-general.md).
 
-1.  **Polling**: Most sources operate on a polling basis, periodically checking for new or updated data.
-2.  **Authentication**: Many sources (especially Google-based ones) require authentication. This project uses OAuth2, with tokens managed via a CLI tool.
-3.  **Deduplication**: Sources generate unique `event_id`s for each piece of data they fetch. The pipeline uses these IDs to ensure that the same event is not processed multiple times.
-4.  **Cursor Management**: To avoid re-fetching all data every time, sources often use a "cursor" (e.g., `syncToken`, `pageToken`, or a timestamp) stored in the database.
+For detailed information on common configuration options, human-readable intervals, and environment variable expansion, see the [Configuration Guide](configuration.md).
 
-### Interaction with the System
+## Getting Started
 
-Sources interact with the rest of the system primarily through `AppServices`:
--   **Database**: Sources are registered in the `sources` table. Their current cursor state is stored there.
--   **Event Writer**: Sources call `services.writer.write_events()` to save new events to the database.
--   **Source Cursor**: Sources use `services.cursor.get_last_cursor(source_id)` and `services.cursor.set_cursor(source_id, value)` to manage their watermark.
-
-### Cursors (Watermarks)
-
-To ensure efficient data fetching and avoid processing the same data twice, sources use a **Cursor** (also known as a watermark). A cursor represents the last point of progress for a given source.
-
-#### Why use cursors?
-- **Efficiency**: Only fetch data that has changed since the last poll.
-- **Reliability**: If a source stops, it can resume from exactly where it left off.
-- **Reduced Load**: Minimizes API calls to external systems by avoiding full scans.
-
-#### Cursor Types
-- **Page/Sync Tokens**: Provided by many APIs (like Google Drive/Calendar) to represent a specific point in the change history.
-- **Timestamps**: Used when an API only supports filtering by modification date (like Google Docs search).
-- **Sequence Numbers**: Used for systems with monotonically increasing IDs.
-
-### Common Event Parameters
-
-When a source creates a `NewEvent`, it fills the following fields:
-
-| Parameter     | Meaning                                                              | How to fill it                                                                                                                      |
-|:--------------|:---------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------|
-| `event_id`    | A globally unique identifier for this specific event instance.       | Use a unique ID from the external system (e.g., message ID, change ID) or combine an ID with a timestamp/version.                   |
-| `event_type`  | A string identifying the type of event.                              | Use a dot-separated string (e.g., `gmail.message_received`, `drive.file_change`).                                                              |
-| `entity_id`   | An identifier for the underlying object being reported on.           | Use the ID of the object in the external system (e.g., file ID, email ID). Note that one entity can have multiple events over time. |
-| `data`        | A dictionary containing the actual payload of the event.             | Include all relevant metadata or content from the source system.                                                                    |
-| `occurred_at` | The timestamp when the event actually happened in the source system. | Use the timestamp provided by the source system (e.g., `internalDate`, `modifiedTime`).                                             |
-
-### Coalescing
-
-Sinks can coalesce events with the same `entity_id` and `event_type` into a single event. Typical examples include:
-- Merge multiple document updates events (`event_id`) of the same document (`entity_id`) into a single `document.updated` event.
-
-### Minimal Configuration
-
-A minimal configuration for a source in `config.yaml` usually only requires the type and some basic authentication info:
+Add a source to the `sources` section of your `config.yaml`. Each source needs a unique name (the YAML key) and a `type` that tells the pipeline which connector to use. If the name matches the type, you can omit `type`.
 
 ```yaml
 sources:
   my_gmail:
     type: gmail
-    token_file: tokens/gmail.json
+    token_file: "data/google_token.json"
 ```
 
-### Full Configuration Example
+The pipeline will start polling the source automatically on startup.
 
-```yaml
-sources:
-  my_gmail:
-    type: gmail
-    token_file: tokens/gmail.json
-    poll_interval: "1m"
-    max_results: 100
-```
+## How Sources Work
+
+1. **Polling**: Most sources run on a timer (`poll_interval`). Each tick, they call the external API and look for changes since the last poll.
+2. **Cursor**: After each successful poll, the source saves a cursor (sync token, timestamp, or sequence number) in the database. On the next poll it picks up where it left off, so no data is fetched twice and nothing is lost if the pipeline restarts.
+3. **Deduplication**: Every event carries a unique `event_id`. The pipeline ignores events whose `event_id` has already been stored.
+4. **Event Writing**: New events are written to the database via the internal `EventWriter`. Connected sinks are notified immediately.
+
+## Event Fields
+
+Every event produced by a source contains these fields:
+
+| Field         | Description                                                                                                     |
+|:--------------|:----------------------------------------------------------------------------------------------------------------|
+| `event_id`    | Globally unique identifier for this event instance (e.g. a message ID, a change ID combined with a timestamp). |
+| `event_type`  | Dot-separated string describing what happened (e.g. `gmail.message_received`, `fio.transaction.income`).        |
+| `entity_id`   | Identifier of the object the event is about (e.g. file ID, email ID). One entity can produce many events.       |
+| `data`        | JSON payload with the event-specific details.                                                                   |
+| `occurred_at` | Timestamp of when the event actually happened in the source system.                                             |
+
+## Coalescing
+
+Sinks can **coalesce** events that share the same `event_type` and `entity_id` into a single event. This is useful when a source produces many rapid updates for the same object (e.g. repeated edits to a document). Coalescing is configured on the sink side — see the individual sink docs for details.
+
+## Available Sources
+
+| Source                                            | Type              | Description                                |
+|:--------------------------------------------------|:------------------|:-------------------------------------------|
+| [Gmail](source-gmail.md)                          | `gmail`           | Emails received, sent, deleted, labels.    |
+| [Google Calendar](source-google-calendar.md)      | `google_calendar` | Calendar events created, updated, deleted. |
+| [Google Drive](source-google-drive.md)            | `google_drive`    | File changes with debounced updates.       |
+| [Fio Banka](source-fio.md)                        | `fio`             | Bank transactions.                         |
+| [Faktury Online](source-faktury-online.md)        | `faktury_online`  | Invoice changes.                           |
+| [Home Assistant](source-home-assistant.md)         | `home_assistant`  | Device tracker and sensor updates.         |
+| [Mock](source-mock.md)                            | `mock`            | Random test events for pipeline testing.   |

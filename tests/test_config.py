@@ -136,3 +136,27 @@ def test_http_pull_ttl_config(tmp_path):
     assert pull_config.default_ttl == 7200.0
     assert pull_config.event_ttl["urgent"] == 300.0
     assert pull_config.event_ttl["gmail.*"] == 900.0
+
+def test_load_config_env_expansion(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEST_DB_PATH", "env_data.db")
+    monkeypatch.setenv("TEST_RETENTION", "45")
+    monkeypatch.setenv("TEST_TOKEN", "supersecret")
+    
+    config_file = tmp_path / "config_env.yaml"
+    config_content = """
+database:
+  db_path: ${TEST_DB_PATH}
+  days: ${TEST_RETENTION}
+sources:
+  fio_acc:
+    type: fio
+    token: ${TEST_TOKEN}
+sink: {}
+"""
+    with open(config_file, "w") as f:
+        f.write(config_content)
+    
+    config = load_config(str(config_file))
+    assert config.database.db_path == "env_data.db"
+    assert config.database.retention_days == 45
+    assert config.sources["fio_acc"].token == "supersecret"

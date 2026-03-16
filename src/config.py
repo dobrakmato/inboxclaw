@@ -165,16 +165,21 @@ class Config(BaseModel):
 def load_config(path: str = None) -> Config:
     if path is None:
         path = os.environ.get("CONFIG_PATH", "config.yaml")
+    
     with open(path, "r") as f:
-        data = yaml.safe_load(f)
+        content = f.read()
+    
+    # Expand environment variables like ${VAR} or $VAR
+    expanded_content = os.path.expandvars(content)
+    data = yaml.safe_load(expanded_content)
     
     # Pre-process sources and sinks to ensure 'type' is set
     if "sources" in data:
-        for name, cfg in data["sources"].items():
+        for name, cfg in data.get("sources", {}).items():
             if isinstance(cfg, dict) and "type" not in cfg:
                 cfg["type"] = name
     if "sink" in data:
-        for name, cfg in data["sink"].items():
+        for name, cfg in data.get("sink", {}).items():
             if isinstance(cfg, dict) and "type" not in cfg:
                 cfg["type"] = name
 

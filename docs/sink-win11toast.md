@@ -1,35 +1,24 @@
-# Win11 Toast Sink (Desktop Notifications for Fast Debugging)
+# Win11 Toast Sink
 
-The Win11 Toast sink is a local debugging sink that shows a Windows 11 notification for each incoming matching event. It helps you quickly validate that events are flowing and classified correctly without opening dashboards, APIs, or logs.
+The Win11 Toast sink shows a Windows 11 desktop notification for each matching event. It is a **debugging tool** — use it to quickly verify that events are flowing through the pipeline and that your matching rules work correctly.
 
-### When to use this sink
+This sink is local-only and best-effort. It is not a durable delivery mechanism and should not be used in production. For actual event delivery, use the [Webhook](sink-webhook.md), [HTTP Pull](sink-http-pull.md), or [SSE](sink-sse.md) sinks.
 
-| Good fit                                                                | Tradeoff                                                           |
-|:------------------------------------------------------------------------|:-------------------------------------------------------------------|
-| You need immediate visual confirmation that events are being produced.  | Notifications are local-only and not a durable delivery mechanism. |
-| You are tuning event matching rules and want quick feedback.            | High event volume can become noisy.                                |
-| You want to inspect event patterns during source development/debugging. | Best-effort summary text may omit some payload details.            |
+## Getting Started
 
----
+Add a Win11 Toast sink to your `config.yaml`:
 
-## How it works
+```yaml
+sink:
+  desktop_debug:
+    type: win11toast
+```
 
-- The sink subscribes to new pipeline events.
-- It applies standard `match` filtering (same pattern behavior as other sinks).
-- For each matching event, it shows a Windows 11 toast:
-  - **Title** = `event_type`
-  - **Body** = best-effort summary from `data` JSON
-- No click action is attached.
+Each matching event will produce a Windows notification where the **title** is the `event_type` and the **body** is a best-effort summary of the `data` payload.
 
-### Body summary strategy (best effort)
+Requires Windows 11 and the `win11toast` Python package.
 
-The sink tries to extract meaningful fields first (for example `title`, `summary`, `message`, `status`, `filename`).
-If that fails, it falls back to a compact scalar extraction from nested JSON.
-If payload is still hard to summarize, it falls back to a truncated JSON snippet.
-
----
-
-## Configuration (`config.yaml`)
+## Configuration
 
 ### Minimal Configuration
 
@@ -39,7 +28,9 @@ sink:
     type: win11toast
 ```
 
-### Filtered Configuration
+Defaults: `match: "*"`, `max_body_length: 220`.
+
+### Full Configuration
 
 ```yaml
 sink:
@@ -48,29 +39,23 @@ sink:
     match:
       - "google.calendar.*"
       - "gmail.message_received"
+    max_body_length: 300
 ```
 
-### Full Configuration
+### Configuration Reference
 
-```yaml
-sink:
-  debug_notifications:
-    type: win11toast
-    match: "*"
-    max_body_length: 220
-```
+| Parameter         | Type           | Default | Description                                                                     |
+|:------------------|:---------------|:--------|:--------------------------------------------------------------------------------|
+| `type`            | `string`       | —       | Must be `win11toast`.                                                           |
+| `match`           | `string\|list` | `"*"`   | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.             |
+| `max_body_length` | `int`          | `220`   | Maximum notification body length before truncation.                             |
 
-### Configuration options explained
+## How the Notification Body is Built
 
-| Option            | What it controls                                                 | Practical guidance                                               |
-|:------------------|:-----------------------------------------------------------------|:-----------------------------------------------------------------|
-| `type`            | Sink implementation selector.                                    | Must be `win11toast`.                                            |
-| `match`           | Event type filter (`*`, exact match, or prefix like `google.*`). | Narrow this during debugging to reduce notification noise.       |
-| `max_body_length` | Maximum notification body length before truncation.              | Increase if your event payload summaries are frequently cut off. |
+The sink tries to extract meaningful fields from the event `data` in this order:
 
----
+1. Looks for well-known keys: `summary`, `title`, `subject`, `name`, `filename`, `message`, `description`, `snippet`, `status`, `action`.
+2. Falls back to extracting scalar values from nested JSON.
+3. Falls back to a truncated JSON snippet.
 
-## Notes
-
-- This sink is intended mostly for local debugging and development workflows.
-- Requires Windows 11 notifications and the `win11toast` Python package.
+The body is prefixed with `entity={entity_id}` when available.

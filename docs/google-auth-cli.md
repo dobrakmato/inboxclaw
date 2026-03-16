@@ -1,74 +1,71 @@
 # Google Authentication CLI
 
-Connecting your ingest pipeline to Google services (Gmail, Calendar, Drive, Docs) requires a secure connection using OAuth 2.0. This guide explains how to use the built-in CLI tool to authorize access and generate a token that the pipeline can use.
+Before the pipeline can access Google services (Gmail, Calendar, Drive), you need to grant it permission using OAuth 2.0. This CLI tool handles the authorization flow and saves a token file that the pipeline uses to authenticate.
 
-## Why use this?
+Your password is never shared with the pipeline. You can revoke access at any time through your [Google Account settings](https://myaccount.google.com/permissions). Once authorized, the pipeline runs in the background without asking for permission again until the token expires or is revoked.
 
-Before the ingest pipeline can read your emails or calendar events, you must grant it permission. This tool handles the "handshake" between your computer and Google's servers.
+## Prerequisites
 
-- **Security**: Your password is never shared with this application.
-- **Control**: You can revoke access at any time through your Google Account settings.
-- **Convenience**: Once authorized, the pipeline can run in the background without asking for permission again until the token expires or is revoked.
+You need Google Cloud credentials (Client ID and Client Secret). Create a "Desktop App" in the [Google Cloud Console](https://console.cloud.google.com/) to get them.
 
-## Before You Start
-
-You will need Google Cloud credentials (a Client ID and Client Secret). You can get these by creating a "Desktop App" in the [Google Cloud Console](https://console.cloud.google.com/).
+Alternatively, download a `credentials.json` file from the Google Cloud Console and use `--credentials-file` instead of typing the ID and Secret manually.
 
 ## How to Authorize
 
-The authorization is a two-step process.
-
-### Step 1: Generate the Authorization Link
-
-Run the following command in your terminal. Replace the placeholders with your actual Client ID and Secret, and specify where you want to save the token.
-
-You must also provide a list of **scope aliases** (see the table below) for the services you want to access.
+### Step 1: Run the auth command
 
 ```bash
-python main.py google auth --client-id "YOUR_CLIENT_ID" --client-secret "YOUR_CLIENT_SECRET" --token "data/google_token.json" --scopes "gmail,calendar,drive"
+python main.py google auth \
+  --client-id "YOUR_CLIENT_ID" \
+  --client-secret "YOUR_CLIENT_SECRET" \
+  --token "data/google_token.json" \
+  --scopes "gmail,calendar,drive"
 ```
 
-The tool will print a long URL.
+Or with a credentials file:
 
-### Scope Aliases
+```bash
+python main.py google auth \
+  --credentials-file data/credentials.json \
+  --token "data/google_token.json" \
+  --scopes "gmail,calendar,drive"
+```
 
-Use these short names with the `--scopes` parameter to grant specific permissions:
+The tool will print an authorization URL.
 
-| Alias            | Permission Granted                   | Use Case                                                               |
-|:-----------------|:-------------------------------------|:-----------------------------------------------------------------------|
-| `gmail`          | Read-only access to emails           | Fetching recent emails from your inbox.                                |
-| `calendar`       | Read-only access to calendar events  | Monitoring your schedule for new events.                               |
-| `drive`          | Read-only access to files            | Tracking changes **and** fetching file content for detailed text diffs. |
-| `drive_metadata` | Read-only access to file metadata    | Tracking metadata changes only (name, move, etc.) without content.     |
-| `docs`           | Read-only access to files            | Monitoring modifications to Google Docs, including content changes.    |
-| `contacts`       | Read-only access to contacts         | Accessing your contact list information.                               |
-| `all`            | Multiple permissions                 | Conveniently grants `gmail`, `drive`, `calendar`, and `contacts`.      |
+### Step 2: Approve access in your browser
 
-> **Note**: You can combine multiple aliases using commas (e.g., `--scopes "gmail,calendar"`).
+1. Copy the URL and open it in your browser.
+2. Sign in with your Google account and review the permissions.
+3. Approve the request.
+4. Your browser will redirect to a URL that may not load (e.g. `http://localhost:8765/...`). This is normal.
+5. Copy the **entire URL** from your browser's address bar.
+6. Paste it back into the terminal when prompted.
 
-### Step 2: Approve Access and Paste the Result
+The tool saves a `google_token.json` file at the path you specified.
 
-1.  **Copy the URL** printed in Step 1 and paste it into your web browser.
-2.  **Sign in** with your Google account and review the permissions requested.
-3.  **Approve** the request.
-4.  After approving, your browser will try to redirect you to a page that might not load (e.g., `http://localhost:8765/...`). This is normal!
-5.  **Copy the entire URL** from your browser's address bar.
-6.  Go back to your terminal and **paste the URL** when prompted.
-
-The tool will now save a `google_token.json` file in your `data/` folder.
-
-## Configuration
-
-Once you have the token file, update your `config.yaml` to point to it:
+### Step 3: Use the token in your config
 
 ```yaml
 sources:
-  gmail:
+  my_gmail:
+    type: gmail
     token_file: "data/google_token.json"
     poll_interval: "5m"
 ```
 
-## Tips
+Multiple sources can share the same token file, as long as the token was created with all the required scopes.
 
-- **Scopes**: Use the scope aliases listed above (e.g., `gmail`, `drive`, `calendar`) in the `--scopes` parameter, separated by commas.
-- **Credentials File**: If you have a `credentials.json` file downloaded from Google Cloud, you can use `--credentials-file path/to/credentials.json` instead of manually typing the ID and Secret.
+## Scope Aliases
+
+Use these short names with the `--scopes` parameter (comma-separated):
+
+| Alias            | Permission Granted                 | Used by                                                                    |
+|:-----------------|:-----------------------------------|:---------------------------------------------------------------------------|
+| `gmail`          | Read-only access to emails         | [Gmail source](source-gmail.md)                                           |
+| `calendar`       | Read-only access to calendar       | [Google Calendar source](source-google-calendar.md)                        |
+| `drive`          | Read-only access to files          | [Google Drive source](source-google-drive.md) (metadata + content diffs)   |
+| `drive_metadata` | Read-only access to file metadata  | [Google Drive source](source-google-drive.md) (metadata only, no diffs)    |
+| `docs`           | Read-only access to files          | Google Docs content access                                                 |
+| `contacts`       | Read-only access to contacts       | Contact list access                                                        |
+| `all`            | Multiple permissions               | Grants `gmail`, `drive`, `calendar`, and `contacts` together               |

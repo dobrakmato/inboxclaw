@@ -1,82 +1,74 @@
-# Mock Event Source (Heartbeat and Testing)
+# Mock Source
 
-The Mock Event Source is a testing and diagnostic tool designed to generate continuous, predictable "heartbeat" events within the ingest pipeline. It automatically creates events with a random numeric payload at a specified interval, making it perfect for verifying your sinks and monitoring the pipeline's overall health without relying on external data providers.
+The Mock source generates a continuous stream of random events at a configurable interval. It is a **testing and diagnostic tool** — use it to verify that your sinks are working, to test matching rules, or as a heartbeat to confirm the pipeline is alive.
 
-### Is this the right choice?
+This source is not intended for production use. It produces a single event type (`mock.random_number`) with a random integer payload.
 
-| Use Case                                                                                                                       | Considerations                                                         |
-|:-------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------|
-| **Pipeline Verification**: Quickly test if your sinks (Webhooks, SSE, HTTP Pull) are correctly receiving and processing events. | **Non-Production Tool**: Use primarily for development and monitoring. |
-| **Heartbeat & Monitoring**: Ensure the pipeline is alive with a steady stream of data.                                         | **Simple Payload**: Generates a random number (1-100).                 |
-| **Load Testing**: Simulate high-frequency data streams.                                                                        |                                                                        |
+## Getting Started
 
----
+Add a Mock source to your `config.yaml`:
 
-## How it Works
-
-The Mock Source runs as a background task within the ingest pipeline application. Once initialized based on your configuration, it starts a simple timer loop. Every time the timer expires, it generates a new event and stores it in the pipeline database.
-
-```mermaid
-sequenceDiagram
-    participant Pipeline as Ingest Pipeline
-    participant DB as Pipeline Database
-    participant Sink as Your Active Sink (e.g., SSE)
-
-    loop Every X Seconds (Configurable)
-        Pipeline->>Pipeline: Generate random number (1-100)
-        Pipeline->>DB: Store "mock.random_number" event
-        Pipeline->>Sink: Notify of new data
-    end
+```yaml
+sources:
+  test_source:
+    type: mock
 ```
 
-### Configurable Intervals
-You can use time interval strings like `"5s"`, `"1m"`, or `"1d"`. 
+This will generate one event every 10 seconds (the default interval).
 
-#### Event Frequency and Resource Management
-Short intervals (like `"5s"`) lead to rapid database growth since every event is stored. For long-term monitoring, intervals between `1m` and `1h` are generally recommended.
-
----
-
-## Configuration (`config.yaml`)
+## Configuration
 
 ### Minimal Configuration
-The simplest way to get a mock stream running. It defaults to a **10-second** interval.
 
 ```yaml
 sources:
-  test_random_source:
-    type: "mock"
+  test_source:
+    type: mock
 ```
 
-### Full Configuration Example
-This example shows a more frequent interval and how to set multiple mock sources for different testing scenarios.
+Default: `interval: "10s"`.
+
+### Full Configuration
 
 ```yaml
 sources:
-  high_frequency_test:
-    type: "mock"
-    interval: "5s"       # Generates data every 5 seconds
+  fast_test:
+    type: mock
+    interval: "5s"
+
   daily_heartbeat:
-    type: "mock"
-    interval: "24h"      # Generates data once a day
+    type: mock
+    interval: "24h"
 ```
 
----
+### Configuration Reference
 
-## Event Structure Example
+| Parameter  | Type     | Default | Description                                                                    |
+|:-----------|:---------|:--------|:-------------------------------------------------------------------------------|
+| `interval` | `string` | `"10s"` | Time between events. Supports human-readable intervals (e.g. `"5s"`, `"1m"`). |
 
-When the Mock Source generates an event, it will look like this in your database or sink payloads:
+Short intervals lead to rapid database growth. For long-term monitoring, use intervals of `"1m"` or longer.
+
+## Event Definitions
+
+| Type                 | Entity ID              | Description                          |
+|:---------------------|:-----------------------|:-------------------------------------|
+| `mock.random_number` | `mock-{source_name}`   | A random number between 1 and 100.   |
+
+### Event Example
 
 ```json
 {
+  "id": 1,
   "event_id": "550e8400-e29b-41d4-a716-446655440000",
   "event_type": "mock.random_number",
-  "entity_id": "mock-test_random_source",
+  "entity_id": "mock-test_source",
+  "created_at": "2026-03-14T12:00:00+00:00",
   "data": {
     "number": 42
   },
-  "occurred_at": "2026-03-14T12:00:00Z"
+  "meta": {}
 }
 ```
 
-*Note: The `entity_id` is automatically prefixed with `mock-` followed by the name you gave the source in your configuration.*
+The `entity_id` is `mock-` followed by the source name from your `config.yaml`.
