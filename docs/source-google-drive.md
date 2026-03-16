@@ -155,26 +155,30 @@ sources:
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
     "parentIds": ["0AExampleFolder"],
-    "previousVersion": "21",
-    "currentVersion": "27",
-    "sessionStartedAt": "2026-03-15T00:46:12Z",
-    "lastChangeSeenAt": "2026-03-15T00:47:56Z",
-    "rawChangeCount": 4,
+    "session": {
+      "sessionStartedAt": "2026-03-15T00:46:12Z",
+      "lastChangeSeenAt": "2026-03-15T00:47:56Z",
+      "rawChangeCount": 4,
+      "changes": [
+        {
+          "before": "Old paragraph content...",
+          "after": "New paragraph content..."
+        }
+      ],
+      "totalChangedSections": 1,
+      "addedCharCount": 15,
+      "removedCharCount": 10
+    },
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"
-    },
-    "snippetBefore": "Old paragraph content...",
-    "snippetAfter": "New paragraph content...",
-    "changedBlockCount": 1,
-    "addedCharCount": 15,
-    "removedCharCount": 10
+    }
   },
   "meta": {}
 }
 ```
 
-For text files with eligible MIME types, `file_updated` includes diff fields: `snippetBefore`, `snippetAfter`, `changedBlockCount`, `addedCharCount`, `removedCharCount`.
+For text files with eligible MIME types, `file_updated` includes diff fields under the `session` object: `changes` (array of change objects), `totalChangedSections`, `addedCharCount`, `removedCharCount`.
 
 #### `google.drive.file_moved`
 
@@ -189,9 +193,10 @@ For text files with eligible MIME types, `file_updated` includes diff fields: `s
     "fileId": "1AbCd",
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
-    "parentIds": ["0ANewFolder"],
-    "parentIdsBefore": ["0AExampleFolder"],
-    "parentIdsAfter": ["0ANewFolder"],
+    "parentIds": {
+      "before": ["0AExampleFolder"],
+      "after": ["0ANewFolder"]
+    },
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"

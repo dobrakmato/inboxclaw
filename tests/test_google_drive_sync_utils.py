@@ -95,16 +95,16 @@ def test_debounce_flush_by_quiet_window():
 
 
 def test_text_diff_calculator():
-    calc = DriveTextDiffCalculator(max_snippet_chars=10)
+    calc = DriveTextDiffCalculator(max_section_chars=10, max_changed_sections=5)
     
     old_text = "Paragraph 1\n\nParagraph 2\n\nParagraph 3"
     new_text = "Paragraph 1\n\nParagraph 2 modified\n\nParagraph 4"
     
     diff = calc.compute_diff(old_text, new_text)
     
-    assert diff["changedBlockCount"] == 2
-    assert diff["snippetBefore"] == "Paragraph ... (truncated)"
-    assert diff["snippetAfter"] == "Paragraph ... (truncated)"
+    assert diff["totalChangedSections"] == 2
+    assert len(diff["changes"]) == 2
+    assert diff["changes"][0]["after"] == "Paragraph  (truncated)"
     assert diff["addedCharCount"] > 0
     assert diff["removedCharCount"] > 0
 
@@ -112,6 +112,6 @@ def test_text_diff_calculator():
 def test_text_diff_calculator_empty():
     calc = DriveTextDiffCalculator()
     diff = calc.compute_diff(None, "Hello")
-    assert diff["changedBlockCount"] == 1
-    assert diff["snippetBefore"] is None
-    assert diff["snippetAfter"] == "Hello"
+    assert diff["totalChangedSections"] == 1
+    assert len(diff["changes"]) == 1
+    assert diff["changes"][0]["after"] == "Hello"

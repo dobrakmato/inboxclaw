@@ -62,6 +62,8 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
         ]
     )
     max_diffable_file_bytes: int = 10 * 1024 * 1024  # 10MB
+    max_changed_sections: int = 5
+    max_section_chars: int = 300
 
 class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"

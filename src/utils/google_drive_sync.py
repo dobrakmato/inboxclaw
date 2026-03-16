@@ -216,8 +216,9 @@ class DriveDebounceManager:
 
 
 class DriveTextDiffCalculator:
-    def __init__(self, max_snippet_chars: int = 400):
-        self.max_snippet_chars = max_snippet_chars
+    def __init__(self, max_section_chars: int = 300, max_changed_sections: int = 5):
+        self.max_section_chars = max_section_chars
+        self.max_changed_sections = max_changed_sections
 
     def normalize(self, text: str) -> list[str]:
         if not text:
@@ -241,18 +242,18 @@ class DriveTextDiffCalculator:
         
         matcher = difflib.SequenceMatcher(None, old_blocks, new_blocks)
         
-        changed_block_count = 0
+        changed_sections_count = 0
         added_char_count = 0
         removed_char_count = 0
         
-        snippet_before = None
-        snippet_after = None
+        changes = []
         
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "equal":
                 continue
             
-            changed_block_count += max(i2 - i1, j2 - j1)
+            # Count each changed block as a section
+            changed_sections_count += max(i2 - i1, j2 - j1)
             
             # Sum added/removed chars
             old_part = "\n\n".join(old_blocks[i1:i2])
@@ -261,20 +262,30 @@ class DriveTextDiffCalculator:
             removed_char_count += len(old_part)
             added_char_count += len(new_part)
             
-            # Collect first snippet
-            if snippet_before is None and i1 < i2:
-                snippet_before = old_blocks[i1]
-                if len(snippet_before) > self.max_snippet_chars:
-                    snippet_before = snippet_before[:self.max_snippet_chars] + "... (truncated)"
-            if snippet_after is None and j1 < j2:
-                snippet_after = new_blocks[j1]
-                if len(snippet_after) > self.max_snippet_chars:
-                    snippet_after = snippet_after[:self.max_snippet_chars] + "... (truncated)"
-        
+            # Collect changed blocks
+            if len(changes) < self.max_changed_sections:
+                # Capture blocks from this change
+                # We can pair them up or just list them. The issue says "report array of found changes"
+                # Let's emit objects with before/after for each changed block
+                max_to_add = self.max_changed_sections - len(changes)
+                num_blocks = max(i2 - i1, j2 - j1)
+                for idx in range(min(num_blocks, max_to_add)):
+                    before = old_blocks[i1 + idx] if (i1 + idx) < i2 else None
+                    after = new_blocks[j1 + idx] if (j1 + idx) < j2 else None
+                    
+                    if before and len(before) > self.max_section_chars:
+                        before = before[:self.max_section_chars] + " (truncated)"
+                    if after and len(after) > self.max_section_chars:
+                        after = after[:self.max_section_chars] + " (truncated)"
+                    
+                    changes.append({
+                        "before": before,
+                        "after": after
+                    })
+
         return {
-            "changedBlockCount": changed_block_count,
-            "snippetBefore": snippet_before,
-            "snippetAfter": snippet_after,
+            "totalChangedSections": changed_sections_count,
+            "changes": changes,
             "addedCharCount": added_char_count,
             "removedCharCount": removed_char_count,
         }

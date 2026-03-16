@@ -35,7 +35,10 @@ class GoogleDriveSource:
         self.poll_interval = config.poll_interval
         self.classifier = DriveTransitionClassifier()
         self.debounce = DriveDebounceManager()
-        self.diff_calc = DriveTextDiffCalculator()
+        self.diff_calc = DriveTextDiffCalculator(
+            max_section_chars=config.max_section_chars,
+            max_changed_sections=config.max_changed_sections
+        )
 
     def _get_service(self):
         creds = get_google_credentials(self.token_file, self.name)
@@ -128,8 +131,10 @@ class GoogleDriveSource:
         if event_type == GoogleDriveEventType.FILE_MOVED and previous is not None and current is not None:
             return {
                 **common,
-                "parentIdsBefore": previous.parents,
-                "parentIdsAfter": current.parents,
+                "parentIds": {
+                    "before": previous.parents,
+                    "after": current.parents,
+                }
             }
 
         if event_type in {GoogleDriveEventType.FILE_TRASHED, GoogleDriveEventType.FILE_UNTRASHED} and previous is not None and current is not None:
@@ -154,6 +159,10 @@ class GoogleDriveSource:
                 "lastKnownParentIds": previous.parents if previous else [],
             }
 
+        # Remove version fields if present in common
+        common.pop("previousVersion", None)
+        common.pop("currentVersion", None)
+        
         return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
@@ -176,7 +185,7 @@ class GoogleDriveSource:
         try:
             if mime_type.startswith("application/vnd.google-apps."):
                 if "document" in mime_type:
-                    # Google Docs export
+                    # Google Docs export as Markdown
                     content = service.files().export(fileId=file_id, mimeType="text/markdown").execute()
                     if content is None:
                         return None
@@ -309,15 +318,14 @@ class GoogleDriveSource:
             current_snapshot = snapshot
             data = {
                 **self._common_fields(file_id, current_snapshot),
-                "rawChangeCount": state.raw_change_count,
                 "modificationDate": current_snapshot.modified_time,
             }
 
-            if state.raw_change_count > 1:
-                data["session"] = {
-                    "sessionStartedAt": state.session_started_at,
-                    "lastChangeSeenAt": state.last_change_seen_at,
-                }
+            data["session"] = {
+                "sessionStartedAt": state.session_started_at,
+                "lastChangeSeenAt": state.last_change_seen_at,
+                "rawChangeCount": state.raw_change_count,
+            }
 
             if current_snapshot.description:
                 data["description"] = current_snapshot.description
@@ -327,12 +335,14 @@ class GoogleDriveSource:
                 data["lastModifyingUser"] = current_snapshot.last_modifying_user
 
             # Check for parent changes during the update session
-            previous_snapshot = self.services.kv.get(self.source_id, f"gdrive:snapshot_before_update:{file_id}")
-            if previous_snapshot and isinstance(previous_snapshot, dict):
-                prev_parents = sorted(previous_snapshot.get("parents", []) or [])
+            previous_snapshot_data = self.services.kv.get(self.source_id, f"gdrive:snapshot_before_update:{file_id}")
+            if previous_snapshot_data and isinstance(previous_snapshot_data, dict):
+                prev_parents = sorted(previous_snapshot_data.get("parents", []) or [])
                 if prev_parents != current_snapshot.parents:
-                    data["parentIdsBefore"] = prev_parents
-                    data["parentIdsAfter"] = current_snapshot.parents
+                    data["parentIds"] = {
+                        "before": prev_parents,
+                        "after": current_snapshot.parents,
+                    }
 
             # If it's a text file and we have snapshots, compute diff
             is_text = any(current_snapshot.mime_type.startswith(t.replace("*", "")) for t in self.config.eligible_mime_types_for_content_diff) or current_snapshot.mime_type in self.config.eligible_mime_types_for_content_diff
@@ -341,7 +351,7 @@ class GoogleDriveSource:
                     state.start_content_snapshot,
                     current_snapshot.content_snapshot
                 )
-                data["change"] = diff
+                data["session"].update(diff)
 
             events.append(
                 NewEvent(
