@@ -5,6 +5,7 @@ from typing import Any, Dict, Union
 
 import httpx
 from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import joinedload
 
 from pydantic import ValidationError
 from src.database import Event, HttpWebhookDelivery
@@ -108,6 +109,7 @@ class WebhookSink:
         with self.services.db_session_maker() as session:
             stmt = (
                 select(Event)
+                .options(joinedload(Event.source))
                 .outerjoin(
                     HttpWebhookDelivery,
                     (HttpWebhookDelivery.event_id == Event.id) & (HttpWebhookDelivery.sink_id == self.sink_id)

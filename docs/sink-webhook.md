@@ -107,6 +107,10 @@ The sink sends an HTTP POST with `Content-Type: application/json`. The body is a
     "ip_address": "192.168.1.1",
     "browser": "Chrome"
   },
+  "source": {
+    "id": 2,
+    "name": "main_app"
+  },
   "meta": {}
 }
 ```

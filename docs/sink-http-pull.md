@@ -131,6 +131,10 @@ Returns a batch of unprocessed events, ordered oldest first.
       "entity_id": "order_789",
       "created_at": "2024-03-15T10:00:00+00:00",
       "data": { "order_id": "ORD-789", "amount": 150.00 },
+      "source": {
+        "id": 3,
+        "name": "ecommerce_shop"
+      },
       "meta": {}
     }
   ],

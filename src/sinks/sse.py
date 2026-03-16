@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 from fastapi import Request, Query
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select, and_
+from sqlalchemy.orm import joinedload
 from pydantic import ValidationError
 from src.database import Event
 from src.schemas import EventWithMeta
@@ -136,8 +137,8 @@ class SSESink:
             # 1. The config-level matcher (self.matcher)
             # 2. The request-level filter (event_type)
             final_match = self.matcher.build_sqlalchemy_clause(event_type)
-
-            stmt = select(Event).where(
+            
+            stmt = select(Event).options(joinedload(Event.source)).where(
                 and_(
                     Event.id > last_id,
                     final_match

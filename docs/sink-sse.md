@@ -105,7 +105,7 @@ data: connected
 
 event: message
 id: 42
-data: {"id": 42, "event_id": "evt_abc", "event_type": "user.login", "entity_id": "user_1", "created_at": "2024-03-15T10:00:00+00:00", "data": {"ip": "1.2.3.4"}, "meta": {}}
+data: {"id": 42, "event_id": "evt_abc", "event_type": "user.login", "entity_id": "user_1", "created_at": "2024-03-15T10:00:00+00:00", "data": {"ip": "1.2.3.4"}, "source": {"id": 1, "name": "web_frontend"}, "meta": {}}
 
 event: heartbeat
 data: ping

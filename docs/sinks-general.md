@@ -61,6 +61,10 @@ All sinks deliver events using the same JSON structure:
     "subject": "Hello",
     "from": "alice@example.com"
   },
+  "source": {
+    "id": 1,
+    "name": "gmail_primary"
+  },
   "meta": {}
 }
 ```
@@ -73,6 +77,7 @@ All sinks deliver events using the same JSON structure:
 | `entity_id`  | Identifier of the object the event is about.                       |
 | `created_at` | ISO 8601 timestamp of when the event was stored in the pipeline.   |
 | `data`       | Source-specific payload (see individual source docs).              |
+| `source`     | Information about the source that produced the event (`id`, `name`). |
 | `meta`       | Additional metadata (usually empty).                               |
 
 ## Coalescing

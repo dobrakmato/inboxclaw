@@ -47,6 +47,7 @@ class Event(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     occurred_at = Column(DateTime)
     data = Column(JSON)
+    source = relationship("Source")
 
 class HttpWebhookDelivery(Base):
     __tablename__ = 'http_webhook_deliveries'

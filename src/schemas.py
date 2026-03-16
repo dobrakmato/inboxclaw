@@ -13,6 +13,7 @@ class EventWithMeta(BaseModel):
     entity_id: Optional[str] = None
     created_at: Union[datetime, str, None] = None
     data: Optional[Dict[str, Any]] = None
+    source: Optional[Dict[str, Any]] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
@@ -24,6 +25,7 @@ class EventWithMeta(BaseModel):
             entity_id=event.entity_id,
             created_at=event.created_at,
             data=event.data,
+            source={"id": event.source.id, "name": event.source.name} if getattr(event, "source", None) else None,
             meta=meta or getattr(event, "meta", {})
         )
 

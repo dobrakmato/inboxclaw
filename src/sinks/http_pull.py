@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 from fastapi import HTTPException, Query
 from sqlalchemy import select, and_, not_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import ValidationError
 from src.database import Event, HttpPullBatch, HttpPullBatchEvent
 from src.schemas import EventWithMeta
@@ -170,7 +170,7 @@ class HttpPullSink:
             )
         ]
 
-        stmt = select(Event).where(and_(*conditions)).order_by(Event.id.asc())
+        stmt = select(Event).options(joinedload(Event.source)).where(and_(*conditions)).order_by(Event.id.asc())
         
         if batch_size is not None and batch_size > 0:
             stmt = stmt.limit(batch_size)

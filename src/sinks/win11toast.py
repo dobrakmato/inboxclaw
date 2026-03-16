@@ -4,7 +4,8 @@ import logging
 from typing import Any, Dict, Union
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import joinedload
 
 from src.config import Win11ToastSinkConfig
 from src.database import Event
@@ -121,6 +122,7 @@ class Win11ToastSink:
         with self.services.db_session_maker() as session:
             stmt = (
                 select(Event)
+                .options(joinedload(Event.source))
                 .where(Event.id > last_id)
                 .order_by(Event.id.asc())
             )
