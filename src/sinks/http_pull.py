@@ -87,15 +87,16 @@ class HttpPullSink:
                 
                 # Calculate remaining_count:
                 # When coalescing, it's the total number of COALESCED events available 
-                # among ALL matching unprocessed source events.
+                # among ALL matching unprocessed source events, minus what we are returning now.
                 # Since fetch_size is None, we have them all in 'coalesced_events'.
-                remaining_count = len(coalesced_events)
+                remaining_count = len(coalesced_events) - len(events_to_return)
             else:
                 events_to_return = events
                 source_ids_to_link = [e.id for e in events]
                 
                 # If not coalescing, remaining_count is total unprocessed events matching criteria
-                remaining_count = self._count_unprocessed_events(session, event_type=event_type)
+                # minus what we are returning in this batch.
+                remaining_count = self._count_unprocessed_events(session, event_type=event_type) - len(events_to_return)
             
             # Create a new batch
             batch = HttpPullBatch(sink_id=self.sink_id)

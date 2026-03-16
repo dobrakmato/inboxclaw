@@ -107,7 +107,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     response = client.get("/my_pull/extract?event_type=calendar.new_event")
     data = response.json()
     assert len(data["events"]) == 2
-    assert data["remaining_events"] == 2 # still 2 remaining because not marked processed
+    assert data["remaining_events"] == 0 # no more remaining for this event_type
     assert all(e["event_type"] == "calendar.new_event" for e in data["events"])
     
     # 2. Test event_type wildcard
@@ -130,7 +130,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     response = client.get("/my_pull/extract?event_type=bulk&batch_size=4")
     data = response.json()
     assert len(data["events"]) == 4
-    assert data["remaining_events"] == 10 # still 10 remaining until marked processed
+    assert data["remaining_events"] == 6 # 10 total - 4 returned
     
     # Now mark the batch as processed to reduce remaining count
     client.post(f"/my_pull/mark-processed?batch_id={data['batch_id']}")
@@ -138,7 +138,7 @@ def test_extract_with_selector_and_batch_size(services, client, db_session_maker
     # Now call again to verify remaining count decreased
     response = client.get("/my_pull/extract?event_type=bulk&batch_size=4")
     data = response.json()
-    assert data["remaining_events"] == 6
+    assert data["remaining_events"] == 2 # 6 remaining - 4 returned
     
     # 4. Test FIFO order
     assert data["events"][0]["event_id"] == "bulk_4"
@@ -506,7 +506,7 @@ def test_extract_with_default_ttl(services, client, db_session_maker, sink_id):
     data = response.json()
     assert len(data["events"]) == 1
     assert data["events"][0]["event_id"] == "e1"
-    assert data["remaining_events"] == 1
+    assert data["remaining_events"] == 0
 
 
 def test_extract_with_ttl_disabled(services, client, db_session_maker, sink_id):
