@@ -83,18 +83,18 @@ sources:
 
 | Type                      | Entity ID      | Description                                          |
 |:--------------------------|:---------------|:-----------------------------------------------------|
-| `fio.transaction.income`  | Account Number | Incoming transaction (amount > 0).                   |
-| `fio.transaction.expense` | Account Number | Outgoing transaction (amount < 0).                   |
-| `fio.transaction`         | Account Number | Transaction with amount exactly 0 (rare).            |
+| `fio.transaction.income`  | Transaction ID | Incoming transaction (amount > 0).                   |
+| `fio.transaction.expense` | Transaction ID | Outgoing transaction (amount < 0).                   |
+| `fio.transaction`         | Transaction ID | Transaction with amount exactly 0 (rare).            |
 
 ### Event Example
 
 ```json
 {
   "id": 1,
-  "event_id": "1148734530",
+  "event_id": "fio_1148734530",
   "event_type": "fio.transaction.income",
-  "entity_id": "2400222222",
+  "entity_id": "1148734530",
   "created_at": "2024-03-15T10:00:00+00:00",
   "data": {
     "id": "1148734530",

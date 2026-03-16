@@ -18,6 +18,13 @@ class EventWithMeta(BaseModel):
 
     @classmethod
     def from_event(cls, event: Any, meta: Optional[Dict[str, Any]] = None) -> "EventWithMeta":
+        source_data = None
+        if hasattr(event, "source") and event.source is not None:
+            if isinstance(event.source, dict):
+                source_data = {"id": event.source.get("id"), "name": event.source.get("name")}
+            else:
+                source_data = {"id": event.source.id, "name": event.source.name}
+
         return cls(
             id=getattr(event, "id", None),
             event_id=event.event_id,
@@ -25,7 +32,7 @@ class EventWithMeta(BaseModel):
             entity_id=event.entity_id,
             created_at=event.created_at,
             data=event.data,
-            source={"id": event.source.id, "name": event.source.name} if getattr(event, "source", None) else None,
+            source=source_data,
             meta=meta or getattr(event, "meta", {})
         )
 

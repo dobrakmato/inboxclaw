@@ -208,7 +208,7 @@ class FioSource:
         return NewEvent(
             event_id=event_id,
             event_type=event_type,
-            entity_id=tx.get("account_id"),
+            entity_id=tx_id,
             occurred_at=occurred_at,
             data=tx
         )

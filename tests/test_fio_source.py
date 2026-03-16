@@ -98,6 +98,7 @@ async def test_fio_poll_success(mock_services, config, mock_response):
         args1 = events[0]
         assert isinstance(args1, NewEvent)
         assert args1.event_id == "fio_1111"
+        assert args1.entity_id == "1111"
         assert args1.event_type == "fio.transaction.income"
         assert args1.data["amount"] == 500.0
         assert args1.data["balance"] == 1500.0
@@ -106,6 +107,7 @@ async def test_fio_poll_success(mock_services, config, mock_response):
         args2 = events[1]
         assert isinstance(args2, NewEvent)
         assert args2.event_id == "fio_2222"
+        assert args2.entity_id == "2222"
         assert args2.event_type == "fio.transaction.expense"
         assert args2.data["amount"] == -200.0
         
