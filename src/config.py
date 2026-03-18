@@ -74,6 +74,7 @@ class GoogleCalendarSourceConfig(GoogleSourceConfig):
     calendar_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     show_deleted: bool = True
     single_events: bool = True
+    collapse_recurring_events: bool = True
 
 class FakturyOnlineSourceConfig(BaseSourceConfig):
     type: Literal["faktury_online"] = "faktury_online"

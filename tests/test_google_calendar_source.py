@@ -148,3 +148,120 @@ def test_google_calendar_deleted(mock_services, config):
     assert "event" in ev.data
     assert "previous" in ev.data
     assert ev.data["previous"]["summary"] == "Meeting"
+
+def test_google_calendar_recurrence_fields(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    
+    event_item = {
+        "id": "evt1_20240101",
+        "recurringEventId": "master_evt1",
+        "recurrence": ["RRULE:FREQ=WEEKLY"],
+        "summary": "Weekly Meeting",
+        "start": {"dateTime": "2024-01-01T10:00:00Z"},
+        "status": "confirmed",
+        "etag": "v1"
+    }
+    
+    mock_services.kv.get.return_value = None
+    
+    events = source._classify_event_change("primary", event_item)
+    
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.data["recurring_event_id"] == "master_evt1"
+    assert ev.data["recurrence"] == ["RRULE:FREQ=WEEKLY"]
+
+@pytest.mark.asyncio
+async def test_google_calendar_collapse_recurring(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    
+    # Mock _fetch_page to return two instances of the same recurring event
+    source._fetch_page = MagicMock(return_value={
+        "items": [
+            {
+                "id": "evt1_inst1",
+                "recurringEventId": "master_evt1",
+                "summary": "Weekly Meeting",
+                "start": {"dateTime": "2024-01-01T10:00:00Z"},
+                "status": "confirmed",
+                "etag": "v1"
+            },
+            {
+                "id": "evt1_inst2",
+                "recurringEventId": "master_evt1",
+                "summary": "Weekly Meeting",
+                "start": {"dateTime": "2024-01-08T10:00:00Z"},
+                "status": "confirmed",
+                "etag": "v1"
+            }
+        ],
+        "nextPageToken": None,
+        "nextSyncToken": "sync_v2"
+    })
+    
+    # Mock kv.get to handle both sync_token and config_max_into_future
+    def kv_get_mock(sid, key):
+        if "sync_token" in key:
+            return "sync_v1"
+        if "config_max_into_future" in key:
+            # Match the default from config (365d = 31536000.0)
+            return str(31536000.0)
+        return None
+    
+    mock_services.kv.get.side_effect = kv_get_mock
+    
+    # Use config with collapse enabled (default)
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+    
+    # Should only call write_events once with ONE event (collapsed)
+    assert mock_services.writer.write_events.called
+    args, _ = mock_services.writer.write_events.call_args
+    emitted = args[1]
+    assert len(emitted) == 1
+    assert emitted[0].entity_id == "evt1_inst1"
+
+@pytest.mark.asyncio
+async def test_google_calendar_no_collapse(mock_services, config):
+    config.collapse_recurring_events = False
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    
+    source._fetch_page = MagicMock(return_value={
+        "items": [
+            {
+                "id": "evt1_inst1",
+                "recurringEventId": "master_evt1",
+                "summary": "Weekly Meeting",
+                "start": {"dateTime": "2024-01-01T10:00:00Z"},
+                "status": "confirmed",
+                "etag": "v1"
+            },
+            {
+                "id": "evt1_inst2",
+                "recurringEventId": "master_evt1",
+                "summary": "Weekly Meeting",
+                "start": {"dateTime": "2024-01-08T10:00:00Z"},
+                "status": "confirmed",
+                "etag": "v1"
+            }
+        ],
+        "nextPageToken": None,
+        "nextSyncToken": "sync_v2"
+    })
+    
+    # Mock kv.get to handle both sync_token and config_max_into_future
+    def kv_get_mock(sid, key):
+        if "sync_token" in key:
+            return "sync_v1"
+        if "config_max_into_future" in key:
+            return str(31536000.0)
+        return None
+    
+    mock_services.kv.get.side_effect = kv_get_mock
+    
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+    
+    # Should call write_events with TWO events (not collapsed)
+    assert mock_services.writer.write_events.called
+    args, _ = mock_services.writer.write_events.call_args
+    emitted = args[1]
+    assert len(emitted) == 2

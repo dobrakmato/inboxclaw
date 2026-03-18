@@ -294,6 +294,8 @@ class GoogleCalendarSource:
             "event_id": event_id,
             "summary": summary,
             "start": start,
+            "recurrence": (current_event or previous_event or {}).get("recurrence", []),
+            "recurring_event_id": (current_event or previous_event or {}).get("recurringEventId"),
         }
 
         if event_type == CalendarEventType.CREATED:
@@ -631,6 +633,25 @@ class GoogleCalendarSource:
                 if not page_token:
                     new_sync_token = result.get("nextSyncToken", new_sync_token)
                     break
+
+            # Debouncing / collapsing of recurring events
+            collapse_enabled = overrides.get("collapse_recurring_events", self.config.collapse_recurring_events)
+            if collapse_enabled and emitted_events:
+                collapsed: list[NewEvent] = []
+                seen_recurring_ids: set[str] = set()
+                
+                for event in emitted_events:
+                    recurring_id = event.data.get("recurring_event_id")
+                    if recurring_id:
+                        if recurring_id not in seen_recurring_ids:
+                            collapsed.append(event)
+                            seen_recurring_ids.add(recurring_id)
+                        else:
+                            logger.debug("Collapsing recurring event instance %s (recurringEventId: %s)", event.entity_id, recurring_id)
+                    else:
+                        collapsed.append(event)
+                
+                emitted_events = collapsed
 
             if emitted_events:
                 self.services.writer.write_events(self.source_id, emitted_events)
