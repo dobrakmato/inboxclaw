@@ -28,8 +28,9 @@ class DriveFileSnapshot:
     modified_time: Optional[str]
     version: Optional[str]
     owned_by_me: bool
-    shared_with_me_time: Optional[str]
-    sharing_user: Optional[dict[str, str]]
+    owners: Optional[list[dict[str, str]]] = None
+    shared_with_me_time: Optional[str] = None
+    sharing_user: Optional[dict[str, str]] = None
     description: Optional[str] = None
     indexable_text: Optional[str] = None
     last_modifying_user: Optional[dict[str, str]] = None
@@ -49,6 +50,7 @@ class DriveFileSnapshot:
             modified_time=file_resource.get("modifiedTime"),
             version=str(file_resource.get("version")) if file_resource.get("version") is not None else None,
             owned_by_me=bool(file_resource.get("ownedByMe", False)),
+            owners=file_resource.get("owners"),
             shared_with_me_time=file_resource.get("sharedWithMeTime"),
             sharing_user=file_resource.get("sharingUser"),
             description=file_resource.get("description"),
@@ -68,6 +70,7 @@ class DriveFileSnapshot:
             modified_time=data.get("modified_time"),
             version=data.get("version"),
             owned_by_me=bool(data.get("owned_by_me", False)),
+            owners=data.get("owners"),
             shared_with_me_time=data.get("shared_with_me_time"),
             sharing_user=data.get("sharing_user"),
             description=data.get("description"),
@@ -88,6 +91,7 @@ class DriveFileSnapshot:
             "modified_time": self.modified_time,
             "version": self.version,
             "owned_by_me": self.owned_by_me,
+            "owners": self.owners,
             "shared_with_me_time": self.shared_with_me_time,
             "sharing_user": self.sharing_user,
             "description": self.description,

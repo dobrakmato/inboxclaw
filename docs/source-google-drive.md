@@ -130,6 +130,12 @@ sources:
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
     "parentIds": ["0AExampleFolder"],
+    "owners": [
+      {
+        "displayName": "Alice",
+        "emailAddress": "alice@example.com"
+      }
+    ],
     "createdTime": "2026-03-15T00:40:10Z",
     "description": "Quarterly roadmap",
     "lastModifyingUser": {
@@ -155,6 +161,12 @@ sources:
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
     "parentIds": ["0AExampleFolder"],
+    "owners": [
+      {
+        "displayName": "Alice",
+        "emailAddress": "alice@example.com"
+      }
+    ],
     "session": {
       "sessionStartedAt": "2026-03-15T00:46:12Z",
       "lastChangeSeenAt": "2026-03-15T00:47:56Z",
@@ -197,6 +209,12 @@ For text files with eligible MIME types, `file_updated` includes diff fields und
       "before": ["0AExampleFolder"],
       "after": ["0ANewFolder"]
     },
+    "owners": [
+      {
+        "displayName": "Alice",
+        "emailAddress": "alice@example.com"
+      }
+    ],
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"
@@ -238,6 +256,12 @@ For text files with eligible MIME types, `file_updated` includes diff fields und
     "fileId": "7XyZa",
     "name": "Vendor Contract",
     "mimeType": "application/pdf",
+    "owners": [
+      {
+        "displayName": "Bob",
+        "emailAddress": "bob@example.com"
+      }
+    ],
     "sharedWithMeTime": "2026-03-15T00:52:00Z",
     "sharingUser": {
       "displayName": "Alice",
@@ -250,7 +274,7 @@ For text files with eligible MIME types, `file_updated` includes diff fields und
 
 ### Data Payload Reference
 
-Common fields across all event types: `fileId`, `name`, `mimeType`.
+Common fields across all event types: `fileId`, `name`, `mimeType`, `owners`.
 
 | Event type            | Additional fields                                                                                          |
 |:----------------------|:-----------------------------------------------------------------------------------------------------------|

@@ -100,6 +100,7 @@ class GoogleDriveSource:
             "name": snapshot.name if snapshot else None,
             "mimeType": snapshot.mime_type if snapshot else None,
             "parentIds": snapshot.parents if snapshot else [],
+            "owners": snapshot.owners if snapshot and snapshot.owners else [],
         }
 
     def _build_event_data(
@@ -166,7 +167,7 @@ class GoogleDriveSource:
         return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
-        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress)"
+        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,owners(displayName,emailAddress),sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress)"
         try:
             return service.files().get(fileId=file_id, fields=fields, supportsAllDrives=True).execute()
         except HttpError as e:
@@ -380,7 +381,7 @@ class GoogleDriveSource:
             results = service.files().list(
                 q=query,
                 pageSize=100,
-                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners, trashed, sharedWithMeTime)",
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners(displayName, emailAddress), trashed, sharedWithMeTime)",
                 pageToken=next_page_token,
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,

@@ -36,6 +36,7 @@
 - [x] [Faktury Online](docs/source-faktury-online.md)
 - [x] [Home Assistant](docs/source-home-assistant.md)
 - [x] [Fio Banka](docs/source-fio-banka.md)
+- [ ] GoCardless / Nordigen
 - [ ] Asana
 - [ ] Stats.fm
 - [ ] Steam
