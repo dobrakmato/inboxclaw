@@ -122,6 +122,10 @@ class GoogleDriveSource:
                 common["indexableText"] = current.indexable_text
             if current.last_modifying_user:
                 common["lastModifyingUser"] = current.last_modifying_user
+            if current.web_view_link:
+                common["webViewLink"] = current.web_view_link
+            if current.size:
+                common["size"] = current.size
 
         if event_type == GoogleDriveEventType.FILE_CREATED and current is not None:
             return {
@@ -167,7 +171,7 @@ class GoogleDriveSource:
         return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
-        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,owners(displayName,emailAddress),sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress)"
+        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,owners(displayName,emailAddress),shared_with_me_time,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress),webViewLink,size"
         try:
             return service.files().get(fileId=file_id, fields=fields, supportsAllDrives=True).execute()
         except HttpError as e:

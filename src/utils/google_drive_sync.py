@@ -34,6 +34,8 @@ class DriveFileSnapshot:
     description: Optional[str] = None
     indexable_text: Optional[str] = None
     last_modifying_user: Optional[dict[str, str]] = None
+    web_view_link: Optional[str] = None
+    size: Optional[str] = None
     content_hash: Optional[str] = None
     content_snapshot: Optional[str] = None
 
@@ -56,6 +58,8 @@ class DriveFileSnapshot:
             description=file_resource.get("description"),
             indexable_text=content_hints.get("indexableText"),
             last_modifying_user=file_resource.get("lastModifyingUser"),
+            web_view_link=file_resource.get("webViewLink"),
+            size=file_resource.get("size"),
         )
 
     @classmethod
@@ -76,6 +80,8 @@ class DriveFileSnapshot:
             description=data.get("description"),
             indexable_text=data.get("indexable_text"),
             last_modifying_user=data.get("last_modifying_user"),
+            web_view_link=data.get("web_view_link"),
+            size=data.get("size"),
             content_hash=data.get("content_hash"),
             content_snapshot=data.get("content_snapshot"),
         )
@@ -97,6 +103,8 @@ class DriveFileSnapshot:
             "description": self.description,
             "indexable_text": self.indexable_text,
             "last_modifying_user": self.last_modifying_user,
+            "web_view_link": self.web_view_link,
+            "size": self.size,
             "content_hash": self.content_hash,
             "content_snapshot": self.content_snapshot,
         }

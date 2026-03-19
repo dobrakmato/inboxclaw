@@ -115,3 +115,33 @@ def test_text_diff_calculator_empty():
     assert diff["totalChangedSections"] == 1
     assert len(diff["changes"]) == 1
     assert diff["changes"][0]["after"] == "Hello"
+    assert diff["addedCharCount"] == 5
+
+
+def test_drive_file_snapshot_fields():
+    file_resource = {
+        "id": "file123",
+        "name": "Test File",
+        "mimeType": "application/pdf",
+        "parents": ["p1", "p2"],
+        "trashed": False,
+        "createdTime": "2026-03-15T00:40:10Z",
+        "modifiedTime": "2026-03-15T00:45:00Z",
+        "version": 5,
+        "ownedByMe": True,
+        "webViewLink": "https://docs.google.com/file/d/file123/view",
+        "size": "1024",
+    }
+    snapshot = DriveFileSnapshot.from_file_resource(file_resource)
+    assert snapshot.file_id == "file123"
+    assert snapshot.web_view_link == "https://docs.google.com/file/d/file123/view"
+    assert snapshot.size == "1024"
+
+    # Test dict roundtrip
+    data = snapshot.to_dict()
+    assert data["web_view_link"] == "https://docs.google.com/file/d/file123/view"
+    assert data["size"] == "1024"
+
+    from_dict = DriveFileSnapshot.from_dict(data)
+    assert from_dict.web_view_link == snapshot.web_view_link
+    assert from_dict.size == snapshot.size

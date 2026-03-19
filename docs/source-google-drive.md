@@ -141,7 +141,9 @@ sources:
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"
-    }
+    },
+    "webViewLink": "https://docs.google.com/document/d/1AbCd/edit?usp=drivesdk",
+    "size": "12345"
   },
   "meta": {}
 }
@@ -184,7 +186,9 @@ sources:
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"
-    }
+    },
+    "webViewLink": "https://docs.google.com/document/d/1AbCd/edit?usp=drivesdk",
+    "size": "12345"
   },
   "meta": {}
 }
@@ -218,7 +222,9 @@ For text files with eligible MIME types, `file_updated` includes diff fields und
     "lastModifyingUser": {
       "displayName": "Alice",
       "emailAddress": "alice@example.com"
-    }
+    },
+    "webViewLink": "https://docs.google.com/document/d/1AbCd/edit?usp=drivesdk",
+    "size": "12345"
   },
   "meta": {}
 }
