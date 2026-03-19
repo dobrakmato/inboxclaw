@@ -112,13 +112,13 @@ sources:
     "instruction_id": "2105685816",
     "account_id": "2400222222",
     "bank_id": "2010",
-    "balance": 15420.50
+    "closing_balance": 15420.50
   },
   "meta": {}
 }
 ```
 
 - `id`: The unique `IDpohybu` from Fio.
-- `balance`: Account balance *after* this transaction.
+- `closing_balance`: Account balance *after* this transaction.
 - `instruction_id`: The ID of the original instruction (`ID pokynu`).
 - `type`: Human-readable transaction type in Czech (as provided by Fio).

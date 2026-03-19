@@ -17,7 +17,15 @@ You can provide the token in `config.yaml` or via the `HOME_ASSISTANT_TOKEN` env
 
 ### 2. Find entity IDs
 
-Go to **Settings** → **Devices & Services** → **Entities** and search for `device_tracker`. Copy the Entity ID (e.g. `device_tracker.iphone_15_pro`).
+Go to **Settings** → **Devices & Services** → **Entities** and search for your device name (e.g. `sm_s936b`). 
+
+**Note:** You must explicitly list **every entity** you want to track. The pipeline will not automatically discover other sensors (like alarms or geocoded locations) for your device.
+
+Common entities to track:
+- `device_tracker.sm_s936b` (Presence/Zone)
+- `sensor.sm_s936b_geocoded_location` (Address)
+- `sensor.sm_s936b_next_alarm` (Alarms)
+- `sensor.sm_s936b_battery_level` (Battery)
 
 ### 3. Add the source to `config.yaml`
 
@@ -28,6 +36,8 @@ sources:
     url: "wss://YOUR_HA_HOST:8123/api/websocket"
     entity_ids:
       - "device_tracker.my_phone"
+      - "sensor.my_phone_geocoded_location"
+      - "sensor.my_phone_next_alarm"
 ```
 
 ### 4. (Recommended) Enable precise location
@@ -41,7 +51,9 @@ For best results with coordinate tracking, configure your Home Assistant Compani
 
 ### WebSocket Connection
 
-Unlike polling-based sources, this source maintains a persistent WebSocket connection to Home Assistant. Events are delivered in near real-time when an entity's state or attributes change.
+Unlike polling-based sources, this source maintains a persistent WebSocket connection to Home Assistant. Events are delivered in near real-time when an entity's state or attributes change. 
+
+**Crucially, only entities explicitly listed in `entity_ids` are subscribed to.** If you want to track both location and alarms for a device, both must be listed.
 
 ### State Triggers
 
@@ -67,6 +79,8 @@ sources:
     url: "wss://ha.example.com/api/websocket"
     entity_ids:
       - "device_tracker.my_phone"
+      - "sensor.my_phone_geocoded_location"
+      - "sensor.my_phone_next_alarm"
 ```
 
 ### Full Configuration

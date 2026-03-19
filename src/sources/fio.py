@@ -171,7 +171,7 @@ class FioSource:
                 item["account_id"] = info.get("accountId")
                 item["bank_id"] = info.get("bankId")
                 item["account_currency"] = info.get("currency")
-                item["balance"] = info.get("closingBalance") # Reporting account value with every transaction
+                item["closing_balance"] = info.get("closingBalance") # Reporting account value with every transaction
                 
                 parsed_txs.append(item)
             return parsed_txs

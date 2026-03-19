@@ -101,7 +101,7 @@ async def test_fio_poll_success(mock_services, config, mock_response):
         assert args1.entity_id == "1111"
         assert args1.event_type == "fio.transaction.income"
         assert args1.data["amount"] == 500.0
-        assert args1.data["balance"] == 1500.0
+        assert args1.data["closing_balance"] == 1500.0
         
         # Check second event (Expense)
         args2 = events[1]

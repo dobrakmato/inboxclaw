@@ -246,7 +246,7 @@
             eventsContainer.prepend(card);
 
             // Limit number of events to prevent browser lag
-            if (eventsContainer.children.length > 50) {
+            if (eventsContainer.children.length > 150) {
                 eventsContainer.removeChild(eventsContainer.lastChild);
             }
         }
