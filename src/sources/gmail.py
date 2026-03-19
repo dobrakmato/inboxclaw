@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from email.utils import parseaddr
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -54,6 +55,12 @@ class GmailSource:
         headers_list = payload.get('headers', [])
         headers = {h['name']: h['value'] for h in headers_list}
 
+        def parse_address(header_value: str | None) -> dict:
+            if not header_value:
+                return {"name": "", "email": ""}
+            name, email = parseaddr(header_value)
+            return {"name": name, "email": email}
+
         internal_date = msg.get("internalDate")
         occurred_at = datetime.now(timezone.utc)
         if internal_date:
@@ -69,8 +76,8 @@ class GmailSource:
                 "threadId": msg.get("threadId"),
                 "messageId": msg_id,
                 "snippet": msg.get("snippet"),
-                "from": headers.get("From"),
-                "to": headers.get("To"),
+                "from": parse_address(headers.get("From")),
+                "to": parse_address(headers.get("To")),
                 "subject": headers.get("Subject"),
                 "date": headers.get("Date"),
                 "labelIds": label_ids

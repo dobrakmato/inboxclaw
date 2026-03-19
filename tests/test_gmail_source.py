@@ -120,6 +120,52 @@ async def test_gmail_source_sent_emails(mock_services):
     assert recv_ev.event_type == "gmail.message_received"
 
 @pytest.mark.asyncio
+async def test_gmail_source_header_parsing(mock_services):
+    config = GmailSourceConfig(token_file="fake_token.json")
+    source = GmailSource("test_gmail", config, mock_services, source_id=1)
+    
+    mock_service = MagicMock()
+    source._get_service = MagicMock(return_value=mock_service)
+    
+    mock_service.users().history().list.return_value.execute.return_value = {
+        "history": [
+            {
+                "messagesAdded": [{"message": {"id": "msg1"}}],
+            }
+        ],
+        "historyId": "123"
+    }
+    
+    # Mock message with complex From and To headers
+    mock_service.users().messages().get.return_value.execute.return_value = {
+        "id": "msg1",
+        "labelIds": ["INBOX"],
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Sender Name <sender@example.com>"},
+                {"name": "To", "value": "Recipient Name <recipient@example.com>"},
+                {"name": "Subject", "value": "Test Subject"},
+                {"name": "Date", "value": "Sat, 15 Mar 2024 10:00:00 +0000"}
+            ]
+        }
+    }
+    
+    source.cursor.get_last_cursor = MagicMock(return_value="100")
+    source.cursor.set_cursor = MagicMock()
+    
+    await source.fetch_and_publish()
+    
+    args, _ = mock_services.writer.write_events.call_args
+    _, events = args
+    assert len(events) == 1
+    ev = events[0]
+    
+    assert ev.data["from"]["name"] == "Sender Name"
+    assert ev.data["from"]["email"] == "sender@example.com"
+    assert ev.data["to"]["name"] == "Recipient Name"
+    assert ev.data["to"]["email"] == "recipient@example.com"
+
+@pytest.mark.asyncio
 async def test_gmail_source_other_events(mock_services):
     config = GmailSourceConfig(token_file="fake_token.json")
     source = GmailSource("test_gmail", config, mock_services, source_id=1)

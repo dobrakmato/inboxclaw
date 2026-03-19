@@ -92,8 +92,14 @@ sources:
     "threadId": "thread_xyz",
     "messageId": "msg_abc123",
     "snippet": "Brief preview of the email content...",
-    "from": "Sender Name <sender@example.com>",
-    "to": "Recipient <recipient@example.com>",
+    "from": {
+      "name": "Sender Name",
+      "email": "sender@example.com"
+    },
+    "to": {
+      "name": "Recipient",
+      "email": "recipient@example.com"
+    },
     "subject": "Email Subject",
     "date": "Sat, 15 Mar 2024 10:00:00 +0000",
     "labelIds": ["INBOX", "UNREAD"]
