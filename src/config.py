@@ -1,6 +1,8 @@
 import os
 from typing import Dict, List, Optional, Union, Literal, Annotated, Any
 
+MIN_NORDIGEN_POLL_INTERVAL: float = 6 * 3600.0  # 6 hours
+
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, BeforeValidator
 from pytimeparse import parse as parse_time
@@ -94,6 +96,21 @@ class MockSourceConfig(BaseSourceConfig):
     type: Literal["mock"] = "mock"
     interval: Interval = "10s"
 
+class NordigenSourceConfig(BaseSourceConfig):
+    type: Literal["nordigen"] = "nordigen"
+    secret_id: str = Field(default_factory=lambda: os.environ.get("NORDIGEN_SECRET_ID", ""))
+    secret_key: str = Field(default_factory=lambda: os.environ.get("NORDIGEN_SECRET_KEY", ""))
+    refresh_token: str = Field(default_factory=lambda: os.environ.get("NORDIGEN_REFRESH_TOKEN", ""))
+    account_id: str = ""
+    label: Optional[str] = None
+    poll_interval: Interval = "6h"
+    initial_history_days: int = 90
+
+    @property
+    def effective_poll_interval(self) -> float:
+        """Poll interval capped at the 6-hour GoCardless minimum."""
+        return max(self.poll_interval, MIN_NORDIGEN_POLL_INTERVAL)
+
 class HomeAssistantSourceConfig(BaseSourceConfig):
     type: Literal["home_assistant"] = "home_assistant"
     url: str
@@ -108,7 +125,8 @@ SourceConfig = Annotated[
         FakturyOnlineSourceConfig,
         FioSourceConfig,
         MockSourceConfig,
-        HomeAssistantSourceConfig
+        HomeAssistantSourceConfig,
+        NordigenSourceConfig
     ],
     Field(discriminator="type")
 ]

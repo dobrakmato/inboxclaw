@@ -4,6 +4,7 @@ from src.cli import cli
 import src.cli.commands.listen # noqa: F401
 import src.cli.commands.google_auth # noqa: F401
 import src.cli.commands.google_calendar # noqa: F401
+import src.cli.commands.nordigen_connect # noqa: F401
 
 # Configure logging
 logging.basicConfig(
