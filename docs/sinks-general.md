@@ -88,6 +88,15 @@ Events are coalesced at sink processing time.
 - HTTP Pull: When a request is made, all selected events from the database are considered for coalescing
 - SSE: When the SSE component receives notification about new events in the database
 
+## Sink State in Database
+
+Some sink types keep delivery state in dedicated tables:
+
+- Webhook tracks attempt count and success state per `(event_id, sink_id)`.
+- HTTP Pull tracks created batches and per-event processed confirmations.
+
+This state allows retries, confirmation workflows, and predictable behavior across restarts.
+
 ```yaml
 sink:
   ui_updates:

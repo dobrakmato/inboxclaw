@@ -21,6 +21,8 @@ The pipeline will start polling the source automatically on startup.
 
 ## How Sources Work
 
+Sources can be implemented as polling connectors (most common) or as push-style integrations that receive events from external callbacks/endpoints.
+
 1. **Polling**: Most sources run on a timer (`poll_interval`). Each tick, they call the external API and look for changes since the last poll.
 2. **Cursor**: After each successful poll, the source saves a cursor (sync token, timestamp, or sequence number) in the database. On the next poll it picks up where it left off, so no data is fetched twice and nothing is lost if the pipeline restarts.
 3. **Deduplication**: Every event carries a unique `event_id`. The pipeline ignores events whose `event_id` has already been stored.
