@@ -1,0 +1,22 @@
+$schema: ./config.schema.json
+
+# Start the server on 8001 and bind to loopback interface only (so it's inaccessible from outside)
+server:
+  host: 127.0.0.1
+  port: 8001
+
+# Persistent store in a database, with 7-day retention of old events
+database:
+  retention_days: 7
+  db_path: ./data/database.db
+
+# Poll gmail events and publish them (needs token setup through CLI).
+# See docs for more sources, and configuration options.
+sources:
+  gmail:
+    token_file: ./data/google_token.json
+
+# Publish SSE stream of events.
+# See docs for more sinks, and configuration options.
+sink:
+  sse: {}
