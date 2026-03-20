@@ -741,3 +741,24 @@ class TestUpdateConfig:
         assert "nordigen_acc2" in data["sources"]
         assert data["sources"]["nordigen_acc1"]["account_id"] == "acc-1"
         assert data["sources"]["nordigen_acc2"]["account_id"] == "acc-2"
+
+    def test_preserves_existing_comments_and_formatting(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """sources:
+  fio_main:
+    type: \"fio\"
+    token: \"${FIO_TOKEN}\" # keep this comment
+
+sink:
+  all:
+    type: 'http_pull'
+"""
+        )
+
+        _update_config(config_file, "nordigen_abc", "acc-1", "Checking")
+
+        content = config_file.read_text()
+        assert "# keep this comment" in content
+        assert "type: 'http_pull'" in content
+        assert "nordigen_abc:" in content

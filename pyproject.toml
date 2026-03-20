@@ -6,5 +6,6 @@ requires-python = ">=3.12"
 dependencies = [
     "pytimeparse>=1.1.8",
     "python-dotenv>=1.2.2",
+    "ruamel.yaml>=0.18.15",
     "win11toast>=0.35"
 ]

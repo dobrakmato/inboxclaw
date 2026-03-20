@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import click
-import yaml
+from ruamel.yaml import YAML
 
 from src.cli import cli
 from src.utils.nordigen_client import (
@@ -274,8 +274,12 @@ def _update_config(config_file: Path, source_name: str, account_id: str, label: 
     preserved. If the account_id already exists under this source name, it
     is skipped (no duplicates).
     """
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+
     if config_file.exists():
-        data = yaml.safe_load(config_file.read_text()) or {}
+        with config_file.open("r", encoding="utf-8") as fp:
+            data = yaml.load(fp) or {}
     else:
         data = {}
 
@@ -295,4 +299,5 @@ def _update_config(config_file: Path, source_name: str, account_id: str, label: 
         entry["label"] = label
 
     sources[source_name] = entry
-    config_file.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+    with config_file.open("w", encoding="utf-8") as fp:
+        yaml.dump(data, fp)
