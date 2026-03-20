@@ -1,0 +1,788 @@
+{
+  "$defs": {
+    "DatabaseConfig": {
+      "properties": {
+        "days": {
+          "default": 30,
+          "title": "Days",
+          "type": "integer"
+        },
+        "db_path": {
+          "default": "./data/data.db",
+          "title": "Db Path",
+          "type": "string"
+        },
+        "echo": {
+          "default": false,
+          "title": "Echo",
+          "type": "boolean"
+        }
+      },
+      "title": "DatabaseConfig",
+      "type": "object"
+    },
+    "FakturyOnlineSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "faktury_online",
+          "default": "faktury_online",
+          "title": "Type",
+          "type": "string"
+        },
+        "api_key": {
+          "title": "Api Key",
+          "type": "string"
+        },
+        "email": {
+          "title": "Email",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "max_days_back": {
+          "default": 30,
+          "title": "Max Days Back",
+          "type": "integer"
+        }
+      },
+      "title": "FakturyOnlineSourceConfig",
+      "type": "object"
+    },
+    "FioSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "fio",
+          "default": "fio",
+          "title": "Type",
+          "type": "string"
+        },
+        "token": {
+          "title": "Token",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "max_days_back": {
+          "default": 15,
+          "title": "Max Days Back",
+          "type": "integer"
+        },
+        "look_ahead_days": {
+          "default": 5,
+          "title": "Look Ahead Days",
+          "type": "integer"
+        }
+      },
+      "title": "FioSourceConfig",
+      "type": "object"
+    },
+    "GmailSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "gmail",
+          "default": "gmail",
+          "title": "Type",
+          "type": "string"
+        },
+        "token_file": {
+          "title": "Token File",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "exclude_label_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude Label Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "token_file"
+      ],
+      "title": "GmailSourceConfig",
+      "type": "object"
+    },
+    "GoogleCalendarSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "google_calendar",
+          "default": "google_calendar",
+          "title": "Type",
+          "type": "string"
+        },
+        "token_file": {
+          "title": "Token File",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "calendar_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Calendar Ids",
+          "type": "array"
+        },
+        "max_event_age_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1.0,
+          "title": "Max Event Age Days"
+        },
+        "max_into_future": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "calendar_overrides": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Calendar Overrides",
+          "type": "object"
+        },
+        "show_deleted": {
+          "default": true,
+          "title": "Show Deleted",
+          "type": "boolean"
+        },
+        "single_events": {
+          "default": true,
+          "title": "Single Events",
+          "type": "boolean"
+        },
+        "collapse_recurring_events": {
+          "default": true,
+          "title": "Collapse Recurring Events",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "token_file"
+      ],
+      "title": "GoogleCalendarSourceConfig",
+      "type": "object"
+    },
+    "GoogleDriveSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "google_drive",
+          "default": "google_drive",
+          "title": "Type",
+          "type": "string"
+        },
+        "token_file": {
+          "title": "Token File",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "restrict_to_my_drive": {
+          "default": false,
+          "title": "Restrict To My Drive",
+          "type": "boolean"
+        },
+        "include_removed": {
+          "default": true,
+          "title": "Include Removed",
+          "type": "boolean"
+        },
+        "include_corpus_removals": {
+          "default": false,
+          "title": "Include Corpus Removals",
+          "type": "boolean"
+        },
+        "bootstrap_mode": {
+          "default": "baseline_only",
+          "enum": [
+            "baseline_only",
+            "full_snapshot",
+            "off"
+          ],
+          "title": "Bootstrap Mode",
+          "type": "string"
+        },
+        "update_quiet_window": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "update_max_session": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "eligible_mime_types_for_content_diff": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Eligible Mime Types For Content Diff",
+          "type": "array"
+        },
+        "max_diffable_file_bytes": {
+          "default": 10485760,
+          "title": "Max Diffable File Bytes",
+          "type": "integer"
+        },
+        "max_changed_sections": {
+          "default": 5,
+          "title": "Max Changed Sections",
+          "type": "integer"
+        },
+        "max_section_chars": {
+          "default": 300,
+          "title": "Max Section Chars",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "token_file"
+      ],
+      "title": "GoogleDriveSourceConfig",
+      "type": "object"
+    },
+    "HomeAssistantSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "home_assistant",
+          "default": "home_assistant",
+          "title": "Type",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "access_token": {
+          "title": "Access Token",
+          "type": "string"
+        },
+        "entity_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Entity Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "url",
+        "entity_ids"
+      ],
+      "title": "HomeAssistantSourceConfig",
+      "type": "object"
+    },
+    "HttpPullSinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "ttl_enabled": {
+          "default": true,
+          "title": "Ttl Enabled",
+          "type": "boolean"
+        },
+        "default_ttl": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "event_ttl": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Event Ttl",
+          "type": "object"
+        },
+        "type": {
+          "const": "http_pull",
+          "default": "http_pull",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "path": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Path",
+          "type": "object"
+        },
+        "coalesce": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coalesce"
+        }
+      },
+      "title": "HttpPullSinkConfig",
+      "type": "object"
+    },
+    "MockSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "mock",
+          "default": "mock",
+          "title": "Type",
+          "type": "string"
+        },
+        "interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "title": "MockSourceConfig",
+      "type": "object"
+    },
+    "NordigenSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "nordigen",
+          "default": "nordigen",
+          "title": "Type",
+          "type": "string"
+        },
+        "secret_id": {
+          "title": "Secret Id",
+          "type": "string"
+        },
+        "secret_key": {
+          "title": "Secret Key",
+          "type": "string"
+        },
+        "refresh_token": {
+          "title": "Refresh Token",
+          "type": "string"
+        },
+        "account_id": {
+          "default": "",
+          "title": "Account Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "initial_history_days": {
+          "default": 90,
+          "title": "Initial History Days",
+          "type": "integer"
+        }
+      },
+      "title": "NordigenSourceConfig",
+      "type": "object"
+    },
+    "SSESinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sse",
+          "default": "sse",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "heartbeat_timeout": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "coalesce": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coalesce"
+        }
+      },
+      "title": "SSESinkConfig",
+      "type": "object"
+    },
+    "ServerConfig": {
+      "properties": {
+        "host": {
+          "default": "0.0.0.0",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8000,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "title": "ServerConfig",
+      "type": "object"
+    },
+    "WebhookSinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "ttl_enabled": {
+          "default": true,
+          "title": "Ttl Enabled",
+          "type": "boolean"
+        },
+        "default_ttl": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "event_ttl": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Event Ttl",
+          "type": "object"
+        },
+        "type": {
+          "const": "webhook",
+          "default": "webhook",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "max_retries": {
+          "default": 3,
+          "title": "Max Retries",
+          "type": "integer"
+        },
+        "retry_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "WebhookSinkConfig",
+      "type": "object"
+    },
+    "Win11ToastSinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "win11toast",
+          "default": "win11toast",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "max_body_length": {
+          "default": 220,
+          "title": "Max Body Length",
+          "type": "integer"
+        }
+      },
+      "title": "Win11ToastSinkConfig",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "server": {
+      "$ref": "#/$defs/ServerConfig",
+      "default": {
+        "host": "0.0.0.0",
+        "port": 8000
+      }
+    },
+    "database": {
+      "$ref": "#/$defs/DatabaseConfig"
+    },
+    "sources": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/GmailSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/GoogleDriveSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/GoogleCalendarSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/FakturyOnlineSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/FioSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/MockSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/HomeAssistantSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/NordigenSourceConfig"
+          }
+        ]
+      },
+      "title": "Sources",
+      "type": "object",
+      "properties": {
+        "gmail": {
+          "$ref": "#/$defs/GmailSourceConfig"
+        },
+        "google_drive": {
+          "$ref": "#/$defs/GoogleDriveSourceConfig"
+        },
+        "google_calendar": {
+          "$ref": "#/$defs/GoogleCalendarSourceConfig"
+        },
+        "faktury_online": {
+          "$ref": "#/$defs/FakturyOnlineSourceConfig"
+        },
+        "fio": {
+          "$ref": "#/$defs/FioSourceConfig"
+        },
+        "mock": {
+          "$ref": "#/$defs/MockSourceConfig"
+        },
+        "home_assistant": {
+          "$ref": "#/$defs/HomeAssistantSourceConfig"
+        },
+        "nordigen": {
+          "$ref": "#/$defs/NordigenSourceConfig"
+        }
+      }
+    },
+    "sink": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/WebhookSinkConfig"
+          },
+          {
+            "$ref": "#/$defs/HttpPullSinkConfig"
+          },
+          {
+            "$ref": "#/$defs/SSESinkConfig"
+          },
+          {
+            "$ref": "#/$defs/Win11ToastSinkConfig"
+          }
+        ]
+      },
+      "title": "Sink",
+      "type": "object",
+      "properties": {
+        "webhook": {
+          "$ref": "#/$defs/WebhookSinkConfig"
+        },
+        "http_pull": {
+          "$ref": "#/$defs/HttpPullSinkConfig"
+        },
+        "sse": {
+          "$ref": "#/$defs/SSESinkConfig"
+        },
+        "win11toast": {
+          "$ref": "#/$defs/Win11ToastSinkConfig"
+        }
+      }
+    }
+  },
+  "required": [
+    "database",
+    "sources",
+    "sink"
+  ],
+  "title": "Config",
+  "type": "object"
+}

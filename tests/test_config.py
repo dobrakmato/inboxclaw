@@ -3,6 +3,7 @@ import os
 import yaml
 from src.config import load_config, Config, Interval
 from pydantic import BaseModel
+from scripts.generate_schema import build_schema
 
 class IntervalModel(BaseModel):
     interval: Interval
@@ -160,3 +161,13 @@ sink: {}
     assert config.database.db_path == "env_data.db"
     assert config.database.retention_days == 45
     assert config.sources["fio_acc"].token == "supersecret"
+
+
+def test_generated_schema_supports_key_named_discriminator_without_type() -> None:
+    schema = build_schema()
+
+    sink_props = schema["properties"]["sink"]["properties"]
+    assert sink_props["sse"]["$ref"] == "#/$defs/SSESinkConfig"
+
+    source_props = schema["properties"]["sources"]["properties"]
+    assert source_props["faktury_online"]["$ref"] == "#/$defs/FakturyOnlineSourceConfig"
