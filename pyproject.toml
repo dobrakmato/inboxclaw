@@ -1,7 +1,7 @@
 [project]
-name = "ingest-pipline"
+name = "inboxclaw"
 version = "0.1.0"
-description = "Add your description here"
+description = "Unified inbox for your openclaw instance"
 requires-python = ">=3.12"
 dependencies = [
     "click",
