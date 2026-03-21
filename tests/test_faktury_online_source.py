@@ -113,34 +113,6 @@ async def test_faktury_online_updated(mock_services, config):
                 assert event.data["changes"]["invoice_paid"]["before"] == "nie"
                 assert event.data["changes"]["invoice_paid"]["after"] == "ano"
 
-@pytest.mark.asyncio
-async def test_faktury_online_deleted(mock_services, config):
-    source = FakturyOnlineSource("test_faktury", config, mock_services, 1)
-    
-    # Mock session init
-    with patch.object(source, '_init_session', return_value=True):
-        # Mock fetch invoices (empty list, one was there before)
-        with patch.object(source, '_fetch_invoices', return_value=[]):
-            
-            def mock_kv_get(sid, key):
-                if key == "active_codes": return ["code1"]
-                if key == "invoice:code1": return {"invoice_number": "2024-001"}
-                if key == "initialized": return True
-                return None
-            
-            mock_services.kv.get.side_effect = mock_kv_get
-            
-            await source.poll()
-            
-            # Check if deleted event was written
-            mock_services.writer.write_events.assert_called_once()
-            _, events = mock_services.writer.write_events.call_args.args
-            event = events[0]
-            assert event.event_type == "faktury.invoice.deleted"
-            assert event.entity_id == "code1"
-            
-            # Check cache delete
-            mock_services.kv.delete.assert_any_call(1, "invoice:code1")
 
 
 @pytest.mark.asyncio

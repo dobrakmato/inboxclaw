@@ -124,12 +124,10 @@ class FakturyOnlineSource:
         
         current_codes = {inv["code"] for inv in invoices}
         
-        # Get previous state of codes from KV to detect deletions
-        # (Though we only fetch last N days, so 'deletion' might just be 'getting old')
-        previous_codes_raw = self.services.kv.get(self.source_id, "active_codes") or []
-        previous_codes = set(previous_codes_raw)
+        # Get previous state of codes from KV
         initialized = self.services.kv.get(self.source_id, "initialized")
 
+        # Update cache and track active codes for this poll
         for inv in invoices:
             code = inv["code"]
             # Fetch full detail for better change detection
@@ -172,24 +170,10 @@ class FakturyOnlineSource:
             # Update cache
             self.services.kv.set(self.source_id, f"invoice:{code}", current_detail)
 
-        # Detect deletions (items that were in previous poll but not in current)
-        # Note: this has the caveat that if max_days_back changes or 
-        # an invoice just falls out of the 'created' window, it might look like a deletion.
-        # But usually invoices aren't deleted that often.
-        deleted_codes = previous_codes - current_codes
-        for code in deleted_codes:
-            if initialized:
-                logger.info(f"[{self.name}] Invoice deleted (or missing): {code}")
-                last_known = self.services.kv.get(self.source_id, f"invoice:{code}")
-                self._write_event(NewEvent(
-                    event_id=f"faktury:{code}:deleted:{datetime.now(timezone.utc).timestamp()}",
-                    event_type="faktury.invoice.deleted",
-                    entity_id=code,
-                    data={"last_known_state": last_known},
-                    occurred_at=datetime.now(timezone.utc)
-                ))
-            self.services.kv.delete(self.source_id, f"invoice:{code}")
-
+        # Note: deletions are not tracked because the API only provides a sliding window
+        # of created invoices, making it impossible to distinguish between a deletion
+        # and an invoice aging out of the window.
+        
         self.services.kv.set(self.source_id, "active_codes", list(current_codes))
         if not initialized:
             self.services.kv.set(self.source_id, "initialized", True)

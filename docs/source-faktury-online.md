@@ -1,8 +1,8 @@
 # Faktury Online Source
 
-The Faktury Online source monitors your [Faktury-online.com](https://www.faktury-online.com/) account (a Slovak invoicing service) and emits events when invoices are created, updated, or deleted. It uses periodic polling with local state caching to detect changes.
+The Faktury Online source monitors your [Faktury-online.com](https://www.faktury-online.com/) account (a Slovak invoicing service) and emits events when invoices are created or updated. It uses periodic polling with local state caching to detect changes.
 
-Use this source to keep your accounting or ERP system in sync with your invoices — automatically pull new invoices, react when an invoice is marked as paid, or detect deletions.
+Use this source to keep your accounting or ERP system in sync with your invoices — automatically pull new invoices or react when an invoice is marked as paid.
 
 ## Getting Started
 
@@ -41,7 +41,6 @@ The source maintains a local cache of each invoice's last known state. On each p
 
 - **New invoice** → `faktury.invoice.created`
 - **Changed fields** → `faktury.invoice.updated` (includes before/after values for each changed field)
-- **Invoice no longer found** → `faktury.invoice.deleted`
 
 ## Configuration
 
@@ -82,7 +81,6 @@ sources:
 |:---------------------------|:-------------|:----------------------------------------------------------|
 | `faktury.invoice.created`  | Invoice Code | A new invoice was discovered.                             |
 | `faktury.invoice.updated`  | Invoice Code | An existing invoice's properties changed.                 |
-| `faktury.invoice.deleted`  | Invoice Code | An invoice is no longer found in the poll results.        |
 
 ### Event Examples
 
@@ -136,22 +134,3 @@ Contains the specific changes and the new full snapshot:
 }
 ```
 
-#### `faktury.invoice.deleted`
-
-Contains the last known state of the invoice:
-
-```json
-{
-  "id": 3,
-  "event_id": "faktury-2024-001-deleted",
-  "event_type": "faktury.invoice.deleted",
-  "entity_id": "2024-001",
-  "created_at": "2024-03-15T14:00:00+00:00",
-  "data": {
-    "last_known_state": {
-      "invoice_number": "2024-001"
-    }
-  },
-  "meta": {}
-}
-```
