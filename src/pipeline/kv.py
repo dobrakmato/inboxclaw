@@ -92,6 +92,21 @@ class SourceKVService:
             session.commit()
             logger.debug(f"Deleted old KV for source {source_id} older than {cutoff}")
 
+    def delete_older_than_with_prefix(self, source_id: int, cutoff: datetime, prefix: str):
+        """
+        Delete values for the given source_id and key prefix that were created before the cutoff.
+        """
+        with self.services.db_session_maker() as session:
+            session.execute(
+                sqa_delete(SourceKV).where(
+                    SourceKV.source_id == source_id,
+                    SourceKV.key.like(f"{prefix}%"),
+                    SourceKV.created_at < cutoff
+                )
+            )
+            session.commit()
+            logger.debug(f"Deleted old KV for source {source_id} with prefix {prefix} older than {cutoff}")
+
     def list_keys_with_prefix(self, source_id: int, prefix: str) -> list[str]:
         """
         List all keys for the given source_id that start with the prefix.

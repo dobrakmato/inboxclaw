@@ -86,3 +86,40 @@ def test_source_kv_non_existent_source(services):
     # Should fail due to Foreign Key constraint
     with pytest.raises(IntegrityError):
          services.kv.set(999, "key", "value")
+
+def test_delete_older_than_with_prefix(services, session_maker):
+    from datetime import datetime, timedelta, timezone
+    kv_service = services.kv
+    source_id = 1
+    
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    # Set some keys
+    kv_service.set(source_id, "sync_token:123", "token_val")
+    kv_service.set(source_id, "snap:123:abc", {"data": "snap_val"})
+    
+    with session_maker() as session:
+        # Manually set created_at for "old" keys
+        old_time = datetime.now(timezone.utc) - timedelta(days=2)
+        objs = session.scalars(select(SourceKV).where(SourceKV.source_id == source_id)).all()
+        for obj in objs:
+            obj.created_at = old_time
+        session.commit()
+
+    # Set a "new" key that should NOT be deleted regardless of prefix
+    kv_service.set(source_id, "snap:new", {"data": "new_snap"})
+    
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    
+    # We WANT an API that only deletes snaps
+    kv_service.delete_older_than_with_prefix(source_id, cutoff, prefix="snap:")
+    
+    # sync_token should remain even if it's old because it doesn't match the prefix
+    assert kv_service.get(source_id, "sync_token:123") == "token_val"
+    # snap that is old should be gone
+    assert kv_service.get(source_id, "snap:123:abc") is None
+    # snap that is new should remain
+    assert kv_service.get(source_id, "snap:new") == {"data": "new_snap"}
