@@ -4,8 +4,19 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
+    "click",
+    "fastapi",
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "httpx",
+    "pydantic",
     "pytimeparse>=1.1.8",
+    "pyyaml",
     "python-dotenv>=1.2.2",
     "ruamel.yaml>=0.18.15",
+    "sqlalchemy",
+    "sse-starlette",
+    "uvicorn",
+    "websockets",
     "win11toast>=0.35"
 ]
