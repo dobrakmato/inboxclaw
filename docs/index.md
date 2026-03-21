@@ -66,4 +66,6 @@ Then continue with [Configuration](configuration.md), [Sources](sources-general.
 ## Additional Guides
 
 - [Configuration](configuration.md)
+- [CLI Reference](cli.md)
+- [Key/Value Storage](kv-general.md)
 - [Google Auth CLI](google-auth-cli.md)
