@@ -26,7 +26,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-The source will start polling on startup. On the first run it initializes a `historyId` cursor from the most recent message and begins tracking changes from that point forward.
+The source will start polling on startup. On the first run it initializes a `historyId` cursor using the `users.getProfile` API and begins tracking changes from that point forward.
 
 ## Core Concepts
 

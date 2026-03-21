@@ -144,7 +144,7 @@ Returns a batch of unprocessed events, ordered oldest first.
 
 - `batch_id`: Use this value when confirming. `null` if there are no events.
 - `events`: List of events in the [standard envelope format](sinks-general.md#event-envelope).
-- `remaining_events`: Total number of unprocessed events currently available for this sink (including the ones in this response). If coalescing is enabled, this count reflects coalesced output. Keep calling extract and confirming until this reaches `0`.
+- `remaining_events`: Total number of unprocessed events currently available for this sink (after subtracting the ones in this response). If coalescing is enabled, this count reflects coalesced output. Keep calling extract and confirming until this reaches `0`.
 
 ### Confirm Processing
 

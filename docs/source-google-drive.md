@@ -165,13 +165,10 @@ sources:
     "fileId": "1AbCd",
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
-    "parentIds": ["0AExampleFolder"],
-    "owners": [
-      {
-        "displayName": "Alice",
-        "emailAddress": "alice@example.com"
-      }
-    ],
+    "parentIds": {
+      "before": ["0AExampleFolder"],
+      "after": ["0AExampleFolder"]
+    },
     "session": {
       "sessionStartedAt": "2026-03-15T00:46:12Z",
       "lastChangeSeenAt": "2026-03-15T00:47:56Z",
@@ -288,9 +285,9 @@ Common fields across all event types: `fileId`, `name`, `mimeType`, `owners`.
 | Event type            | Additional fields                                                                                          |
 |:----------------------|:-----------------------------------------------------------------------------------------------------------|
 | `file_created`        | `parentIds`, `createdTime`                                                                                 |
-| `file_moved`          | `parentIdsBefore`, `parentIdsAfter`                                                                        |
+| `file_moved`          | `parentIds: { before, after }`                                                                             |
 | `file_trashed`        | `trashedBefore`, `trashedAfter`                                                                            |
 | `file_untrashed`      | `trashedBefore`, `trashedAfter`                                                                            |
 | `file_shared_with_you`| `sharedWithMeTime`, `sharingUser`                                                                          |
 | `file_removed`        | `lastKnownName`, `lastKnownMimeType`, `lastKnownParentIds`                                                |
-| `file_updated`        | `previousVersion`, `currentVersion`, `sessionStartedAt`, `lastChangeSeenAt`, `rawChangeCount`, and for text files: `snippetBefore`, `snippetAfter`, `changedBlockCount`, `addedCharCount`, `removedCharCount` |
+| `file_updated`        | `session: { sessionStartedAt, lastChangeSeenAt, rawChangeCount, totalChangedSections, addedCharCount, removedCharCount, changes: [{before, after}] }` |

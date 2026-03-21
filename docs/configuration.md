@@ -64,7 +64,7 @@ sources:
 | Option | Description | Default |
 | :--- | :--- | :--- |
 | `db_path` | Path to the SQLite database file. | `./data/data.db` |
-| `days` | Number of days to keep processed events before cleanup. | `30` |
+| `retention_days` | Number of days to keep processed events before cleanup. (Alias: `days`) | `30` |
 
 ### Sources
 
@@ -116,7 +116,7 @@ server:
 
 database:
   db_path: "./data/production.db"
-  days: 60
+  retention_days: 60
 
 sources:
   my_gmail:
