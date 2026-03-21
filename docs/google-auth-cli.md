@@ -16,16 +16,6 @@ Alternatively, download a `credentials.json` file from the Google Cloud Console 
 
 ```bash
 python main.py google auth \
-  --client-id "YOUR_CLIENT_ID" \
-  --client-secret "YOUR_CLIENT_SECRET" \
-  --token "data/google_token.json" \
-  --scopes "gmail,calendar,drive"
-```
-
-Or with a credentials file:
-
-```bash
-python main.py google auth \
   --credentials-file data/credentials.json \
   --token "data/google_token.json" \
   --scopes "gmail,calendar,drive"
