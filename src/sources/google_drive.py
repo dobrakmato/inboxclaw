@@ -171,7 +171,7 @@ class GoogleDriveSource:
         return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
-        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,owners(displayName,emailAddress),shared_with_me_time,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress),webViewLink,size"
+        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,version,ownedByMe,owners(displayName,emailAddress),sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress),webViewLink,size"
         try:
             return service.files().get(fileId=file_id, fields=fields, supportsAllDrives=True).execute()
         except HttpError as e:
