@@ -702,7 +702,7 @@ class GoogleCalendarSource:
                 max_age = self.config.max_event_age_days
                 if max_age is not None:
                     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age)
-                    self.services.kv.delete_older_than_with_prefix(self.source_id, cutoff, prefix="snap:")
+                    self.services.kv.delete_expired_with_prefix(self.source_id, cutoff, prefix="snap:")
             except Exception as e:
                 logger.error("Error in Calendar cache cleanup loop for %s: %s", self.name, e)
             

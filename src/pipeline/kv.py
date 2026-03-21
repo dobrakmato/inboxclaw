@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING, Any
 from sqlalchemy import select, delete as sqa_delete
 from src.database import SourceKV
@@ -45,6 +45,7 @@ class SourceKVService:
             )
             if kv:
                 kv.value = value
+                kv.updated_at = datetime.now(timezone.utc)
             else:
                 kv = SourceKV(source_id=source_id, key=key, value=value)
                 session.add(kv)
@@ -106,6 +107,21 @@ class SourceKVService:
             )
             session.commit()
             logger.debug(f"Deleted old KV for source {source_id} with prefix {prefix} older than {cutoff}")
+
+    def delete_expired_with_prefix(self, source_id: int, cutoff: datetime, prefix: str):
+        """
+        Delete values for the given source_id and key prefix that were updated before the cutoff.
+        """
+        with self.services.db_session_maker() as session:
+            session.execute(
+                sqa_delete(SourceKV).where(
+                    SourceKV.source_id == source_id,
+                    SourceKV.key.like(f"{prefix}%"),
+                    SourceKV.updated_at < cutoff
+                )
+            )
+            session.commit()
+            logger.debug(f"Deleted expired KV for source {source_id} with prefix {prefix} older than {cutoff}")
 
     def list_keys_with_prefix(self, source_id: int, prefix: str) -> list[str]:
         """

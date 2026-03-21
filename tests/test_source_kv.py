@@ -123,3 +123,98 @@ def test_delete_older_than_with_prefix(services, session_maker):
     assert kv_service.get(source_id, "snap:123:abc") is None
     # snap that is new should remain
     assert kv_service.get(source_id, "snap:new") == {"data": "new_snap"}
+
+def test_source_kv_updated_at_refreshed(services, session_maker):
+    from datetime import datetime, timedelta, timezone
+    kv_service = services.kv
+    source_id = 1
+    
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    # Set value
+    kv_service.set(source_id, "my_key", "val1")
+    
+    with session_maker() as session:
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "my_key"))
+        initial_updated_at = kv.updated_at
+        
+        # Manually set it back in time
+        old_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        kv.updated_at = old_time
+        session.commit()
+        
+    # Update value
+    kv_service.set(source_id, "my_key", "val2")
+    
+    with session_maker() as session:
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "my_key"))
+        # It should be refreshed now
+        updated_at = kv.updated_at
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        
+        assert updated_at > (datetime.now(timezone.utc) - timedelta(minutes=1))
+
+def test_delete_expired_with_prefix(services, session_maker):
+    from datetime import datetime, timedelta, timezone
+    import time
+    kv_service = services.kv
+    source_id = 1
+    
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    # 1. Create an "old" entry
+    kv_service.set(source_id, "snap:old", "old_val")
+    
+    with session_maker() as session:
+        old_time = datetime.now(timezone.utc) - timedelta(days=2)
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "snap:old"))
+        kv.created_at = old_time
+        kv.updated_at = old_time
+        session.commit()
+        
+    # 2. Create an entry that was created long ago, but updated recently
+    kv_service.set(source_id, "snap:updated", "initial_val")
+    with session_maker() as session:
+        old_time = datetime.now(timezone.utc) - timedelta(days=2)
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "snap:updated"))
+        kv.created_at = old_time
+        kv.updated_at = old_time
+        session.commit()
+    
+    # Update it now
+    kv_service.set(source_id, "snap:updated", "new_val")
+    
+    # 3. Create a truly new entry
+    kv_service.set(source_id, "snap:new", "new_val")
+    
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    
+    # Perform cleanup using updated_at
+    kv_service.delete_expired_with_prefix(source_id, cutoff, prefix="snap:")
+    
+    # snap:old should be gone (updated_at is 2 days ago)
+    assert kv_service.get(source_id, "snap:old") is None
+    # snap:updated should REMAIN (updated_at is now, even if created_at was 2 days ago)
+    assert kv_service.get(source_id, "snap:updated") == "new_val"
+    # snap:new should remain
+    assert kv_service.get(source_id, "snap:new") == "new_val"
+
+    # Verify that delete_older_than_with_prefix (based on created_at) would have deleted snap:updated
+    with session_maker() as session:
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "snap:updated"))
+        # SQLite returns naive datetimes even if stored as UTC in some cases depending on how it's handled,
+        # but here the cutoff is aware. Let's make sure we compare correctly.
+        created_at = kv.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        assert created_at < cutoff
+    
+    kv_service.delete_older_than_with_prefix(source_id, cutoff, prefix="snap:")
+    assert kv_service.get(source_id, "snap:updated") is None

@@ -27,6 +27,7 @@ class SourceKV(Base):
     key = Column(String, nullable=False)
     value = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class Sink(Base):
     __tablename__ = 'sinks'
