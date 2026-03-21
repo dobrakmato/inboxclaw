@@ -4,12 +4,12 @@ This document explains how to configure the `ingest-pipeline`. The configuration
 
 ## Overview
 
-The configuration is divided into four main sections:
+The configuration is divided into four main top-level sections:
 
-1.  **Server**: FastAPI server settings (host, port).
-2.  **Database**: SQLite database path and retention policy.
-3.  **Sources**: Definitions of data sources to poll from (Gmail, Fio, etc.).
-4.  **Sinks**: Definitions of where to deliver the processed events (Webhook, SSE, etc.).
+1.  `server`: FastAPI server settings (host, port).
+2.  `database`: SQLite database path and retention policy.
+3.  `sources`: Definitions of data sources to poll from (Gmail, Fio, etc.).
+4.  `sink`: Definitions of where to deliver the processed events (Webhook, SSE, etc.). Note that this key is **singular**.
 
 ## Human-Readable Intervals
 
@@ -82,9 +82,9 @@ Each source type has its own specific configuration. See the dedicated documenta
 - [Home Assistant](source-home-assistant.md)
 - [Google Services](google-auth-cli.md) (Gmail, Calendar, Drive)
 
-### Sinks
+### Sinks (`sink`)
 
-Sinks define where events are sent. Like sources, they are defined in a dictionary.
+Sinks define where events are sent. Like sources, they are defined in a dictionary under the top-level `sink` key.
 
 #### Common Sink Options
 | Option | Description |

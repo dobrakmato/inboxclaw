@@ -6,7 +6,7 @@ If you are integrating multiple APIs and want one reliable stream of normalized 
 
 ## Getting Started
 
-1. Create a minimal `config.yaml`:
+1. Create a minimal `config.yaml` (note that the top-level sink key is singular: `sink`):
 
 ```yaml
 sources:

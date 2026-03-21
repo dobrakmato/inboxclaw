@@ -135,15 +135,14 @@ sources:
     poll_interval: "12h"
 ```
 
-### Full Configuration
+### Full Runtime Configuration
+
+The `secret_id`, `secret_key`, and `refresh_token` are typically read from environment variables, but they can be overridden in the configuration if necessary.
 
 ```yaml
 sources:
   nordigen_checking:
     type: nordigen
-    secret_id: "your_secret_id"          # or use NORDIGEN_SECRET_ID env var
-    secret_key: "your_secret_key"        # or use NORDIGEN_SECRET_KEY env var
-    refresh_token: "your_refresh_token"  # or use NORDIGEN_REFRESH_TOKEN env var
     account_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     label: "Main Checking"
     poll_interval: "6h"
@@ -154,13 +153,20 @@ sources:
 
 | Parameter              | Type     | Default | Description                                                                                     |
 |:-----------------------|:---------|:--------|:------------------------------------------------------------------------------------------------|
-| `secret_id`            | `string` | Env var | GoCardless `secret_id`. Defaults to `NORDIGEN_SECRET_ID` environment variable.                  |
-| `secret_key`           | `string` | Env var | GoCardless `secret_key`. Defaults to `NORDIGEN_SECRET_KEY` environment variable.                |
-| `refresh_token`        | `string` | Env var | Long-lived refresh token. Defaults to `NORDIGEN_REFRESH_TOKEN` environment variable.            |
 | `account_id`           | `string` | `""`    | GoCardless account UUID, obtained via the `nordigen connect` wizard.                            |
 | `label`                | `string` | `null`  | Human-readable name shown in event data (e.g. `"Checking"`, `"Savings"`).                      |
 | `poll_interval`        | `string` | `"6h"`  | How often to check for new transactions. Minimum enforced at 6h regardless of configured value. |
 | `initial_history_days` | `int`    | `90`    | How many days of history to fetch on the very first sync. Capped by your end-user agreement.    |
+
+### Onboarding & Authentication (Implicit)
+
+These parameters are primarily used for authentication and are typically provided via environment variables. While they can be placed in `config.yaml`, it is recommended to keep them in `.env`.
+
+| Parameter       | Type     | Default | Description                                                                          |
+|:----------------|:---------|:--------|:-------------------------------------------------------------------------------------|
+| `secret_id`     | `string` | Env var | GoCardless `secret_id`. Defaults to `NORDIGEN_SECRET_ID` environment variable.       |
+| `secret_key`    | `string` | Env var | GoCardless `secret_key`. Defaults to `NORDIGEN_SECRET_KEY` environment variable.     |
+| `refresh_token` | `string` | Env var | Long-lived refresh token. Defaults to `NORDIGEN_REFRESH_TOKEN` environment variable. |
 
 ## Event Definitions
 

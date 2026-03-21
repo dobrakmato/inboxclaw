@@ -40,6 +40,7 @@ The data model is the contract between sources, the internal pipeline, and sinks
 | `key` | string | State key name. |
 | `value` | JSON | State value. |
 | `created_at` | datetime | Insert timestamp (UTC). |
+| `updated_at` | datetime | Last update timestamp (UTC). |
 
 Constraints:
 
