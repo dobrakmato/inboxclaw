@@ -575,6 +575,7 @@ class GoogleCalendarSource:
                                             version=version,
                                             occurred_at=occurred_at,
                                             data=self._make_event_payload(
+                                                event_type=CalendarEventType.DELETED,
                                                 current_event=None,
                                                 previous_event=cached_event,
                                             ),
