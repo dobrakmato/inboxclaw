@@ -23,6 +23,11 @@ class E2EApp:
         self.db_path = os.path.join(self.e2e_dir, "data.db")
         self.process: Optional[subprocess.Popen] = None
         
+        self.stdout_path = os.path.join(self.e2e_dir, "stdout.log")
+        self.stderr_path = os.path.join(self.e2e_dir, "stderr.log")
+        self.stdout_file = None
+        self.stderr_file = None
+        
         # Adjust config for E2E
         self.config.setdefault("database", {})["db_path"] = self.db_path
         self.config.setdefault("server", {})["port"] = self.app_port
@@ -52,11 +57,17 @@ class E2EApp:
         env["PYTHONPATH"] = os.getcwd()
         env["CONFIG_PATH"] = self.config_path
         
+        self.stdout_file = open(self.stdout_path, "w")
+        self.stderr_file = open(self.stderr_path, "w")
+        
+        # Use subprocess.CREATE_NEW_PROCESS_GROUP on Windows to allow taskkill/pgid-like cleanup if needed
+        # But for now just Popen is fine as we'll use process.kill()
+        
         self.process = subprocess.Popen(
             [sys.executable, "main.py", "listen"],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=self.stdout_file,
+            stderr=self.stderr_file,
             text=True
         )
         
@@ -72,7 +83,13 @@ class E2EApp:
                 pass
             time.sleep(1)
             if self.process.poll() is not None:
-                stdout, stderr = self.process.communicate()
+                # Close files to ensure output is flushed
+                self.stdout_file.close()
+                self.stderr_file.close()
+                with open(self.stdout_path, "r") as f:
+                    stdout = f.read()
+                with open(self.stderr_path, "r") as f:
+                    stderr = f.read()
                 raise RuntimeError(f"App failed to start (code {self.process.returncode})\nSTDOUT: {stdout}\nSTDERR: {stderr}")
         
         raise RuntimeError("Timed out waiting for app to start")
@@ -83,9 +100,16 @@ class E2EApp:
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                # On Windows, terminate might not work for some process trees
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.process.pid)], 
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if sys.platform == "win32":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.process.pid)], 
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    self.process.kill()
+            
+            if self.stdout_file and not self.stdout_file.closed:
+                self.stdout_file.close()
+            if self.stderr_file and not self.stderr_file.closed:
+                self.stderr_file.close()
 
     def get_url(self, path: str = "") -> str:
         return f"http://127.0.0.1:{self.app_port}/{path.lstrip('/')}"
