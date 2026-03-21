@@ -11,7 +11,10 @@ Use this source to build workflows that react to incoming emails: ticket creatio
 Generate a Google OAuth token with the `gmail` scope using the [Google Auth CLI](google-auth-cli.md):
 
 ```bash
-python main.py google auth --scopes gmail --token data/google_token.json
+python main.py google auth \
+  --credentials-file data/credentials.json \
+  --scopes gmail \
+  --token data/google_token.json
 ```
 
 ### 2. Add the source to `config.yaml`

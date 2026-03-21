@@ -6,9 +6,9 @@ Your password is never shared with the pipeline. You can revoke access at any ti
 
 ## Prerequisites
 
-You need Google Cloud credentials (Client ID and Client Secret). Create a "Desktop App" in the [Google Cloud Console](https://console.cloud.google.com/) to get them.
+You need Google Cloud credentials. Create a "Desktop App" in the [Google Cloud Console](https://console.cloud.google.com/) and download the `credentials.json` file.
 
-Alternatively, download a `credentials.json` file from the Google Cloud Console and use `--credentials-file` instead of typing the ID and Secret manually.
+The CLI tool requires this file via the `--credentials-file` parameter.
 
 ## How to Authorize
 

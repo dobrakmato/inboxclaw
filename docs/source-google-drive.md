@@ -11,7 +11,10 @@ A key feature is **debounced updates**: when a document is actively edited, the 
 Generate a Google OAuth token with the `drive` scope using the [Google Auth CLI](google-auth-cli.md):
 
 ```bash
-python main.py google auth --scopes drive --token data/google_token.json
+python main.py google auth \
+  --credentials-file data/credentials.json \
+  --scopes drive \
+  --token data/google_token.json
 ```
 
 The `drive` scope grants read-only access to file content, which is needed for text diffs in `file_updated` events. If you only need metadata tracking (names, moves, shares) without text diffs, you can use the `drive_metadata` scope instead and set `eligible_mime_types_for_content_diff: []` in your config.

@@ -23,7 +23,7 @@ sink:
 2. Run the app:
 
 ```bash
-python main.py
+python main.py listen
 ```
 
 3. Open the API docs at `http://127.0.0.1:8000/docs` and connect a sink client (for example SSE).

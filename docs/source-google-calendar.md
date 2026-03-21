@@ -11,7 +11,10 @@ Use this source to keep your systems in sync with real-world schedules — log m
 Generate a Google OAuth token with the `calendar` scope using the [Google Auth CLI](google-auth-cli.md):
 
 ```bash
-python main.py google auth --scopes calendar --token data/google_token.json
+python main.py google auth \
+  --credentials-file data/credentials.json \
+  --scopes calendar \
+  --token data/google_token.json
 ```
 
 ### 2. Add the source to `config.yaml`
