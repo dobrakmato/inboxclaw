@@ -6,6 +6,23 @@ The CLI is built with `Click` and can be invoked using `python main.py`.
 
 ## Core Commands
 
+### `status`
+Checks the status of the Inboxclaw system, including the systemd service, logs, healthcheck endpoint, version info, and database statistics.
+
+**Usage:**
+```bash
+python main.py status [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--service-name TEXT`: Name of the systemd service to check (default: `inboxclaw`).
+
+**Example:**
+```bash
+python main.py status
+```
+
 ### `update`
 Checks the GitHub repository for updates, pulls them, and installs any new dependencies.
 
