@@ -5,7 +5,7 @@ import os
 import logging
 from src.cli import cli
 
-logger = logging.getLogger("ingest-pipeline")
+logger = logging.getLogger("inboxclaw")
 
 @cli.command()
 @click.option("--force", is_flag=True, help="Force update even if no changes are detected.")

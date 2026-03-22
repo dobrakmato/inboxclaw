@@ -1,6 +1,6 @@
 # Configuration
 
-This document explains how to configure the `ingest-pipeline`. The configuration is stored in a YAML file (default `config.yaml`).
+This document explains how to configure Inboxclaw. The configuration is stored in a YAML file (default `config.yaml`).
 
 ## Overview
 

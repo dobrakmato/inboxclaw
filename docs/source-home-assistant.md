@@ -11,7 +11,7 @@ Use this source to build location-aware workflows: trigger automations when you 
 1. Open your Home Assistant instance in a browser.
 2. Click your profile name at the bottom of the sidebar.
 3. Scroll to **Long-Lived Access Tokens**.
-4. Click **Create Token**, name it (e.g. "Ingest Pipeline"), and copy the token.
+4. Click **Create Token**, name it (e.g. "Inboxclaw"), and copy the token.
 
 You can provide the token in `config.yaml` or via the `HOME_ASSISTANT_TOKEN` environment variable.
 

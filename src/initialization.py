@@ -15,7 +15,7 @@ from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
 from src.sinks.win11toast import Win11ToastSink
 
-logger = logging.getLogger("ingest-pipeline")
+logger = logging.getLogger("inboxclaw")
 
 def init_sources(services: AppServices):
     """Initialize sources based on configuration."""

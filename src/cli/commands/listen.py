@@ -6,12 +6,12 @@ from src.cli import cli
 from src.app import app
 from src.config import load_config
 
-logger = logging.getLogger("ingest-pipeline")
+logger = logging.getLogger("inboxclaw")
 
 @cli.command()
 @click.option("--config", "config_path", default=None, help="Path to the configuration file.")
 def listen(config_path: Optional[str]):
-    """Start the ingest pipeline server."""
+    """Start the Inboxclaw server."""
     # Pass the config path to the app state so lifespan can use it
     app.state.config_path = config_path
     

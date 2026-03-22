@@ -10,7 +10,7 @@ from src.initialization import init_sources, init_sinks
 from src.pipeline.cleanup import cleanup_task
 from src.pipeline.coalescence_service import CoalescenceBackgroundService
 
-logger = logging.getLogger("ingest-pipeline")
+logger = logging.getLogger("inboxclaw")
 
 # Event notifier singleton (or at least stable across lifespan)
 event_notifier = EventNotifier()
@@ -18,7 +18,7 @@ event_notifier = EventNotifier()
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan for startup and shutdown events."""
-    logger.info("Starting ingest pipeline...")
+    logger.info("Starting inboxclaw...")
     # Get config path from app state if it was set via CLI
     config_path = getattr(app.state, "config_path", None)
     config = load_config(config_path)
@@ -44,10 +44,10 @@ async def lifespan(app: FastAPI):
     
     logger.info("App initialized.")
     yield
-    logger.info("Shutting down ingest pipeline...")
+    logger.info("Shutting down inboxclaw...")
     await services.stop_tasks()
 
-app = FastAPI(title="Ingest Pipeline", lifespan=lifespan)
+app = FastAPI(title="Inboxclaw", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

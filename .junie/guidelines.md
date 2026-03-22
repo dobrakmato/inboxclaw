@@ -1,4 +1,4 @@
-# Guidelines for Ingest Pipeline Project
+# Guidelines for Inboxclaw Project
 
 ## Principles
 

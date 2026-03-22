@@ -82,7 +82,7 @@ All sinks deliver events using the same JSON structure:
 
 ## Coalescing
 
-The Ingest Pipeline features a centralized **In-Flight Coalescing** system. Multiple rapid events with the same `event_type` and `entity_id` can be merged at the source level before they are even stored in the main event table. 
+Inboxclaw features a centralized **In-Flight Coalescing** system. Multiple rapid events with the same `event_type` and `entity_id` can be merged at the source level before they are even stored in the main event table.
 
 This means sinks receive a "pre-optimized" event stream. For example, if a file in Google Drive is saved 10 times in 30 seconds, a "debounce" rule can ensure your sinks only receive a single `file_updated` event after the user stops typing.
 

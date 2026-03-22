@@ -12,7 +12,7 @@ from src.pipeline.coalescer import CoalescenceManager
 
 @dataclass
 class AppServices:
-    """Service container for the ingest pipeline application."""
+    """Service container for the Inboxclaw application."""
     app: FastAPI
     config: Config
     db_session_maker: sessionmaker

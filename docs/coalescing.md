@@ -18,7 +18,7 @@ By using coalescing, you can ensure that your [Sinks](sinks-general.md) receive 
 
 ### Coalescing vs. Debouncing vs. Batching
 
-While often used interchangeably, these terms have specific meanings in the context of the Ingest Pipeline:
+While often used interchangeably, these terms have specific meanings in the context of Inboxclaw:
 
 1.  **Coalescing**: The general act of merging multiple events into one.
 2.  **Debouncing**: A strategy where the "flush" timer resets every time a new event arrives. If you keep sending events within the window, the timer keeps moving forward. The event is only delivered after a period of "silence".

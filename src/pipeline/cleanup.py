@@ -3,7 +3,7 @@ import logging
 from src.database import delete_old_events
 from src.services import AppServices
 
-logger = logging.getLogger("ingest-pipeline.cleanup")
+logger = logging.getLogger("inboxclaw.cleanup")
 
 async def cleanup_task(services: AppServices):
     """

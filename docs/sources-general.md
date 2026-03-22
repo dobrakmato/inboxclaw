@@ -1,7 +1,7 @@
 # Sources
 
-Sources connect external systems (Google APIs, bank APIs, home automation, etc.) to the ingest pipeline. Each source
-periodically checks for new data, converts it into structured **events**, and stores them in the pipeline database for
+Sources connect external systems (Google APIs, bank APIs, home automation, etc.) to Inboxclaw. Each source
+periodically checks for new data, converts it into structured **events**, and stores them in the database for
 sinks to consume.
 
 If you want to get data *into* the pipeline, you configure a source. If you want to get data *out*,
@@ -53,7 +53,7 @@ Every event produced by a source contains these fields:
 
 ## Coalescing & Debouncing
 
-The Ingest Pipeline features a centralized **In-Flight Coalescing** system. Multiple rapid events can be merged at the source level before they are stored or delivered to sinks. This is particularly useful for reducing noise from systems that emit frequent updates (e.g., file saves).
+Inboxclaw features a centralized **In-Flight Coalescing** system. Multiple rapid events can be merged at the source level before they are stored or delivered to sinks. This is particularly useful for reducing noise from systems that emit frequent updates (e.g., file saves).
 
 Coalescing is configured at the source level using `coalesce` rules.
 

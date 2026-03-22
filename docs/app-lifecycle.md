@@ -1,6 +1,6 @@
 # App Lifecycle
 
-This page describes what the ingest pipeline does from process start to shutdown.
+This page describes what Inboxclaw does from process start to shutdown.
 
 If you are new to the project, read this first, then continue with [Pipeline](pipeline.md), [Sources](sources-general.md), and [Sinks](sinks-general.md).
 

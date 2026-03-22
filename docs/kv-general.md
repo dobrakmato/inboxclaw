@@ -1,6 +1,6 @@
 # Key/Value Storage for Sources
 
-The Ingest Pipeline provides a simple Key/Value (KV) storage for sources to store persistent data between polling cycles.
+Inboxclaw provides a simple Key/Value (KV) storage for sources to store persistent data between polling cycles.
 
 This is primarily used for synchronization state, such as cursors, sync tokens, or change markers. By storing this information in the database, sources can resume from where they left off even after a server restart.
 

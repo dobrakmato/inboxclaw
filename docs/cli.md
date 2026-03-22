@@ -1,6 +1,6 @@
 # Command Line Interface (CLI)
 
-The Ingest Pipeline provides a command-line interface for running the server and performing maintenance or setup tasks, such as authenticating with external APIs.
+Inboxclaw provides a command-line interface for running the server and performing maintenance or setup tasks, such as authenticating with external APIs.
 
 The CLI is built with `Click` and can be invoked using `python main.py`.
 
@@ -23,7 +23,7 @@ python main.py update
 ```
 
 ### `listen`
-Starts the Ingest Pipeline server. This command is the main entry point for running the application.
+Starts the Inboxclaw server. This command is the main entry point for running the application.
 
 **Usage:**
 ```bash
@@ -36,6 +36,36 @@ python main.py listen [OPTIONS]
 **Example:**
 ```bash
 python main.py listen --config my-custom-config.yaml
+```
+
+### `install`
+Installs Inboxclaw as a `systemd` service on Linux. This allows the pipeline to start automatically on boot and restart if it crashes.
+
+**Usage:**
+```bash
+python main.py install [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--user`: Install as a user service (default). Does not require root.
+- `--system`: Install as a system-wide service (requires root).
+- `--name TEXT`: Name of the systemd service (default: `inboxclaw`).
+
+**Examples:**
+
+**User Installation (Non-root):**
+```bash
+python main.py install --user
+```
+After installing as a user, you may want to enable "linger" for your user so the service starts on boot without you having to log in:
+```bash
+loginctl enable-linger $USER
+```
+
+**System-wide Installation (Root):**
+```bash
+sudo python main.py install --system
 ```
 
 ---

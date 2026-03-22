@@ -1,6 +1,6 @@
 # Data Model
 
-This page documents the current SQLite schema used by the ingest pipeline.
+This page documents the current SQLite schema used by Inboxclaw.
 
 > Source of truth: `src/database.py`
 

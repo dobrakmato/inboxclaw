@@ -1,6 +1,6 @@
 # End-to-End (E2E) Testing
 
-This directory contains the end-to-end tests for the Ingest Pipeline. These tests verify the entire system's behavior by spinning up the application with specific configurations and observing its effects on various sinks.
+This directory contains the end-to-end tests for Inboxclaw. These tests verify the entire system's behavior by spinning up the application with specific configurations and observing its effects on various sinks.
 
 ## Approach
 

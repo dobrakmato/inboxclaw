@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import logging
 
-logger = logging.getLogger("ingest-pipeline.database")
+logger = logging.getLogger("inboxclaw.database")
 
 class Base(DeclarativeBase):
     pass

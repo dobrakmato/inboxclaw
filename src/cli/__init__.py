@@ -2,5 +2,5 @@ import click
 
 @click.group()
 def cli():
-    """Ingest Pipeline CLI."""
+    """Inboxclaw CLI."""
     pass
