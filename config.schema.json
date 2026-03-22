@@ -694,6 +694,13 @@
               "type": "string"
             }
           ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
         }
       },
       "required": [

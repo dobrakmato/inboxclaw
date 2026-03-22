@@ -2,3 +2,4 @@
 - [ ] Significantly improve the onboarding experience
 - [ ] Add more CLI commands to simplify creation of config and usage
 - [ ] Implement: Asana source
+- [ ] Rework event matching to be more flexible (source, event type, tags, priority)

@@ -144,6 +144,50 @@ async def test_webhook_sink_retry(services, db_session_maker, sink_id):
 
 
 @pytest.mark.asyncio
+async def test_webhook_sink_custom_headers(services, db_session_maker, sink_id):
+    # Setup source and event
+    with db_session_maker() as session:
+        source = Source(name="test_source", type="test")
+        session.add(source)
+        session.commit()
+        source_id = source.id
+
+        event = Event(
+            event_id="evt_headers",
+            source_id=source_id,
+            event_type="test.event",
+            entity_id="entity_1",
+            data={"foo": "bar"}
+        )
+        session.add(event)
+        session.commit()
+
+    sink_config = {
+        "url": "http://example.com/webhook",
+        "match": "test.*",
+        "headers": {
+            "Authorization": "Bearer secret-token",
+            "X-Custom-Header": "custom-value"
+        }
+    }
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
+
+    # Mock httpx.AsyncClient.post
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(200, content=b'{"status": "ok"}')
+
+        await sink.process_pending_events()
+
+        # Check if post was called with correct headers
+        assert mock_post.called
+        call_args = mock_post.call_args
+        assert call_args.kwargs["headers"] == {
+            "Authorization": "Bearer secret-token",
+            "X-Custom-Header": "custom-value"
+        }
+
+
+@pytest.mark.asyncio
 async def test_webhook_sink_respects_retry_interval(services, db_session_maker, sink_id):
     with db_session_maker() as session:
         source = Source(name="test_source", type="test")

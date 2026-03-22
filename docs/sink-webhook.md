@@ -66,7 +66,10 @@ Defaults: `match: "*"`, `max_retries: 3`, `retry_interval: 10s`, `ttl_enabled: t
 sink:
   audit_log:
     type: webhook
-    url: "https://audit-service.internal/ingest"
+    url: "${AUDIT_URL}"
+    headers:
+      Authorization: "Bearer ${AUDIT_TOKEN}"
+      X-Custom-Header: "my-value"
     max_retries: 10
     retry_interval: "1m"
     match:
@@ -84,7 +87,8 @@ sink:
 | Parameter        | Type           | Default  | Description                                                                                      |
 |:-----------------|:---------------|:---------|:-------------------------------------------------------------------------------------------------|
 | `type`           | `string`       | —        | Must be `webhook`.                                                                               |
-| `url`            | `string`       | Required | The URL to POST events to.                                                                       |
+| `url`            | `string`       | Required | The URL to POST events to. Supports env vars via `${VAR}`.                                       |
+| `headers`        | `dict`         | `{}`     | Custom HTTP headers to send. Supports env vars in values.                                        |
 | `match`          | `string\|list` | `"*"`    | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.                              |
 | `max_retries`    | `int`          | `3`      | Maximum number of delivery attempts per event.                                                   |
 | `retry_interval` | `string`       | `10.0`   | Minimum wait between retries. Supports human-readable intervals (e.g. `"1m"`) or seconds.        |

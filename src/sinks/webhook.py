@@ -36,6 +36,7 @@ class WebhookSink:
         self.sink_id = sink_id
 
         self.url = config.url
+        self.headers = config.headers
         self.matcher = EventMatcher(config.match)
         self.max_retries = config.max_retries
         self.retry_interval = config.retry_interval
@@ -164,7 +165,12 @@ class WebhookSink:
                 event.event_id,
                 self.url,
             )
-            response = await client.post(self.url, json=payload, timeout=10.0)
+            response = await client.post(
+                self.url,
+                json=payload,
+                headers=self.headers,
+                timeout=10.0
+            )
         except Exception:
             logger.exception(
                 "Webhook sink '%s' error delivering event %s",
