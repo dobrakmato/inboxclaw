@@ -39,9 +39,9 @@ def bootstrap():
             print(f"[inboxclaw] Creating virtual environment in {venv_dir}...")
             subprocess.run([sys.executable, "-m", "venv", ".venv"], check=True)
         
-        # 2. Install dependencies
+        # 2. Install dependencies (this will also create the 'inboxclaw' script in the venv)
         print("[inboxclaw] Installing dependencies (this may take a minute)...")
-        subprocess.run([str(python_bin), "-m", "pip", "install", "."], check=True)
+        subprocess.run([str(python_bin), "-m", "pip", "install", "-e", "."], check=True)
 
         # 3. Re-run original command with venv python
         print("[inboxclaw] Setup complete. Restarting in virtual environment...")

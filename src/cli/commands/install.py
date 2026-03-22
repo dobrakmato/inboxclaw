@@ -87,6 +87,38 @@ def install(config_path: str, is_user: bool, is_system: bool, service_name: str)
         subprocess.run(systemctl_cmd + ["restart", f"{service_name}.service"], check=True)
         
         click.echo(f"Successfully installed and started {service_name}.service")
+        
+        # Link CLI to PATH
+        if is_user:
+            bin_dir = Path.home() / ".local" / "bin"
+        else:
+            bin_dir = Path("/usr/local/bin")
+            
+        try:
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            # The executable is in the same directory as sys.executable
+            # (e.g. .venv/bin/python -> .venv/bin/inboxclaw)
+            python_bin_dir = Path(sys.executable).parent
+            inboxclaw_bin = python_bin_dir / "inboxclaw"
+            
+            target_bin = bin_dir / "inboxclaw"
+            
+            if inboxclaw_bin.exists():
+                if target_bin.exists() or target_bin.is_symlink():
+                    target_bin.unlink()
+                target_bin.symlink_to(inboxclaw_bin)
+                click.echo(f"Added 'inboxclaw' command to {bin_dir}")
+                
+                # Check if bin_dir is in PATH
+                path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+                if str(bin_dir) not in path_dirs and str(bin_dir.resolve()) not in path_dirs:
+                    click.secho(f"Warning: {bin_dir} is not in your PATH. You may need to add it to your shell profile.", fg="yellow")
+            else:
+                click.echo(f"Note: 'inboxclaw' executable not found in {python_bin_dir}. Skipping symlink creation.")
+
+        except Exception as e:
+            click.echo(f"Failed to create symlink in {bin_dir}: {e}")
+
         if is_user:
             click.echo("Note: To ensure the service starts on boot without you logging in, run: loginctl enable-linger")
     except subprocess.CalledProcessError as e:

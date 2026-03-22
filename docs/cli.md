@@ -41,6 +41,8 @@ python main.py listen --config my-custom-config.yaml
 ### `install`
 Installs Inboxclaw as a `systemd` service on Linux. This allows the pipeline to start automatically on boot and restart if it crashes.
 
+Additionally, it creates a symlink to the `inboxclaw` CLI command in your PATH (`~/.local/bin` for user installations or `/usr/local/bin` for system-wide ones), allowing you to run `inboxclaw` from any directory.
+
 **Usage:**
 ```bash
 python main.py install [OPTIONS]

@@ -68,7 +68,7 @@ def update(force: bool):
         logger.info("Installing dependencies...")
         # Assuming pip is available and we want to install from pyproject.toml
         # Using sys.executable to ensure we use the same environment
-        subprocess.run([sys.executable, "-m", "pip", "install", "."], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], check=True)
         
         logger.info("Update completed successfully.")
         
