@@ -27,14 +27,14 @@ def _collect_interval_field_names() -> set[str]:
         GoogleSourceConfig, GmailSourceConfig, GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
-        HttpPullSinkConfig, SSESinkConfig, TTLConfig,
+        HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
     )
     names: set[str] = set()
     for model in [
         GoogleSourceConfig, GmailSourceConfig, GoogleDriveSourceConfig,
         GoogleCalendarSourceConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
-        HttpPullSinkConfig, SSESinkConfig, TTLConfig,
+        HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
     ]:
         for field_name, field_info in model.model_fields.items():
             # Interval fields have annotation float (after BeforeValidator strips the wrapper)

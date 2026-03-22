@@ -20,8 +20,14 @@
           "$ref": "#/$defs/CoalesceStrategy"
         },
         "window": {
-          "title": "Window",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "aggregation": {
           "default": "latest",
