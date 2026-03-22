@@ -90,6 +90,30 @@ python main.py subscribe [OPTIONS]
 python main.py subscribe
 ```
 
+### `pull`
+Runs a pull request against a locally configured HTTP Pull sink. It extracts a batch of events and marks them as processed. On success, it outputs the raw JSON response to `stdout`, making it suitable for CLI integrations.
+
+**Usage:**
+```bash
+python main.py pull [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--name TEXT`: Name of the HTTP Pull sink to use (if multiple are configured).
+- `--event-type TEXT`: Filter by event type (supports `*` and `.*`).
+- `--batch-size INTEGER`: Limit the number of events to extract (must be >= 1).
+- `--no-confirm`: Do not mark events as processed after extraction.
+
+**Example:**
+```bash
+# Pull and automatically mark as processed
+python main.py pull --event-type "gmail.*" --batch-size 5
+
+# Output:
+# {"batch_id": 1, "events": [...], "remaining_events": 0}
+```
+
 ### `install`
 Installs Inboxclaw as a `systemd` service on Linux. This allows the pipeline to start automatically on boot and restart if it crashes.
 
