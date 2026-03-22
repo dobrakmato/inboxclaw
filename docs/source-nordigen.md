@@ -222,7 +222,8 @@ When access expires or is revoked, the source emits an actionable error event so
     "summary": "AccessExpiredError",
     "detail": "Access has expired or it has been revoked.",
     "action": "Reconnect the bank account using: python main.py nordigen connect"
-  }
+  },
+  "meta": {}
 }
 ```
 

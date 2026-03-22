@@ -66,6 +66,7 @@ Constraints:
 | `created_at` | datetime | Persist timestamp (UTC). |
 | `occurred_at` | datetime nullable | Original timestamp from source system. |
 | `data` | JSON nullable | Event payload. |
+| `meta` | JSON | Transient metadata (empty by default). |
 
 Constraints:
 

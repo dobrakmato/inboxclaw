@@ -40,6 +40,7 @@ class EventWriter:
             event_type=event.event_type,
             entity_id=event.entity_id,
             data=event.data,
+            meta=event.meta,
             occurred_at=event.occurred_at
         )
         session.add(new_event)

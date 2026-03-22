@@ -7,7 +7,7 @@ In plain terms: sources produce events, the pipeline stores them safely, and sin
 ## End-to-End Flow
 
 1. A source detects a change in an external system.
-2. The source converts that change into a normalized event (`event_id`, `event_type`, `entity_id`, `occurred_at`, `data`).
+2. The source converts that change into a normalized event (`event_id`, `event_type`, `entity_id`, `occurred_at`, `data`, `meta`).
 3. The pipeline writer deduplicates events using `(source_id, event_id)`.
 4. New events are stored durably in SQLite.
 5. The notifier signals sinks that new events are available.

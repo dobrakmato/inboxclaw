@@ -25,6 +25,17 @@ class EventWithMeta(BaseModel):
             else:
                 source_data = {"id": event.source.id, "name": event.source.name}
 
+        # Priority: explicit meta > event.meta (database) > event.meta (transient dictionary)
+        event_meta = getattr(event, "meta", {})
+        if meta:
+            # Deep merge could be better, but for now simple update
+            if isinstance(event_meta, dict):
+                merged_meta = event_meta.copy()
+                merged_meta.update(meta)
+                event_meta = merged_meta
+            else:
+                event_meta = meta
+
         return cls(
             id=getattr(event, "id", None),
             event_id=event.event_id,
@@ -33,7 +44,7 @@ class EventWithMeta(BaseModel):
             created_at=event.created_at,
             data=event.data,
             source=source_data,
-            meta=meta or getattr(event, "meta", {})
+            meta=event_meta
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -52,3 +63,4 @@ class NewEvent(BaseModel):
     data: Dict[str, Any]
     entity_id: Optional[str] = None
     occurred_at: Optional[datetime] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
