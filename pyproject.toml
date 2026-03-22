@@ -23,3 +23,9 @@ dependencies = [
 
 [project.scripts]
 inboxclaw = "src.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
