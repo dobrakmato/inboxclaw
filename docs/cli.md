@@ -23,6 +23,25 @@ python main.py status [OPTIONS]
 python main.py status
 ```
 
+### `logs`
+Displays the logs for the Inboxclaw service using `journalctl`. This is only available on Linux systems where Inboxclaw is installed as a systemd service.
+
+**Usage:**
+```bash
+python main.py logs [OPTIONS]
+```
+
+**Options:**
+- `-n, --lines INTEGER`: Number of log lines to show (default: 20).
+- `-f, --follow`: Follow the logs in real-time.
+- `--service-name TEXT`: Name of the systemd service (default: `inboxclaw`).
+
+**Example:**
+```bash
+# Show last 50 lines and follow
+python main.py logs -n 50 -f
+```
+
 ### `restart`
 Restarts the Inboxclaw `systemd` service. This is useful for applying configuration changes or restarting the service if it becomes unresponsive.
 
