@@ -58,7 +58,7 @@ async def test_file_updated_emitted_and_contains_diff(services):
         "createdTime": "2024-01-01T00:00:00Z",
         "modifiedTime": "2024-01-01T01:00:00Z",
         "version": "2",
-        "owned_by_me": True,
+        "ownedByMe": True,
         "lastModifyingUser": {"displayName": "Alice"},
         "description": "Updated description"
     }
@@ -108,6 +108,7 @@ async def test_file_moved_contains_before_after(services):
         "trashed": False,
         "version": "2",
         "modifiedTime": "2024-01-01T01:00:00Z",
+        "ownedByMe": True,
     }
     
     source._fetch_file = MagicMock(return_value=current_resource)

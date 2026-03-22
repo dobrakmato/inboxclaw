@@ -30,6 +30,7 @@ class DriveFileSnapshot:
     owners: Optional[list[dict[str, str]]] = None
     shared_with_me_time: Optional[str] = None
     sharing_user: Optional[dict[str, str]] = None
+    permissions: Optional[list[dict[str, Any]]] = None
     description: Optional[str] = None
     indexable_text: Optional[str] = None
     last_modifying_user: Optional[dict[str, str]] = None
@@ -53,6 +54,7 @@ class DriveFileSnapshot:
             owners=file_resource.get("owners"),
             shared_with_me_time=file_resource.get("sharedWithMeTime"),
             sharing_user=file_resource.get("sharingUser"),
+            permissions=file_resource.get("permissions"),
             description=file_resource.get("description"),
             indexable_text=content_hints.get("indexableText"),
             last_modifying_user=file_resource.get("lastModifyingUser"),
@@ -74,6 +76,7 @@ class DriveFileSnapshot:
             owners=data.get("owners"),
             shared_with_me_time=data.get("shared_with_me_time"),
             sharing_user=data.get("sharing_user"),
+            permissions=data.get("permissions"),
             description=data.get("description"),
             indexable_text=data.get("indexable_text"),
             last_modifying_user=data.get("last_modifying_user"),
@@ -96,6 +99,7 @@ class DriveFileSnapshot:
             "owners": self.owners,
             "shared_with_me_time": self.shared_with_me_time,
             "sharing_user": self.sharing_user,
+            "permissions": self.permissions,
             "description": self.description,
             "indexable_text": self.indexable_text,
             "last_modifying_user": self.last_modifying_user,
@@ -144,6 +148,10 @@ class DriveTransitionClassifier:
 
         if current is None:
             return event_types
+        
+        # Filter out non-intentionally shared files
+        if not self.is_intentionally_shared(current):
+            return event_types
 
         if previous is None:
             event_types.append(GoogleDriveEventType.FILE_CREATED)
@@ -164,6 +172,28 @@ class DriveTransitionClassifier:
             event_types.append(GoogleDriveEventType.FILE_UPDATED)
 
         return event_types
+
+    def is_intentionally_shared(self, snapshot: DriveFileSnapshot) -> bool:
+        """Determines if the file is intentionally shared with the user."""
+        if snapshot.owned_by_me:
+            return True
+        
+        if snapshot.sharing_user:
+            return True
+        
+        if snapshot.permissions:
+            for perm in snapshot.permissions:
+                p_type = perm.get("type")
+                if p_type in ("user", "group"):
+                    return True
+                
+                # Check inherited permissions
+                details = perm.get("permissionDetails", [])
+                for detail in details:
+                    if detail.get("permissionType") in ("user", "group"):
+                        return True
+        
+        return False
 
     def has_update_signal(self, previous: Optional[DriveFileSnapshot], current: Optional[DriveFileSnapshot]) -> bool:
         if previous is None or current is None:

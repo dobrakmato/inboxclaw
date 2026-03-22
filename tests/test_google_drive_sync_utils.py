@@ -114,6 +114,67 @@ def test_text_diff_calculator_empty():
     assert diff["addedCharCount"] == 5
 
 
+def test_classifier_is_intentionally_shared():
+    classifier = DriveTransitionClassifier()
+    
+    # Owned by me
+    assert classifier.is_intentionally_shared(make_snapshot(owned_by_me=True)) is True
+    
+    # Sharing user present
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False, 
+        sharing_user={"displayName": "Alice"}
+    )) is True
+    
+    # User permission present
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False, 
+        permissions=[{"type": "user", "emailAddress": "me@example.com"}]
+    )) is True
+    
+    # Group permission present
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False, 
+        permissions=[{"type": "group", "emailAddress": "group@example.com"}]
+    )) is True
+
+    # Inherited user permission
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False,
+        permissions=[{
+            "type": "anyone",
+            "permissionDetails": [{"permissionType": "user", "inherited": True}]
+        }]
+    )) is True
+
+    # Only anyone permission (not intentional)
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False,
+        permissions=[{"type": "anyone", "allowFileDiscovery": False}]
+    )) is False
+
+    # Only domain permission (not intentional)
+    assert classifier.is_intentionally_shared(make_snapshot(
+        owned_by_me=False,
+        permissions=[{"type": "domain", "domain": "example.com"}]
+    )) is False
+
+
+def test_classifier_filters_non_intentional_share():
+    classifier = DriveTransitionClassifier()
+    
+    # Publicly shared file (only anyone permission)
+    public_file = make_snapshot(
+        owned_by_me=False,
+        permissions=[{"type": "anyone", "allowFileDiscovery": False}],
+        shared_with_me_time="2026-03-14T11:00:00Z"
+    )
+    
+    events = classifier.classify(None, public_file, removed=False)
+    # Should be empty or filtered out
+    assert events == []
+
+
 def test_drive_file_snapshot_fields():
     file_resource = {
         "id": "file123",
@@ -127,17 +188,21 @@ def test_drive_file_snapshot_fields():
         "ownedByMe": True,
         "webViewLink": "https://docs.google.com/file/d/file123/view",
         "size": "1024",
+        "permissions": [{"type": "user", "emailAddress": "test@example.com"}]
     }
     snapshot = DriveFileSnapshot.from_file_resource(file_resource)
     assert snapshot.file_id == "file123"
     assert snapshot.web_view_link == "https://docs.google.com/file/d/file123/view"
     assert snapshot.size == "1024"
+    assert snapshot.permissions == [{"type": "user", "emailAddress": "test@example.com"}]
 
     # Test dict roundtrip
     data = snapshot.to_dict()
     assert data["web_view_link"] == "https://docs.google.com/file/d/file123/view"
     assert data["size"] == "1024"
+    assert data["permissions"] == [{"type": "user", "emailAddress": "test@example.com"}]
 
     from_dict = DriveFileSnapshot.from_dict(data)
     assert from_dict.web_view_link == snapshot.web_view_link
     assert from_dict.size == snapshot.size
+    assert from_dict.permissions == snapshot.permissions

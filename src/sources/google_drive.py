@@ -157,7 +157,7 @@ class GoogleDriveSource:
         return common
 
     def _fetch_file(self, service, file_id: str) -> Optional[dict[str, Any]]:
-        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,ownedByMe,owners(displayName,emailAddress),sharedWithMeTime,sharingUser(displayName,emailAddress),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress),webViewLink,size"
+        fields = "id,name,mimeType,parents,trashed,createdTime,modifiedTime,ownedByMe,owners(displayName,emailAddress),sharedWithMeTime,sharingUser(displayName,emailAddress),permissions(type,emailAddress,domain,allowFileDiscovery,permissionDetails),description,contentHints/indexableText,lastModifyingUser(displayName,emailAddress),webViewLink,size"
         try:
             return service.files().get(fileId=file_id, fields=fields, supportsAllDrives=True).execute()
         except HttpError as e:
@@ -221,6 +221,13 @@ class GoogleDriveSource:
                 current = DriveFileSnapshot.from_file_resource(file_resource)
 
         if current is not None:
+            # Filter out non-intentionally shared files
+            if not self.classifier.is_intentionally_shared(current):
+                # If we previously had it, we should probably delete it from cache
+                if previous:
+                    self._delete_cached_snapshot(file_id)
+                return []
+
             # If it's a text file and we have an update signal or it's new, we might want to fetch content
             is_text = current.mime_type.startswith("text/") or "document" in current.mime_type
             if is_text and (previous is None or self.classifier.has_update_signal(previous, current)):
@@ -278,7 +285,7 @@ class GoogleDriveSource:
             results = service.files().list(
                 q=query,
                 pageSize=100,
-                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners(displayName, emailAddress), trashed, sharedWithMeTime)",
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners(displayName, emailAddress), trashed, sharedWithMeTime, sharingUser(displayName, emailAddress), permissions(type,emailAddress,domain,allowFileDiscovery,permissionDetails))",
                 pageToken=next_page_token,
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
@@ -288,6 +295,10 @@ class GoogleDriveSource:
                 file_id = file_resource.get("id")
                 snapshot = DriveFileSnapshot.from_file_resource(file_resource)
                 
+                # Filter out non-intentionally shared files during bootstrap
+                if not self.classifier.is_intentionally_shared(snapshot):
+                    continue
+
                 # In full_snapshot mode, we also fetch text content
                 if self.config.bootstrap_mode == "full_snapshot":
                     is_text = snapshot.mime_type.startswith("text/") or "document" in snapshot.mime_type
