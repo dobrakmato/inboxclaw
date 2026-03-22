@@ -1,6 +1,6 @@
 # Gmail Source
 
-The Gmail source monitors a Google mailbox and emits events when emails are received, sent, deleted, or when labels change. It uses the Gmail History API for efficient incremental sync — only new changes are fetched on each poll.
+The Gmail source monitors a Google mailbox and emits events when emails are received, sent, or deleted. It can also optionally emit events when labels change (off by default). It uses the Gmail History API for efficient incremental sync — only new changes are fetched on each poll.
 
 Use this source to build workflows that react to incoming emails: ticket creation, archiving, notifications based on sender or subject, etc.
 
@@ -49,7 +49,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-Defaults: `poll_interval: "10m"`, `exclude_label_ids: ["SPAM"]`.
+Defaults: `poll_interval: "10m"`, `exclude_label_ids: ["SPAM"]`, `emit_label_events: false`.
 
 ### Full Configuration
 
@@ -60,6 +60,7 @@ sources:
     token_file: "data/google_token.json"
     poll_interval: "1m"
     exclude_label_ids: ["SPAM", "TRASH", "CATEGORY_PROMOTIONS"]
+    emit_label_events: true
 ```
 
 ### Configuration Reference
@@ -69,6 +70,7 @@ sources:
 | `token_file`        | `string` | Required     | Path to the Google OAuth2 token file (created via [Google Auth CLI](google-auth-cli.md)).     |
 | `poll_interval`     | `string` | `"10m"`      | How often to check for changes. Supports human-readable intervals (e.g. `"5m"`, `"30s"`).    |
 | `exclude_label_ids` | `list`   | `["SPAM"]`   | Messages with any of these labels are skipped. Common labels: `SPAM`, `TRASH`, `UNREAD`, `STARRED`, `IMPORTANT`, `INBOX`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`. |
+| `emit_label_events` | `boolean`| `false`      | Whether to emit events when labels are added or removed from emails.                         |
 
 ## Event Definitions
 

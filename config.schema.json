@@ -195,6 +195,11 @@
           },
           "title": "Exclude Label Ids",
           "type": "array"
+        },
+        "emit_label_events": {
+          "default": false,
+          "title": "Emit Label Events",
+          "type": "boolean"
         }
       },
       "required": [

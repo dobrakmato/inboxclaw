@@ -167,7 +167,7 @@ async def test_gmail_source_header_parsing(mock_services):
 
 @pytest.mark.asyncio
 async def test_gmail_source_other_events(mock_services):
-    config = GmailSourceConfig(token_file="fake_token.json")
+    config = GmailSourceConfig(token_file="fake_token.json", emit_label_events=True)
     source = GmailSource("test_gmail", config, mock_services, source_id=1)
     
     mock_service = MagicMock()

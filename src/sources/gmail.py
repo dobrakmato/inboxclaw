@@ -183,32 +183,34 @@ class GmailSource:
                         events.append(self._create_message_deleted_event(msg_id, msg_ref.get('threadId'), history_id))
 
                     # 3. Labels Added
-                    for item in record.get('labelsAdded', []):
-                        msg_ref = item.get('message', {})
-                        msg_id = msg_ref.get('id')
-                        if not msg_id: continue
-                        
-                        label_ids = msg_ref.get('labelIds', [])
-                        if any(l in self.config.exclude_label_ids for l in label_ids):
-                            continue
-                        events.append(self._create_label_event(
-                            "gmail.label_added", msg_id, msg_ref.get('threadId'),
-                            history_id, item.get('labelIds', []), label_ids
-                        ))
+                    if self.config.emit_label_events:
+                        for item in record.get('labelsAdded', []):
+                            msg_ref = item.get('message', {})
+                            msg_id = msg_ref.get('id')
+                            if not msg_id: continue
+                            
+                            label_ids = msg_ref.get('labelIds', [])
+                            if any(l in self.config.exclude_label_ids for l in label_ids):
+                                continue
+                            events.append(self._create_label_event(
+                                "gmail.label_added", msg_id, msg_ref.get('threadId'),
+                                history_id, item.get('labelIds', []), label_ids
+                            ))
 
                     # 4. Labels Removed
-                    for item in record.get('labelsRemoved', []):
-                        msg_ref = item.get('message', {})
-                        msg_id = msg_ref.get('id')
-                        if not msg_id: continue
-                        
-                        label_ids = msg_ref.get('labelIds', [])
-                        if any(l in self.config.exclude_label_ids for l in label_ids):
-                            continue
-                        events.append(self._create_label_event(
-                            "gmail.label_removed", msg_id, msg_ref.get('threadId'),
-                            history_id, item.get('labelIds', []), label_ids
-                        ))
+                    if self.config.emit_label_events:
+                        for item in record.get('labelsRemoved', []):
+                            msg_ref = item.get('message', {})
+                            msg_id = msg_ref.get('id')
+                            if not msg_id: continue
+                            
+                            label_ids = msg_ref.get('labelIds', [])
+                            if any(l in self.config.exclude_label_ids for l in label_ids):
+                                continue
+                            events.append(self._create_label_event(
+                                "gmail.label_removed", msg_id, msg_ref.get('threadId'),
+                                history_id, item.get('labelIds', []), label_ids
+                            ))
 
                 page_token = history_results.get('nextPageToken')
                 if not page_token:

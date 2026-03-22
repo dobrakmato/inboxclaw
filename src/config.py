@@ -60,6 +60,7 @@ class GoogleSourceConfig(BaseSourceConfig):
 class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
     exclude_label_ids: List[str] = Field(default_factory=lambda: ["SPAM"])
+    emit_label_events: bool = False
 
 class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"
