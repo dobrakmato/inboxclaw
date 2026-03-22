@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        args: ["tests"]
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -35,4 +35,5 @@ include = ["src*"]
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pre-commit",
 ]

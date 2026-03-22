@@ -50,12 +50,13 @@ class TestRestartCommand(unittest.TestCase):
     @patch('src.cli.commands.restart.os.name', 'nt')
     @patch('src.cli.commands.restart.load_config')
     def test_restart_non_posix(self, mock_load_config):
-        # Test on non-POSIX system - should validate config and then exit gracefully
+        # Test on non-POSIX system - should skip service restart without validating config
         result = self.runner.invoke(cli, ['restart'])
         
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Validating configuration", result.output)
+        self.assertNotIn("Validating configuration", result.output)
         self.assertIn("Systemd is only supported on Linux/POSIX systems. Skipping service restart.", result.output)
+        mock_load_config.assert_not_called()
 
     @patch('src.cli.commands.restart.os.name', 'posix')
     @patch('src.cli.commands.restart.get_uid', return_value=1000)

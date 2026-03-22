@@ -21,6 +21,10 @@ def get_uid() -> int:
 @click.option("--config", "config_path", help="Path to the configuration file to validate.")
 def restart(service_name: str, is_user: bool, is_system: bool, config_path: Optional[str]):
     """Restart the Inboxclaw systemd service."""
+    if os.name != 'posix':
+        click.echo("Systemd is only supported on Linux/POSIX systems. Skipping service restart.")
+        return
+
     if config_path is None:
         # Check if config.yaml exists in current directory, otherwise use project root
         if os.path.exists("config.yaml"):
@@ -37,10 +41,6 @@ def restart(service_name: str, is_user: bool, is_system: bool, config_path: Opti
     except Exception as e:
         click.secho(f"Configuration validation failed: {e}", fg="red")
         sys.exit(1)
-
-    if os.name != 'posix':
-        click.echo("Systemd is only supported on Linux/POSIX systems. Skipping service restart.")
-        return
 
     # Determine restart mode
     if is_system:
