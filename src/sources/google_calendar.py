@@ -163,16 +163,41 @@ class GoogleCalendarSource:
 
         return None
 
-    def _is_too_old(self, occurred_at: Optional[datetime]) -> bool:
-        if occurred_at is None:
-            return False
-
+    def _is_too_old(self, event_item: dict[str, Any]) -> bool:
+        """
+        Check if the event is too old to be emitted based on max_event_age_days.
+        Checks both the system timestamps (updated/created) AND the actual event date (end/start).
+        """
         max_age_days = self.config.max_event_age_days
         if max_age_days is None:
             return False
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
-        return occurred_at < cutoff
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=max_age_days)
+
+        # 1. Check system timestamps (is the change too old?)
+        occurred_at = self._make_occurred_at(event_item)
+        if occurred_at is not None and occurred_at < cutoff:
+            return True
+
+        # 2. Check the actual calendar event schedule (is the event itself too far in the past?)
+        # Use end time if available, otherwise start time
+        end = event_item.get("end", {})
+        start = event_item.get("start", {})
+        
+        event_date_str = end.get("dateTime") or end.get("date") or start.get("dateTime") or start.get("date")
+        if event_date_str:
+            event_dt = self._parse_rfc3339(event_date_str)
+            if event_dt and event_dt < cutoff:
+                logger.debug(
+                    "Event %s ignored because it ended at %s, which is older than %s days.",
+                    event_item.get("id"),
+                    event_dt,
+                    max_age_days
+                )
+                return True
+
+        return False
 
     def _is_too_far_future(self, event_item: dict[str, Any], max_into_future: float) -> bool:
         """
@@ -363,7 +388,7 @@ class GoogleCalendarSource:
         version = self._event_version(event_item)
         occurred_at = self._make_occurred_at(event_item, previous_event)
 
-        if self._is_too_old(occurred_at):
+        if self._is_too_old(event_item):
             return []
 
         status = event_item.get("status")

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from src.sources.google_calendar import GoogleCalendarSource, CalendarEventType
 from src.config import GoogleCalendarSourceConfig
 
@@ -19,7 +19,8 @@ def config():
         type="google_calendar",
         token_file="test_token.json",
         calendar_ids=["primary"],
-        poll_interval="1m"
+        poll_interval="1m",
+        max_event_age_days=None  # Disable age filtering for tests by default
     )
 
 def test_google_calendar_created(mock_services, config):
@@ -265,3 +266,89 @@ async def test_google_calendar_no_collapse(mock_services, config):
     args, _ = mock_services.writer.write_events.call_args
     emitted = args[1]
     assert len(emitted) == 2
+
+def test_google_calendar_past_event_age_filter(mock_services, config):
+    """
+    Verify that updates to events that ended long ago are ignored,
+    even if they were recently modified.
+    """
+    # Enable age filtering for this test
+    config.max_event_age_days = 1.0
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    
+    now = datetime.now(timezone.utc)
+    
+    # Event that happened 20 days ago
+    start_time = (now - timedelta(days=20)).isoformat()
+    end_time = (now - timedelta(days=20, hours=-1)).isoformat()
+    # But it was JUST updated (now)
+    updated_time = now.isoformat()
+    
+    old_event = {
+        "id": "past_evt",
+        "summary": "Old Past Meeting",
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "status": "confirmed",
+        "updated": (now - timedelta(minutes=5)).isoformat(),
+        "etag": "v1"
+    }
+    
+    new_event = {
+        "id": "past_evt",
+        "summary": "New Past Meeting Title",
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "status": "confirmed",
+        "updated": updated_time,
+        "etag": "v2"
+    }
+    
+    # Mock cache to return old event
+    mock_services.kv.get.side_effect = lambda sid, key: old_event if "snap:primary:past_evt" in key else None
+    
+    events = source._classify_event_change("primary", new_event)
+    
+    # It should NOT be emitted because the event itself ended 20 days ago.
+    assert len(events) == 0
+
+def test_google_calendar_recent_event_age_filter(mock_services, config):
+    """
+    Ensure that updates to RECENT events are still emitted even when age filtering is active.
+    """
+    config.max_event_age_days = 1.0
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    
+    now = datetime.now(timezone.utc)
+    
+    # Event that is happening now
+    start_time = now.isoformat()
+    end_time = (now + timedelta(hours=1)).isoformat()
+    updated_time = now.isoformat()
+    
+    old_event = {
+        "id": "recent_evt",
+        "summary": "Old Title",
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "status": "confirmed",
+        "updated": (now - timedelta(minutes=5)).isoformat(),
+        "etag": "v1"
+    }
+    
+    new_event = {
+        "id": "recent_evt",
+        "summary": "New Title",
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "status": "confirmed",
+        "updated": updated_time,
+        "etag": "v2"
+    }
+    
+    mock_services.kv.get.side_effect = lambda sid, key: old_event if "snap:primary:recent_evt" in key else None
+    
+    events = source._classify_event_change("primary", new_event)
+    
+    assert len(events) == 1
+    assert events[0].data["summary"] == "New Title"
