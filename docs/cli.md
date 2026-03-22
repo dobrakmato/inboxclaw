@@ -23,6 +23,24 @@ python main.py status [OPTIONS]
 python main.py status
 ```
 
+### `restart`
+Restarts the Inboxclaw `systemd` service. This is useful for applying configuration changes or restarting the service if it becomes unresponsive.
+
+**Usage:**
+```bash
+python main.py restart [OPTIONS]
+```
+
+**Options:**
+- `--service-name TEXT`: Name of the systemd service to restart (default: `inboxclaw`).
+- `--user`: Restart as a user service (default). Does not require root.
+- `--system`: Restart as a system-wide service (requires root).
+
+**Example:**
+```bash
+python main.py restart
+```
+
 ### `update`
 Checks the GitHub repository for updates, pulls them, and installs any new dependencies.
 

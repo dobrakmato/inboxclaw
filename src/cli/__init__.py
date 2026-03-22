@@ -13,3 +13,4 @@ import src.cli.commands.nordigen_connect # noqa: F401
 import src.cli.commands.update # noqa: F401
 import src.cli.commands.install # noqa: F401
 import src.cli.commands.status # noqa: F401
+import src.cli.commands.restart # noqa: F401
