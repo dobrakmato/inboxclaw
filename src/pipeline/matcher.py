@@ -22,7 +22,8 @@ class EventMatcher:
 
     def matches(self, event_type: str) -> bool:
         """Checks if a single event_type matches any of the patterns (in-memory)."""
-        for pattern in self.patterns:
+        patterns_to_check = self.patterns
+        for pattern in patterns_to_check:
             if pattern == "*":
                 return True
             if pattern.endswith(".*"):

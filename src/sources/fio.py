@@ -17,7 +17,7 @@ class FioSource:
     """
 
     BASE_URL = "https://fioapi.fio.cz/v1/rest"
-    MIN_POLL_INTERVAL_SECONDS = 35
+    MIN_POLL_INTERVAL_SECONDS = 30.0
 
     def __init__(self, name: str, config: FioSourceConfig, services: AppServices, source_id: int):
         self.name = name

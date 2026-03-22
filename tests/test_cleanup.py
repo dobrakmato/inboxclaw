@@ -8,10 +8,11 @@ def test_delete_old_events():
     session_maker = init_db(":memory:")
     
     with session_maker() as session:
-        # Create a source
-        from src.database import Source
+        # Create a source and a sink
+        from src.database import Source, Sink
         source = Source(name="test", type="mock")
-        session.add(source)
+        sink = Sink(name="sink", type="webhook")
+        session.add_all([source, sink])
         session.commit()
         
         # Create events
@@ -28,12 +29,11 @@ def test_delete_old_events():
             event_type="test",
             created_at=now - timedelta(days=20)
         )
-        session.add(old_event)
-        session.add(new_event)
+        session.add_all([old_event, new_event])
         session.commit()
         
         # Create delivery for old event to test CASCADE
-        old_delivery = HttpWebhookDelivery(event_id=old_event.id)
+        old_delivery = HttpWebhookDelivery(event_id=old_event.id, sink_id=sink.id)
         session.add(old_delivery)
         session.commit()
         

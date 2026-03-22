@@ -33,15 +33,13 @@ async def test_sse_sink_init(services):
     config = {
         "path": "/custom_sse",
         "match": "test.*",
-        "heartbeat_timeout": 15.0,
-        "coalesce": ["test.*"]
+        "heartbeat_timeout": 15.0
     }
     sink = SSESink("sse", config, services)
     assert sink.name == "sse"
     assert sink.path == "/sse/custom_sse"
     assert sink.match == "test.*"
     assert sink.heartbeat_timeout == 15.0
-    assert sink.coalescer is not None
 
 @pytest.mark.asyncio
 async def test_sse_generator_real_flow(services):
@@ -128,35 +126,6 @@ async def test_sse_sink_match_property(services):
     sink.match = "single"
     assert sink.match == "single"
 
-@pytest.mark.asyncio
-async def test_sse_generator_coalescing(services):
-    # Setup sink with coalescing
-    config = {
-        "match": "*",
-        "coalesce": ["test.*"]
-    }
-    sink = SSESink("sse", config, services)
-    
-    mock_request = MagicMock(spec=Request)
-    mock_request.is_disconnected = AsyncMock(return_value=False)
-    
-    gen = sink.event_generator(mock_request)
-    await anext(gen) # info: connected
-    
-    # Inject two events that should be coalesced
-    with services.db_session_maker() as session:
-        session.add(Event(event_id="e1", source_id=1, event_type="test.click", entity_id="u1", data={"v": 1}))
-        session.add(Event(event_id="e2", source_id=1, event_type="test.click", entity_id="u1", data={"v": 2}))
-        session.commit()
-    services.notifier.notify()
-    
-    # Should get one coalesced message
-    msg = await asyncio.wait_for(anext(gen), timeout=1.0)
-    assert msg["event"] == "message"
-    
-    # Clean up
-    mock_request.is_disconnected.return_value = True
-    services.notifier.notify()
 
 @pytest.mark.asyncio
 async def test_sse_generator_heartbeat_yield(services):

@@ -8,7 +8,6 @@ from sqlalchemy.orm import joinedload
 from pydantic import ValidationError
 from src.database import Event
 from src.schemas import EventWithMeta
-from src.pipeline.coalescer import Coalescer
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
 from src.config import SSESinkConfig
@@ -43,9 +42,6 @@ class SSESink:
             
         self.matcher = EventMatcher(config.match)
         self.heartbeat_timeout = config.heartbeat_timeout
-        self.coalescer = None
-        if config.coalesce:
-            self.coalescer = Coalescer(match_patterns=config.coalesce)
         self.setup_endpoints()
 
     @property
@@ -93,9 +89,6 @@ class SSESink:
                 if events:
                     # Update last_event_id for the next poll
                     last_event_id = events[-1].id
-                    
-                    if self.coalescer:
-                        events, _ = self.coalescer.coalesce(events)
                     
                     for event in events:
                         import json

@@ -8,6 +8,7 @@ from src.database import init_db
 from src.pipeline.notifier import EventNotifier
 from src.initialization import init_sources, init_sinks
 from src.pipeline.cleanup import cleanup_task
+from src.pipeline.coalescence_service import CoalescenceBackgroundService
 
 logger = logging.getLogger("ingest-pipeline")
 
@@ -36,6 +37,10 @@ async def lifespan(app: FastAPI):
     
     # Start cleanup task
     services.add_task(cleanup_task(services))
+    
+    # Start Coalescence Background Service
+    coalescence_service = CoalescenceBackgroundService(services)
+    services.add_task(coalescence_service.run())
     
     logger.info("App initialized.")
     yield

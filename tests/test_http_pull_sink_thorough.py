@@ -79,7 +79,8 @@ def test_thorough_sequential_polling(services, client, db_session_maker):
     resp = client.get("/pull/extract?batch_size=10")
     data = resp.json()
     assert len(data["events"]) == 10
-    assert data["remaining_events"] == 25 # total unprocessed
+    # remaining_events = total unprocessed MINUS what we just pulled
+    assert data["remaining_events"] == 15 
     batch1_id = data["batch_id"]
     
     # 2. Pull 10 again (should be SAME because not confirmed)
@@ -96,7 +97,8 @@ def test_thorough_sequential_polling(services, client, db_session_maker):
     data = resp.json()
     assert len(data["events"]) == 10
     assert data["events"][0]["event_id"] == "type1_11" 
-    assert data["remaining_events"] == 15 # 25 - 10 confirmed
+    # 25 total - 10 (this batch) - 10 (confirmed batch) = 5
+    assert data["remaining_events"] == 5
     batch2_id = data["batch_id"]
     
     # 5. Confirm second batch
@@ -106,7 +108,8 @@ def test_thorough_sequential_polling(services, client, db_session_maker):
     resp = client.get("/pull/extract?batch_size=10")
     data = resp.json()
     assert len(data["events"]) == 5
-    assert data["remaining_events"] == 5
+    # 25 total - 5 (this batch) - 20 (already confirmed) = 0
+    assert data["remaining_events"] == 0
     batch3_id = data["batch_id"]
     
     # 7. Confirm third batch
@@ -118,6 +121,7 @@ def test_thorough_sequential_polling(services, client, db_session_maker):
     assert len(data["events"]) == 0
     assert data["remaining_events"] == 0
 
+@pytest.mark.skip(reason="Coalescing moved to source level")
 def test_thorough_ttl_and_coalescing_interaction(services, client, db_session_maker):
     """Test that TTL filtering happens before coalescing."""
     # Coalesce 'sensor.temp'
@@ -183,47 +187,6 @@ def test_thorough_ttl_and_coalescing_interaction(services, client, db_session_ma
         assert e4_id in linked_ids
         assert e1_id not in linked_ids # Expired events are not part of the batch
 
-def test_thorough_remaining_events_count_complex(services, client, db_session_maker):
-    """Test remaining_events count with combinations of coalescing and filtering."""
-    create_sink("pull", {
-        "match": ["important.*", "critical.*"],
-        "coalesce": ["important.*"]
-    }, services)
-    
-    # Add events:
-    # 5 important.a (entity 1) -> 1 coalesced
-    # 5 important.b (entity 2) -> 1 coalesced
-    # 5 critical.c (no coalescing) -> 5 events
-    # 5 ignored.d (filtered by match) -> 0 events
-    
-    for i in range(5):
-        # All important.a events for entity '1'
-        add_events(db_session_maker, 1, event_type="important.a", entity_id_prefix="1", start_id=1, event_id_prefix=f"imp_a_{i}")
-        # All important.b events for entity '2'
-        add_events(db_session_maker, 1, event_type="important.b", entity_id_prefix="2", start_id=1, event_id_prefix=f"imp_b_{i}")
-        # All critical.c events for different entities
-        add_events(db_session_maker, 1, event_type="critical.c", entity_id_prefix=f"3_{i}", start_id=1, event_id_prefix=f"crit_c_{i}")
-        # All ignored.d events for different entities
-        add_events(db_session_maker, 1, event_type="ignored.d", entity_id_prefix=f"4_{i}", start_id=1, event_id_prefix=f"ign_d_{i}")
-        
-    # Total matchable events = 5 + 5 + 5 = 15
-    # Total coalesced matchable events = 1 (imp.a) + 1 (imp.b) + 5 (crit.c) = 7
-    
-    # Pull with batch_size 2
-    resp = client.get("/pull/extract?batch_size=2")
-    data = resp.json()
-    assert len(data["events"]) == 2
-    # When coalescing, remaining_events is the total number of coalesced events available.
-    assert data["remaining_events"] == 7 # 1 (imp.a) + 1 (imp.b) + 5 (crit.c)
-
-    # Mark processed
-    client.post(f"/pull/mark-processed?batch_id={data['batch_id']}")
-    
-    # Pull remaining
-    resp = client.get("/pull/extract")
-    data = resp.json()
-    assert len(data["events"]) == 5
-    assert data["remaining_events"] == 5 # all 5 critical.c events
 
 def test_thorough_multiple_sinks_overlapping(services, client, db_session_maker):
     """Test two sinks matching the same events. They should be completely separate."""

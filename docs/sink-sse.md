@@ -54,10 +54,6 @@ The client parameter can only *restrict* — it cannot bypass the server-side `m
 GET /events_stream/?event_type=gmail.message_received
 ```
 
-### Coalescing
-
-When enabled, multiple events with the same `event_type` and `entity_id` that arrive between polls are merged into a single event containing only the latest state.
-
 ## Configuration
 
 ### Minimal Configuration
@@ -79,8 +75,6 @@ sink:
     path: "/live"
     match: "alert.*"
     heartbeat_timeout: 15
-    coalesce:
-      - "stats.*"
 ```
 
 Endpoint: `GET /alerts/live`.
@@ -93,7 +87,6 @@ Endpoint: `GET /alerts/live`.
 | `match`             | `string\|list` | `"*"`   | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.                 |
 | `path`              | `string`       | `""`    | URL suffix appended to `/{sink_name}/`. Empty means the endpoint is `/{sink_name}/`.|
 | `heartbeat_timeout` | `string`       | `30.0`  | Seconds between heartbeat pings. Supports human-readable intervals (e.g. `"30s"`).  |
-| `coalesce`          | `list`         | `null`  | Event type patterns to coalesce.                                                    |
 
 ## Response Format
 

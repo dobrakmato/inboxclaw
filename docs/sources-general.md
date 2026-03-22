@@ -51,11 +51,13 @@ Every event produced by a source contains these fields:
 | `data`        | JSON payload with the event-specific details.                                                                  |
 | `occurred_at` | Timestamp of when the event actually happened in the source system.                                            |
 
-## Coalescing
+## Coalescing & Debouncing
 
-Sinks can **coalesce** events that share the same `event_type` and `entity_id` into a single event. This is useful when
-a source produces many rapid updates for the same object (e.g. repeated edits to a document). Coalescing is configured
-on the sink side — see the individual sink docs for details.
+The Ingest Pipeline features a centralized **In-Flight Coalescing** system. Multiple rapid events can be merged at the source level before they are stored or delivered to sinks. This is particularly useful for reducing noise from systems that emit frequent updates (e.g., file saves).
+
+Coalescing is configured at the source level using `coalesce` rules.
+
+See the dedicated [Event Coalescing](coalescing.md) page for detailed explanation and examples.
 
 ## Available Sources
 

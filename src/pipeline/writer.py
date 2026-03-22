@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from src.database import Event
+from src.database import Event, Source
 from src.schemas import NewEvent
+from src.pipeline.matcher import EventMatcher
 
 if TYPE_CHECKING:
     from src.services import AppServices
@@ -54,6 +55,18 @@ class EventWriter:
         """
         new_count = 0
         seen_ids = set()
+
+        # 1. Get source config to check for coalesce rules
+        source_name = None
+        with self.services.db_session_maker() as session:
+            source = session.scalar(select(Source).where(Source.id == source_id))
+            if source:
+                source_name = source.name
+
+        coalesce_rules = []
+        if source_name and source_name in self.services.config.sources:
+            coalesce_rules = self.services.config.sources[source_name].coalesce
+
         with self.services.db_session_maker() as session:
             for event in events:
                 if event.event_id in seen_ids:
@@ -64,6 +77,21 @@ class EventWriter:
                 try:
                     # Use a savepoint to allow continuing on IntegrityError if it happens on flush
                     with session.begin_nested():
+                        # 2. Check Coalesce Rules
+                        matched_rule = None
+                        for rule in coalesce_rules:
+                            if EventMatcher(rule.match).matches(event.event_type):
+                                matched_rule = rule
+                                break
+                        
+                        if matched_rule:
+                            # 3. Path B: Coalesced
+                            if self.services.coalescer.handle_event(session, source_id, event, matched_rule):
+                                logger.debug(f"Event {event.event_id} routed to CoalescenceManager")
+                                continue
+                            # If handle_event fails (e.g. no entity_id), fall through to immediate write
+
+                        # 4. Path A: Immediate
                         created = self._write_event_internal(
                             session=session,
                             source_id=source_id,
@@ -80,5 +108,7 @@ class EventWriter:
                 session.commit()
                 self.services.notifier.notify()
                 logger.info(f"Committed {new_count} new events for source {source_id}")
+            else:
+                session.commit() # To save pending_events changes
             
         return new_count

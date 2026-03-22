@@ -75,6 +75,7 @@ Sources are defined as a dictionary where the key is a unique name for the sourc
 | :--- | :--- |
 | `type` | The type of source (e.g., `fio`, `gmail`, `home_assistant`). |
 | `poll_interval` | How often to check for new data (e.g., `"10m"`). |
+| `coalesce` | List of [Coalescing Rules](coalescing.md) for this source. |
 
 Each source type has its own specific configuration. See the dedicated documentation for each source:
 - [Fio Banka](source-fio.md)
@@ -141,5 +142,8 @@ sink:
   local_sse:
     type: sse
     match: "*"
-    coalesce: ["fio.transaction.*"]
 ```
+
+### Coalescing
+
+See the dedicated [Event Coalescing](coalescing.md) page for detailed examples.

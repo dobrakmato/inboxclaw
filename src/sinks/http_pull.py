@@ -7,7 +7,6 @@ from pydantic import ValidationError
 from src.database import Event, HttpPullBatch, HttpPullBatchEvent
 from src.schemas import EventWithMeta
 from src.services import AppServices
-from src.pipeline.coalescer import Coalescer
 from src.pipeline.matcher import EventMatcher
 from src.config import HttpPullSinkConfig
 
@@ -37,10 +36,6 @@ class HttpPullSink:
         self.mark_processed_path = f"/{name}/{mark_processed_suffix}"
         
         self.matcher = EventMatcher(config.match)
-        self.coalescer = None
-        if config.coalesce:
-            self.coalescer = Coalescer(match_patterns=config.coalesce)
-            
         self.setup_endpoints()
 
     def setup_endpoints(self):
@@ -61,42 +56,16 @@ class HttpPullSink:
 
     def handle_extract(self, event_type: Optional[str] = None, batch_size: Optional[int] = None) -> Dict[str, Any]:
         with self.services.db_session_maker() as session:
-            # If coalescing, we need to fetch all potentially matching events to coalesce them correctly.
-            # If not coalescing, we can apply batch_size directly in the query.
-            fetch_size = None if self.coalescer else batch_size
-            
-            events = self._get_unprocessed_events(session, event_type=event_type, batch_size=fetch_size)
+            events = self._get_unprocessed_events(session, event_type=event_type, batch_size=batch_size)
             if not events:
                 return {"batch_id": None, "events": [], "remaining_events": 0}
             
-            source_ids_to_link: List[int] = []
-            if self.coalescer:
-                coalesced_events, source_ids_map = self.coalescer.coalesce(events)
-                
-                # Apply batch_size limit AFTER coalescing
-                if batch_size is not None and batch_size > 0:
-                    emitted_events = coalesced_events[:batch_size]
-                else:
-                    emitted_events = coalesced_events
-                
-                # We must link ALL source events that contributed to the EMITTED coalesced events
-                for ev in emitted_events:
-                    source_ids_to_link.extend(source_ids_map.get(ev.id, []))
-                
-                events_to_return = emitted_events
-                
-                # Calculate remaining_count:
-                # When coalescing, it's the total number of COALESCED events available 
-                # among ALL matching unprocessed source events, minus what we are returning now.
-                # Since fetch_size is None, we have them all in 'coalesced_events'.
-                remaining_count = len(coalesced_events) - len(events_to_return)
-            else:
-                events_to_return = events
-                source_ids_to_link = [e.id for e in events]
-                
-                # If not coalescing, remaining_count is total unprocessed events matching criteria
-                # minus what we are returning in this batch.
-                remaining_count = self._count_unprocessed_events(session, event_type=event_type) - len(events_to_return)
+            events_to_return = events
+            source_ids_to_link = [e.id for e in events]
+            
+            # remaining_count is total unprocessed events matching criteria
+            # minus what we are returning in this batch.
+            remaining_count = self._count_unprocessed_events(session, event_type=event_type) - len(events_to_return)
             
             # Create a new batch
             batch = HttpPullBatch(sink_id=self.sink_id)

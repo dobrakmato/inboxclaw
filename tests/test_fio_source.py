@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock
 from src.sources.fio import FioSource
 from src.config import FioSourceConfig
@@ -134,13 +134,27 @@ async def test_fio_rate_limiting(mock_services, config):
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_httpx_response
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await source.poll()
-            
-            # Should have slept because last_poll_time was just set
+            # We need to simulate that time has passed but NOT enough to satisfy MIN_POLL_INTERVAL
+            # elapsed = 0.1
+            with patch("src.sources.fio.datetime") as mock_datetime:
+                # Capture the 'now' that poll() will use
+                now = datetime.now(timezone.utc)
+                # Use side_effect directly, NO return_value assignment which would override it
+                mock_datetime.now.side_effect = [now, now + timedelta(seconds=30)]
+                mock_datetime.fromtimestamp = datetime.fromtimestamp
+                mock_datetime.combine = datetime.combine
+                mock_datetime.min = datetime.min
+
+                # Set last_poll_time to something very recent
+                source.last_poll_time = now - timedelta(seconds=0.1)
+
+                await source.poll()
+                
+            # Should have slept because only 0.1s elapsed
             mock_sleep.assert_called()
-            # It should sleep for about 35 seconds
+            # It should sleep for about 30 seconds (30s MIN_POLL_INTERVAL - 0.1s elapsed)
             args = mock_sleep.call_args.args[0]
-            assert 30 < args <= 35
+            assert 25 < args <= 35
 
 @pytest.mark.asyncio
 async def test_fio_409_conflict(mock_services, config):

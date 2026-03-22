@@ -58,22 +58,19 @@ def test_http_pull_sink_init(services, sink_id):
             "extract": "/get-them",
             "mark_processed": "/done-with-them"
         },
-        "match": ["test.*"],
-        "coalesce": ["test.*"]
+        "match": ["test.*"]
     }
     sink = HttpPullSink("my_pull", config, services, sink_id)
     assert sink.name == "my_pull"
     assert sink.extract_path == "/my_pull/get-them"
     assert sink.mark_processed_path == "/my_pull/done-with-them"
     assert sink.match_patterns == ["test.*"]
-    assert sink.coalescer is not None
 
 def test_http_pull_sink_default_init(services, sink_id):
     sink = HttpPullSink("my_pull", {}, services, sink_id)
     assert sink.extract_path == "/my_pull/extract"
     assert sink.mark_processed_path == "/my_pull/mark-processed"
     assert sink.match_patterns == ["*"]
-    assert sink.coalescer is None
 
 def test_http_pull_sink_match_patterns_property(services, sink_id):
     sink = HttpPullSink("my_pull", {"match": ["a", "b"]}, services, sink_id)
@@ -343,30 +340,7 @@ def test_extract_with_exact_pattern(services, client, db_session_maker, sink_id)
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "exact_type"
 
-def test_extract_with_coalesce(services, client, db_session_maker, sink_id):
-    # Coalesce all
-    HttpPullSink("my_pull", {"coalesce": ["*"]}, services, sink_id)
-    
-    with db_session_maker() as session:
-        # Two events of same type and entity_id
-        t = datetime.now(timezone.utc)
-        ev1 = Event(event_id="e1", source_id=1, event_type="type1", entity_id="ent1", created_at=t)
-        ev2 = Event(event_id="e2", source_id=1, event_type="type1", entity_id="ent1", created_at=t)
-        session.add_all([ev1, ev2])
-        session.commit()
 
-    response = client.get("/my_pull/extract")
-    data = response.json()
-    # Coalescer returns 1 event if they match
-    assert len(data["events"]) == 1
-    # Both should be linked to the batch though? 
-    # Current implementation of handle_extract links the events returned by coalescer.
-    # This might be a bug in my implementation - if we coalesce, we should probably mark all original events as linked?
-    # Actually, if the consumer only sees the coalesced one, they can only confirm the coalesced one.
-    # But we want to avoid returning the other ones again.
-    # So handle_extract SHOULD probably know which events were coalesced.
-    # For now, let's see what happens.
-    assert data["batch_id"] == 1
 
 def test_handle_mark_processed_already_processed(services, client, db_session_maker, sink_id):
     HttpPullSink("my_pull", {}, services, sink_id)

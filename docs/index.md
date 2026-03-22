@@ -35,12 +35,13 @@ Then continue with [Configuration](configuration.md), [Sources](sources-general.
 - **Source**: connector that reads external changes and emits normalized events.
 - **Pipeline**: deduplicates and stores events durably, then notifies sinks.
 - **Sink**: connector that delivers matched events to consumers.
-- **Coalescing**: optional reduction of many updates for one entity into the latest state.
+- **[Coalescing](coalescing.md)**: optional reduction of many updates for one entity into the latest state.
 
 ## Architecture and Internals
 
 - [App Lifecycle](app-lifecycle.md)
 - [Event Pipeline](pipeline.md)
+- [Event Coalescing](coalescing.md)
 - [Data Model](data-model.md)
 
 ## Event Sources

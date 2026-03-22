@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from typing import Dict, List, Optional, Union, Literal, Annotated, Any
 
 MIN_NORDIGEN_POLL_INTERVAL: float = 6 * 3600.0  # 6 hours
@@ -30,14 +31,26 @@ Interval = Annotated[float, BeforeValidator(parse_interval)]
 
 class DatabaseConfig(BaseModel):
     retention_days: int = Field(alias="days", default=30)
-    db_path: str = "./data/data.db"
+    db_path: str = "./data/data2.db"
     echo: bool = False
     model_config = ConfigDict(populate_by_name=True)
 
 # --- Source Configurations ---
 
+class CoalesceStrategy(str, Enum):
+    DEBOUNCE = "debounce"
+    BATCH = "batch"
+
+class CoalesceRule(BaseModel):
+    match: Union[str, List[str]]
+    strategy: CoalesceStrategy
+    window: Interval
+    # Future-proofing: aggregation strategy
+    aggregation: str = "latest"
+
 class BaseSourceConfig(BaseModel):
     type: str
+    coalesce: List[CoalesceRule] = Field(default_factory=list)
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
 class GoogleSourceConfig(BaseSourceConfig):
@@ -152,13 +165,11 @@ class WebhookSinkConfig(BaseSinkConfig, TTLConfig):
 class HttpPullSinkConfig(BaseSinkConfig, TTLConfig):
     type: Literal["http_pull"] = "http_pull"
     path: Dict[str, str] = Field(default_factory=lambda: {"extract": "extract", "mark_processed": "mark-processed"})
-    coalesce: Optional[List[str]] = None
 
 class SSESinkConfig(BaseSinkConfig):
     type: Literal["sse"] = "sse"
     path: str = ""
     heartbeat_timeout: Interval = 30.0
-    coalesce: Optional[List[str]] = None
 
 class Win11ToastSinkConfig(BaseSinkConfig):
     type: Literal["win11toast"] = "win11toast"

@@ -82,28 +82,13 @@ All sinks deliver events using the same JSON structure:
 
 ## Coalescing
 
-Some sinks (HTTP Pull, SSE) support **coalescing**. When enabled for specific event types, multiple events with the same `event_type` and `entity_id` are merged into a single event containing only the latest state. This reduces noise when a source produces many rapid updates for the same object.
+The Ingest Pipeline features a centralized **In-Flight Coalescing** system. Multiple rapid events with the same `event_type` and `entity_id` can be merged at the source level before they are even stored in the main event table. 
 
-Events are coalesced at sink processing time.
-- HTTP Pull: When a request is made, all selected events from the database are considered for coalescing
-- SSE: When the SSE component receives notification about new events in the database
+This means sinks receive a "pre-optimized" event stream. For example, if a file in Google Drive is saved 10 times in 30 seconds, a "debounce" rule can ensure your sinks only receive a single `file_updated` event after the user stops typing.
 
-## Sink State in Database
+Coalescing rules are configured at the **Source** level. Sinks no longer need individual coalescing configuration.
 
-Some sink types keep delivery state in dedicated tables:
-
-- Webhook tracks attempt count and success state per `(event_id, sink_id)`.
-- HTTP Pull tracks created batches and per-event processed confirmations.
-
-This state allows retries, confirmation workflows, and predictable behavior across restarts.
-
-```yaml
-sink:
-  ui_updates:
-    type: sse
-    coalesce:
-      - "google.drive.file_updated"
-```
+For more details on how to configure coalescing, see the [Sources](sources-general.md) documentation.
 
 ## TTL (Time-To-Live)
 

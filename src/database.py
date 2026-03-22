@@ -51,6 +51,30 @@ class Event(Base):
     meta = Column(JSON, default=dict)
     source = relationship("Source")
 
+class PendingEvent(Base):
+    __tablename__ = 'pending_events'
+    __table_args__ = (
+        UniqueConstraint('source_id', 'event_type', 'entity_id', name='_pending_event_key_uc'),
+    )
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey('sources.id'), nullable=False)
+    event_type = Column(String, nullable=False)
+    entity_id = Column(String, nullable=True)  # Events without entity_id won't be coalesced
+    
+    # Aggregated Event Data
+    data = Column(JSON, nullable=False)
+    meta = Column(JSON, default=dict)
+    
+    # State & Counters
+    count = Column(Integer, default=1)  # Number of raw events coalesced
+    first_seen_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+    flush_at = Column(DateTime, nullable=False, index=True)
+    
+    # Strategy configuration (stored for the flusher)
+    strategy = Column(String, nullable=False)  # "debounce", "batch"
+    window_seconds = Column(Integer, nullable=False)
+
 class HttpWebhookDelivery(Base):
     __tablename__ = 'http_webhook_deliveries'
     id = Column(Integer, primary_key=True)

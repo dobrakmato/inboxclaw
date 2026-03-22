@@ -2,7 +2,7 @@
 
 The Google Drive source watches your Drive for file changes and emits structured events when files are created, moved, trashed, shared, removed, or updated. It uses Google's changes API with a stored cursor for efficient incremental sync.
 
-A key feature is **debounced updates**: when a document is actively edited, the source waits for a quiet period before emitting a single `file_updated` event instead of flooding the pipeline with every intermediate save. This makes the output clean and actionable.
+A key feature is **debounced updates**: when a document is actively edited, the pipeline can wait for a quiet period before emitting a single `file_updated` event instead of flooding your sinks with every intermediate save. This is achieved via the centralized [Coalescing](coalescing.md) system.
 
 ## Getting Started
 
@@ -27,6 +27,10 @@ sources:
     type: google_drive
     token_file: "data/google_token.json"
     poll_interval: "30s"
+    coalesce:
+      - match: ["google.drive.file_updated", "google.drive.file_moved"]
+        strategy: "debounce"
+        window: "60s"
 ```
 
 ### 3. Initial sync (bootstrapping)
@@ -39,20 +43,28 @@ On the first run, the source needs to learn about your existing files so it does
 
 ## Core Concepts
 
-### Debounced Updates
-
-Google Docs and similar files can generate many small changes during active editing. Without debounce, one editing session would create a burst of noisy events.
-
-The source handles this with two settings:
-- `update_quiet_window` (default: `"60s"`): After the last detected change, wait this long before emitting `file_updated`. If new edits arrive during the window, the timer resets.
-- `update_max_session` (default: `"10m"`): Maximum time before forcing an update flush, even if edits are still arriving. This prevents heavily edited files from staying pending forever.
-
 ### Change Classification
 
 When a file change is detected, the source compares the new metadata against its cached snapshot and classifies the change:
 
 - **Immediate events**: `file_created`, `file_moved`, `file_trashed`, `file_untrashed`, `file_shared_with_you`, `file_removed` — emitted right away.
-- **Debounced event**: `file_updated` — batched and emitted after the quiet window or max session.
+- **`file_updated`**: This event represents metadata or content changes. Because files are often edited in bursts, it is highly recommended to use [Coalescing](coalescing.md) (Debounce) for this event type to avoid noise.
+
+### Coalescing (Debounce)
+
+By default, the Google Drive source emits events as they are detected. To avoid a flood of `file_updated` events during an active editing session, you should configure a `coalesce` rule in your `config.yaml`:
+
+```yaml
+sources:
+  my_drive:
+    type: google_drive
+    coalesce:
+      - match: ["google.drive.file_updated", "google.drive.file_moved"]
+        strategy: "debounce"
+        window: "60s"
+```
+
+This configuration ensures that if you save a file multiple times within 60 seconds, you only receive one final event after 60 seconds of silence.
 
 ## Configuration
 
@@ -78,14 +90,16 @@ sources:
     restrict_to_my_drive: false
     include_removed: true
     include_corpus_removals: false
-    update_quiet_window: "60s"
-    update_max_session: "10m"
     eligible_mime_types_for_content_diff:
       - "application/vnd.google-apps.document"
       - "text/plain"
       - "text/markdown"
       - "text/html"
     max_diffable_file_bytes: 10485760
+    coalesce:
+      - match: ["google.drive.file_updated", "google.drive.file_moved"]
+        strategy: "debounce"
+        window: "60s"
 ```
 
 ### Configuration Reference
@@ -98,10 +112,9 @@ sources:
 | `restrict_to_my_drive`               | `bool`   | `false`                          | `true` limits scope to My Drive only. `false` allows wider visibility.                          |
 | `include_removed`                    | `bool`   | `true`                           | Include removal entries from the Drive changes feed.                                            |
 | `include_corpus_removals`            | `bool`   | `false`                          | Request corpus-removal details when available.                                                  |
-| `update_quiet_window`                | `string` | `"60s"`                          | Quiet period before emitting a debounced `file_updated` event.                                  |
-| `update_max_session`                 | `string` | `"10m"`                          | Maximum wait before forcing an update flush.                                                    |
 | `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/*` types      | MIME types eligible for paragraph-level text diffing.                                           |
 | `max_diffable_file_bytes`            | `int`    | `10485760` (10 MB)               | Size limit for content fetching and diffing.                                                    |
+| `coalesce`                           | `list`   | `[]`                             | List of [Coalescing Rules](coalescing.md) (e.g., for `google.drive.file_updated`).              |
 
 ## Event Definitions
 
@@ -113,7 +126,7 @@ sources:
 | `google.drive.file_untrashed`         | Drive file ID | File was restored from trash.                                  |
 | `google.drive.file_shared_with_you`   | Drive file ID | A file was shared with you (non-owned file).                   |
 | `google.drive.file_removed`           | Drive file ID | File was removed from the changes feed (`change.removed=true`).|
-| `google.drive.file_updated`           | Drive file ID | Debounced update after version/modifiedTime change.            |
+| `google.drive.file_updated`           | Drive file ID | Debounced update after content or metadata change.            |
 
 > `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in the current version.
 
@@ -284,10 +297,10 @@ Common fields across all event types: `fileId`, `name`, `mimeType`, `owners`.
 
 | Event type            | Additional fields                                                                                          |
 |:----------------------|:-----------------------------------------------------------------------------------------------------------|
-| `file_created`        | `parentIds`, `createdTime`                                                                                 |
-| `file_moved`          | `parentIds: { before, after }`                                                                             |
-| `file_trashed`        | `trashedBefore`, `trashedAfter`                                                                            |
-| `file_untrashed`      | `trashedBefore`, `trashedAfter`                                                                            |
-| `file_shared_with_you`| `sharedWithMeTime`, `sharingUser`                                                                          |
-| `file_removed`        | `lastKnownName`, `lastKnownMimeType`, `lastKnownParentIds`                                                |
-| `file_updated`        | `session: { sessionStartedAt, lastChangeSeenAt, rawChangeCount, totalChangedSections, addedCharCount, removedCharCount, changes: [{before, after}] }` |
+| `file_created`        | `parentIds`, `createdTime`, `description`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_moved`          | `parentIds: { before, after }`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_trashed`        | `trashedBefore`, `trashedAfter`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_untrashed`      | `trashedBefore`, `trashedAfter`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_shared_with_you`| `sharedWithMeTime`, `sharingUser`, `owners` |
+| `file_removed`        | `lastKnownName`, `lastKnownMimeType`, `lastKnownParentIds` |
+| `file_updated`        | `description`, `lastModifyingUser`, `webViewLink`, `size`, `session: { ... }` |

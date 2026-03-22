@@ -33,10 +33,6 @@ If your app crashes before confirming, the same events will appear again on the 
 
 Each call to `/extract` returns events grouped into a **batch** identified by a `batch_id`. You confirm the entire batch at once. You can control how many events are returned per batch with the `batch_size` query parameter.
 
-### Coalescing
-
-When enabled, multiple events with the same `event_type` and `entity_id` are merged into a single event containing only the latest state. This is useful when a source produces many rapid updates for the same object. Coalescing is applied *after* fetching from the database and *before* returning results to you.
-
 ### TTL (Time-To-Live)
 
 TTL is **enabled by default** with a `default_ttl` of `1h`. Events older than their TTL are excluded from `/extract` results, even if never confirmed. This prevents a backlog of stale events from building up.
@@ -80,8 +76,6 @@ sink:
     match:
       - "sales.order.*"
       - "inventory.update"
-    coalesce:
-      - "inventory.update"
     ttl_enabled: true
     default_ttl: "2h"
     event_ttl:
@@ -98,7 +92,6 @@ Endpoints: `GET /data_warehouse/fetch`, `POST /data_warehouse/acknowledge`.
 | `type`           | `string`       | —                                                          | Must be `http_pull`.                                                                             |
 | `match`          | `string\|list` | `"*"`                                                      | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.                              |
 | `path`           | `dict`         | `{"extract": "extract", "mark_processed": "mark-processed"}` | URL suffixes for the two endpoints. Prefixed with `/{sink_name}/`.                              |
-| `coalesce`       | `list`         | `null`                                                     | Event type patterns to coalesce. Events with same type and entity_id are merged to latest only.  |
 | `ttl_enabled`    | `bool`         | `true`                                                     | Whether to filter out events older than their TTL.                                               |
 | `default_ttl`    | `string`       | `"1h"`                                                     | Default TTL for events without a specific rule. Supports human-readable intervals (e.g. `"2h"`). |
 | `event_ttl`      | `dict`         | `{}`                                                       | Per-type TTL overrides. Keys use the same matching patterns as `match`.                          |
@@ -144,7 +137,7 @@ Returns a batch of unprocessed events, ordered oldest first.
 
 - `batch_id`: Use this value when confirming. `null` if there are no events.
 - `events`: List of events in the [standard envelope format](sinks-general.md#event-envelope).
-- `remaining_events`: Total number of unprocessed events currently available for this sink (after subtracting the ones in this response). If coalescing is enabled, this count reflects coalesced output. Keep calling extract and confirming until this reaches `0`.
+- `remaining_events`: Total number of unprocessed events currently available for this sink (after subtracting the ones in this response). Keep calling extract and confirming until this reaches `0`.
 
 ### Confirm Processing
 

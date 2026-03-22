@@ -1,76 +1,111 @@
-from datetime import datetime
-from typing import List, Dict, Tuple, Optional, Any
-from src.database import Event
-from src.schemas import EventWithMeta
-from src.pipeline.matcher import EventMatcher
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Protocol, Dict, Any, TYPE_CHECKING, Union
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-class Coalescer:
-    """Coalesces events of the same type and same entity_id."""
-    
-    def __init__(self, match_patterns: List[str] = None):
-        self.matcher = EventMatcher(match_patterns or ["*"])
+from src.database import PendingEvent
+from src.schemas import NewEvent
+from src.config import CoalesceRule, CoalesceStrategy
 
-    @property
-    def match_patterns(self) -> List[str]:
-        return self.matcher.patterns
+if TYPE_CHECKING:
+    from src.services import AppServices
 
-    def coalesce(self, events: List[Event]) -> Tuple[List[EventWithMeta], Dict[Optional[int], List[Optional[int]]]]:
+logger = logging.getLogger(__name__)
+
+class TimingStrategy(Protocol):
+    def calculate_flush_at(self, now: datetime, window_seconds: int, first_seen_at: datetime, last_seen_at: datetime) -> datetime:
+        ...
+
+class DebounceTiming:
+    def calculate_flush_at(self, now: datetime, window_seconds: int, first_seen_at: datetime, last_seen_at: datetime) -> datetime:
+        return now + timedelta(seconds=window_seconds)
+
+class BatchTiming:
+    def calculate_flush_at(self, now: datetime, window_seconds: int, first_seen_at: datetime, last_seen_at: datetime) -> datetime:
+        return first_seen_at + timedelta(seconds=window_seconds)
+
+class AggregationStrategy(Protocol):
+    def aggregate(self, current_data: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
+        ...
+
+class LatestAggregation:
+    def aggregate(self, current_data: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
+        return new_data
+
+class CoalescenceManager:
+    """
+    Handles the logic of merging new events into the pending_events table.
+    """
+    def __init__(self, services: "AppServices"):
+        self.services = services
+        self.timing_strategies: Dict[CoalesceStrategy, TimingStrategy] = {
+            CoalesceStrategy.DEBOUNCE: DebounceTiming(),
+            CoalesceStrategy.BATCH: BatchTiming(),
+        }
+        self.aggregation_strategies: Dict[str, AggregationStrategy] = {
+            "latest": LatestAggregation(),
+        }
+
+    def handle_event(self, session: Session, source_id: int, event: NewEvent, rule: CoalesceRule) -> bool:
         """
-        Groups events by (event_type, entity_id).
-        Only events matching the matcher patterns are coalesced.
-        Returns a tuple of (coalesced_events, source_ids_map).
-        source_ids_map: {coalesced_event_id: [original_event_ids]}
+        Processes an event that matches a coalescence rule.
+        Returns True if handled.
         """
-        if not events:
-            return [], {}
+        if event.entity_id is None:
+            logger.warning(f"Event {event.event_id} matches coalesce rule but has no entity_id. Skipping coalescence.")
+            return False
 
-        to_coalesce: List[Event] = []
-        others: List[Event] = []
+        now = datetime.now(timezone.utc)
         
-        for event in events:
-            if event.entity_id is not None and self.matcher.matches(event.event_type):
-                to_coalesce.append(event)
-            else:
-                others.append(event)
+        # Check if a PendingEvent exists
+        pending = session.scalar(
+            select(PendingEvent).where(
+                PendingEvent.source_id == source_id,
+                PendingEvent.event_type == event.event_type,
+                PendingEvent.entity_id == event.entity_id
+            )
+        )
 
-        source_ids_map: Dict[Optional[int], List[Optional[int]]] = {}
-        for ev in others:
-            source_ids_map[ev.id] = [ev.id]
+        timing = self.timing_strategies.get(rule.strategy)
+        aggregation = self.aggregation_strategies.get(rule.aggregation, LatestAggregation())
 
-        if not to_coalesce:
-            return [EventWithMeta.from_event(e) for e in others], source_ids_map
+        if not timing:
+             logger.error(f"Unsupported timing strategy: {rule.strategy}")
+             return False
 
-        grouped: Dict[Tuple[str, str], List[Event]] = {}
-        for event in to_coalesce:
-            key = (event.event_type, event.entity_id) # type: ignore
-            if key not in grouped:
-                grouped[key] = []
-            grouped[key].append(event)
+        if pending:
+            # Update existing
+            pending.data = aggregation.aggregate(pending.data, event.data)
+            pending.count += 1
+            pending.last_seen_at = now
+            pending.flush_at = timing.calculate_flush_at(
+                now, int(rule.window), pending.first_seen_at, pending.last_seen_at
+            )
+            # Ensure meta is updated if needed, or preserved
+            if event.meta:
+                pending.meta = {**pending.meta, **event.meta}
+            
+            logger.debug(f"Updated pending event for {event.event_type}:{event.entity_id} (count: {pending.count})")
+        else:
+            # Create new
+            first_seen_at = now
+            flush_at = timing.calculate_flush_at(now, int(rule.window), first_seen_at, now)
+            
+            pending = PendingEvent(
+                source_id=source_id,
+                event_type=event.event_type,
+                entity_id=event.entity_id,
+                data=event.data,
+                meta=event.meta,
+                count=1,
+                first_seen_at=first_seen_at,
+                last_seen_at=now,
+                flush_at=flush_at,
+                strategy=rule.strategy.value,
+                window_seconds=int(rule.window)
+            )
+            session.add(pending)
+            logger.debug(f"Created new pending event for {event.event_type}:{event.entity_id}, flushing at {flush_at}")
 
-        coalesced_events: List[EventWithMeta] = []
-        for ev_list in grouped.values():
-            if len(ev_list) > 1:
-                # Sequence by created_at to ensure we find the latest one correctly
-                # and have the first and last timestamps.
-                sorted_evs = sorted(ev_list, key=lambda e: e.created_at)
-                
-                # Merge logic - take the latest one
-                latest_ev = sorted_evs[-1]
-                
-                # Build meta
-                meta = getattr(latest_ev, "meta", {}).copy()
-                meta["coalesced_events"] = len(ev_list)
-                meta["first_event_at"] = sorted_evs[0].created_at.isoformat()
-                meta["last_event_at"] = sorted_evs[-1].created_at.isoformat()
-                
-                dto = EventWithMeta.from_event(latest_ev, meta=meta)
-                coalesced_events.append(dto)
-                source_ids_map[dto.id] = [ev.id for ev in ev_list]
-            else:
-                for ev in ev_list:
-                    dto = EventWithMeta.from_event(ev)
-                    coalesced_events.append(dto)
-                    source_ids_map[dto.id] = [ev.id]
-
-        result_events = coalesced_events + [EventWithMeta.from_event(e) for e in others]
-        return result_events, source_ids_map
+        return True

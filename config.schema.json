@@ -1,5 +1,50 @@
 {
   "$defs": {
+    "CoalesceRule": {
+      "properties": {
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Match"
+        },
+        "strategy": {
+          "$ref": "#/$defs/CoalesceStrategy"
+        },
+        "window": {
+          "title": "Window",
+          "type": "number"
+        },
+        "aggregation": {
+          "default": "latest",
+          "title": "Aggregation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "match",
+        "strategy",
+        "window"
+      ],
+      "title": "CoalesceRule",
+      "type": "object"
+    },
+    "CoalesceStrategy": {
+      "enum": [
+        "debounce",
+        "batch"
+      ],
+      "title": "CoalesceStrategy",
+      "type": "string"
+    },
     "DatabaseConfig": {
       "properties": {
         "days": {
@@ -8,7 +53,7 @@
           "type": "integer"
         },
         "db_path": {
-          "default": "./data/data.db",
+          "default": "./data/data2.db",
           "title": "Db Path",
           "type": "string"
         },
@@ -29,6 +74,13 @@
           "default": "faktury_online",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "api_key": {
           "title": "Api Key",
@@ -65,6 +117,13 @@
           "default": "fio",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "token": {
           "title": "Token",
@@ -103,6 +162,13 @@
           "title": "Type",
           "type": "string"
         },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
         "token_file": {
           "title": "Token File",
           "type": "string"
@@ -139,6 +205,13 @@
           "default": "google_calendar",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "token_file": {
           "title": "Token File",
@@ -221,6 +294,13 @@
           "default": "google_drive",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "token_file": {
           "title": "Token File",
@@ -319,6 +399,13 @@
           "title": "Type",
           "type": "string"
         },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
         "url": {
           "title": "Url",
           "type": "string"
@@ -394,21 +481,6 @@
           },
           "title": "Path",
           "type": "object"
-        },
-        "coalesce": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Coalesce"
         }
       },
       "title": "HttpPullSinkConfig",
@@ -422,6 +494,13 @@
           "default": "mock",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "interval": {
           "oneOf": [
@@ -445,6 +524,13 @@
           "default": "nordigen",
           "title": "Type",
           "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
         },
         "secret_id": {
           "title": "Secret Id",
@@ -532,21 +618,6 @@
               "type": "string"
             }
           ]
-        },
-        "coalesce": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Coalesce"
         }
       },
       "title": "SSESinkConfig",
