@@ -19,7 +19,6 @@ def make_snapshot(**overrides):
         "trashed": False,
         "created_time": "2026-03-14T09:00:00Z",
         "modified_time": "2026-03-14T10:00:00Z",
-        "version": "1",
         "owned_by_me": True,
         "shared_with_me_time": None,
         "sharing_user": None,
@@ -42,7 +41,7 @@ def test_classifier_created_removed_and_move():
 
     moved = classifier.classify(
         make_snapshot(parents=["a"]),
-        make_snapshot(parents=["b"], version="2"),
+        make_snapshot(parents=["b"]),
         removed=False,
     )
     assert GoogleDriveEventType.FILE_MOVED in moved
@@ -55,7 +54,6 @@ def test_classifier_share_changed():
         owned_by_me=False,
         shared_with_me_time="2026-03-14T11:00:00Z",
         sharing_user={"displayName": "Alice", "emailAddress": "alice@example.com"},
-        version="2",
     )
 
     event_types = classifier.classify(previous, current, removed=False)
@@ -69,13 +67,11 @@ def test_debounce_flush_by_quiet_window():
     state = manager.mark_dirty(
         None,
         now=now,
-        start_version="1",
-        latest_version="4",
+        start_content_snapshot="1",
     )
     assert isinstance(state, DriveDebounceState)
     assert state.raw_change_count == 1
-    assert state.start_version == "1"
-    assert state.latest_version == "4"
+    assert state.start_content_snapshot == "1"
 
     should_not_flush = manager.should_flush(
         state,

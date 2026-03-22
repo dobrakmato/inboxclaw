@@ -67,8 +67,6 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
     include_removed: bool = True
     include_corpus_removals: bool = False
     bootstrap_mode: Literal["baseline_only", "full_snapshot", "off"] = "baseline_only"
-    update_quiet_window: Interval = "60s"
-    update_max_session: Interval = "10m"
     eligible_mime_types_for_content_diff: List[str] = Field(
         default_factory=lambda: [
             "application/vnd.google-apps.document",

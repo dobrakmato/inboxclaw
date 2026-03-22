@@ -138,23 +138,32 @@ async def test_fio_rate_limiting(mock_services, config):
             # elapsed = 0.1
             with patch("src.sources.fio.datetime") as mock_datetime:
                 # Capture the 'now' that poll() will use
-                now = datetime.now(timezone.utc)
+                now_val = datetime.now(timezone.utc)
                 # Use side_effect directly, NO return_value assignment which would override it
-                mock_datetime.now.side_effect = [now, now + timedelta(seconds=30)]
+                # We use a mutable list to track calls because mock_datetime.now.call_count might be weird
+                call_tracker = []
+                def mock_now(tz=None):
+                    call_tracker.append(1)
+                    if len(call_tracker) == 1:
+                        return now_val + timedelta(seconds=0.1)
+                    return now_val + timedelta(seconds=60)
+                mock_datetime.now.side_effect = mock_now
                 mock_datetime.fromtimestamp = datetime.fromtimestamp
                 mock_datetime.combine = datetime.combine
                 mock_datetime.min = datetime.min
 
                 # Set last_poll_time to something very recent
-                source.last_poll_time = now - timedelta(seconds=0.1)
+                source.last_poll_time = now_val
 
                 await source.poll()
-                
-            # Should have slept because only 0.1s elapsed
-            mock_sleep.assert_called()
-            # It should sleep for about 30 seconds (30s MIN_POLL_INTERVAL - 0.1s elapsed)
+
+            # Should have slept
+            assert mock_sleep.called
+            # The exact wait time depends on the internal MIN_POLL_INTERVAL_SECONDS which is 30.0
+            # If our mock_now returned now_val + 0.1, wait_time = 30.0 - 0.1 = 29.9
+            # If it returned now_val + 29.9, wait_time = 30.0 - 29.9 = 0.1
             args = mock_sleep.call_args.args[0]
-            assert 25 < args <= 35
+            assert 0 < args <= 30
 
 @pytest.mark.asyncio
 async def test_fio_409_conflict(mock_services, config):

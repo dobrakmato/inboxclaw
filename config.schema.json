@@ -341,26 +341,6 @@
           "title": "Bootstrap Mode",
           "type": "string"
         },
-        "update_quiet_window": {
-          "oneOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "string"
-            }
-          ]
-        },
-        "update_max_session": {
-          "oneOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "string"
-            }
-          ]
-        },
         "eligible_mime_types_for_content_diff": {
           "items": {
             "type": "string"
