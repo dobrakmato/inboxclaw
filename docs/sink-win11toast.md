@@ -16,7 +16,13 @@ sink:
 
 Each matching event will produce a Windows notification where the **title** is the `event_type` and the **body** is a best-effort summary of the `data` payload.
 
-Requires Windows 11 and the `win11toast` Python package.
+## Platform Support
+
+This sink is only available on **Windows**.
+- On Windows 11, it uses the native notification system.
+- On other platforms (Linux, macOS), the sink will automatically disable itself and log a warning at startup.
+
+Installation of the required `win11toast` package is handled automatically on Windows systems via environment markers. No extra steps are needed.
 
 ## Configuration
 

@@ -18,7 +18,7 @@ dependencies = [
     "sse-starlette",
     "uvicorn",
     "websockets",
-    "win11toast>=0.35"
+    "win11toast>=0.35; sys_platform == 'win32'"
 ]
 
 [project.scripts]
