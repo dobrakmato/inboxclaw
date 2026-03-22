@@ -2,7 +2,7 @@
 name = "inboxclaw"
 version = "0.1.0"
 description = "Unified inbox for your openclaw instance"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "click",
     "fastapi",

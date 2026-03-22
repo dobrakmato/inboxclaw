@@ -56,6 +56,15 @@ It is a good fit for:
    - Or create a minimal `config.yaml` (note that the top-level sink key is singular: `sink`):
 
 ```yaml
+$schema: ./config.schema.json
+server:
+  host: 0.0.0.0
+  port: 8001
+
+database:
+  retention_days: 7
+  db_path: ./data/data.db
+
 sources:
   demo:
     type: mock
