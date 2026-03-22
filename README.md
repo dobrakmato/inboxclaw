@@ -63,6 +63,25 @@ It is a good fit for:
 * Server-Sent Events (SSE)
 * HTTP Pull
 
+## Quick Start
+
+1. **Clone the Repo**:
+   ```bash
+   git clone https://github.com/your-repo/inboxclaw.git
+   cd inboxclaw
+   ```
+
+2. **Configure**:
+   - Create a `.env` file for your API tokens.
+   - Create a `config.yaml` by copying `config.example.yaml` as a template.
+   - **Note for Google Services**: If you use Gmail, Google Calendar, or Google Drive, you will need to perform a one-time authentication step using the CLI: `python main.py google auth`. An API key is not enough.
+
+3. **Run**:
+   ```bash
+   python main.py listen
+   ```
+   *The first run will automatically set up a virtual environment and install dependencies.*
+
 ## Learn more
 
 Detailed documentation lives in the [`docs/`](docs) folder.

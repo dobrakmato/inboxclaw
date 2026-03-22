@@ -48,7 +48,12 @@ It is a good fit for:
 
 ## Getting Started
 
-1. Create a minimal `config.yaml` (note that the top-level sink key is singular: `sink`):
+1. **Clone and Configure**:
+   - Clone the repository: `git clone ... && cd inboxclaw`
+   - Copy `config.example.yaml` to `config.yaml` to use as a starting point.
+   - Create a `.env` file with your API tokens.
+   - **Important for Google**: If you're using Google services (Gmail, Calendar, Drive), you must run `python main.py google auth` to authenticate. A simple API key is not enough. Check the [Google Auth CLI Guide](google-auth-cli.md) for more details.
+   - Or create a minimal `config.yaml` (note that the top-level sink key is singular: `sink`):
 
 ```yaml
 sources:
@@ -62,13 +67,15 @@ sink:
     match: "*"
 ```
 
-2. Run the app:
+2. **Run the Application**:
+   Just run `python main.py listen`. On the first run, Inboxclaw will automatically create a virtual environment and install all necessary dependencies for you.
 
 ```bash
 python main.py listen
 ```
 
-3. Open the API docs at `http://127.0.0.1:8000/docs` and connect a sink client (for example SSE).
+3. **Explore the API**:
+   Open the API docs at `http://127.0.0.1:8000/docs` and connect a sink client (for example SSE).
 
 Then continue with [Configuration](configuration.md), [Sources](sources-general.md), and [Sinks](sinks-general.md).
 

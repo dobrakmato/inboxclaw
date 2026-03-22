@@ -15,8 +15,29 @@ database:
 sources:
   gmail:
     token_file: ./data/google_token.json
+    poll_interval: "1m"
+    exclude_label_ids: [ "SPAM", "DRAFT" ]
+  google_drive:
+    token_file: "data/google_token.json"
+    poll_interval: "1m"
+    bootstrap_mode: "baseline_only"
+    coalesce:
+      - match: [ "google.drive.file_updated", "google.drive.file_moved" ]
+        strategy: "debounce"
+        window: "10m"
+  google_calendar:
+    token_file: "data/google_token.json"
+    poll_interval: "1m"
+    calendar_ids:
+      - "john.doe@gmail.com"
+      - "shared-calendar-id@group.calendar.google.com"
+    calendar_overrides:
+      "shared-calendar-id@group.calendar.google.com":
+        max_into_future: "7d" # don't report forever repeating events from work calendar
+  # add more sources according to docs
 
 # Publish SSE stream of events.
 # See docs for more sinks, and configuration options.
 sink:
   sse: {}
+  # add more sinks according to docs
