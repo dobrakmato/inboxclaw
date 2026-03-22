@@ -446,3 +446,49 @@ async def test_webhook_sink_payload_rewriting(services, db_session_maker, sink_i
         assert payload["key_e"]["key_1"] == "Chrome"
         assert payload["key_e"]["key_2"] == {"key": "value"}
         assert payload["key_e"]["key_3"] == '{"key": "value"}'
+
+@pytest.mark.asyncio
+async def test_webhook_sink_string_interpolation_advanced(services, db_session_maker, sink_id):
+    # Setup source and event
+    with db_session_maker() as session:
+        source = Source(name="test_source_interp", type="test")
+        session.add(source)
+        session.commit()
+
+        event = Event(
+            event_id="evt_789",
+            source_id=source.id,
+            event_type="test.event",
+            entity_id="entity_789",
+            data={"foo": "bar", "num": 123}
+        )
+        session.add(event)
+        session.commit()
+
+    sink_config = {
+        "url": "http://example.com/webhook",
+        "payload": {
+            "msg": "Event #root.event_id happened with #root.data.foo",
+            "full_json": "Data: $root.data",
+            "nested": {
+                "info": "Source #root.source.name"
+            },
+            "types": "Num is #root.data.num, string is #root.data.foo",
+            "raw_num": "#root.data.num" # Should stay integer
+        }
+    }
+    sink = WebhookSink("test_sink_interp", sink_config, services, sink_id)
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(200, content=b'{"status": "ok"}')
+
+        await sink.process_pending_events()
+
+        assert mock_post.called
+        payload = mock_post.call_args.kwargs["json"]
+
+        assert payload["msg"] == "Event evt_789 happened with bar"
+        assert payload["full_json"] == 'Data: {"foo": "bar", "num": 123}'
+        assert payload["nested"]["info"] == "Source test_source_interp"
+        assert payload["types"] == "Num is 123, string is bar"
+        assert payload["raw_num"] == 123 # Important check for type preservation when no other text
