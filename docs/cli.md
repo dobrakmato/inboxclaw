@@ -43,7 +43,9 @@ python main.py logs -n 50 -f
 ```
 
 ### `restart`
-Restarts the Inboxclaw `systemd` service. This is useful for applying configuration changes or restarting the service if it becomes unresponsive.
+Restarts the Inboxclaw `systemd` service. This command **validates the configuration file** before triggering the restart to ensure the service starts correctly.
+
+On non-Linux systems, this command will only perform configuration validation and skip the service restart.
 
 **Usage:**
 ```bash
@@ -51,6 +53,7 @@ python main.py restart [OPTIONS]
 ```
 
 **Options:**
+- `--config TEXT`: Path to the configuration file to validate (default: `config.yaml`).
 - `--service-name TEXT`: Name of the systemd service to restart (default: `inboxclaw`).
 - `--user`: Restart as a user service (default). Does not require root.
 - `--system`: Restart as a system-wide service (requires root).
