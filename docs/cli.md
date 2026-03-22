@@ -6,6 +6,22 @@ The CLI is built with `Click` and can be invoked using `python main.py`.
 
 ## Core Commands
 
+### `update`
+Checks the GitHub repository for updates, pulls them, and installs any new dependencies.
+
+**Usage:**
+```bash
+python main.py update [OPTIONS]
+```
+
+**Options:**
+- `--force`: Force update even if no changes are detected.
+
+**Example:**
+```bash
+python main.py update
+```
+
 ### `listen`
 Starts the Ingest Pipeline server. This command is the main entry point for running the application.
 
