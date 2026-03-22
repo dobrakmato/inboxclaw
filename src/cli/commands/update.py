@@ -4,6 +4,7 @@ import sys
 import os
 import logging
 from src.cli import cli
+from src.utils.paths import get_project_root
 
 logger = logging.getLogger("inboxclaw")
 
@@ -11,12 +12,16 @@ logger = logging.getLogger("inboxclaw")
 @click.option("--force", is_flag=True, help="Force update even if no changes are detected.")
 def update(force: bool):
     """Update the application from GitHub and install dependencies."""
-    logger.info("Checking for updates...")
+    project_root = get_project_root()
+    logger.info(f"Checking for updates in {project_root}...")
     
     try:
+        # Change CWD to project root
+        os.chdir(project_root)
+        
         # 1. Check if we are in a git repository
         if not os.path.exists(".git"):
-            logger.error("Not a git repository. Cannot update.")
+            logger.error(f"Directory {project_root} is not a git repository. Cannot update.")
             return
 
         # 2. Fetch the latest changes from the remote

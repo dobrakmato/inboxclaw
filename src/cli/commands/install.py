@@ -7,6 +7,7 @@ from typing import Optional
 import subprocess
 
 from src.cli import cli
+from src.utils.paths import get_project_root
 
 SYSTEMD_SERVICE_TEMPLATE = """[Unit]
 Description=Inboxclaw Service
@@ -43,12 +44,19 @@ def install(config_path: str, is_user: bool, is_system: bool, service_name: str)
             sys.exit(1)
 
     current_user = getpass.getuser()
-    working_dir = str(Path.cwd().absolute())
-    config_abs_path = str(Path(config_path).absolute())
+    project_root = get_project_root()
+    working_dir = str(project_root.absolute())
+    
+    # If config_path is relative, make it relative to project_root
+    config_path_obj = Path(config_path)
+    if not config_path_obj.is_absolute():
+        config_abs_path = str((project_root / config_path_obj).absolute())
+    else:
+        config_abs_path = str(config_path_obj.absolute())
     
     # Identify the python executable and the entry point
     python_exe = sys.executable
-    main_py_path = Path(working_dir) / "main.py"
+    main_py_path = project_root / "main.py"
     exec_start = f"{python_exe} {main_py_path} listen --config {config_abs_path}"
 
     env_vars = f"Environment=CONFIG_PATH={config_abs_path}"

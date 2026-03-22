@@ -18,6 +18,7 @@ import click
 from ruamel.yaml import YAML
 
 from src.cli import cli
+from src.utils.paths import get_project_root
 from src.utils.nordigen_client import (
     Institution,
     bootstrap_refresh_token,
@@ -111,6 +112,11 @@ def connect(
     complete authentication. Each connected account is saved as a
     separate source entry in config.yaml.
     """
+    # If config_file is default and does not exist in CWD, use project root
+    if config_file == Path("config.yaml") and not config_file.exists():
+        project_root = get_project_root()
+        config_file = project_root / "config.yaml"
+
     # Step 1: get access token
     click.echo("\nStep 1/5 — Authenticating with GoCardless…")
     try:

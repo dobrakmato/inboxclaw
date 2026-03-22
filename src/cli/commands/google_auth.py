@@ -7,6 +7,7 @@ import click
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 from src.cli import cli
+from src.utils.paths import get_project_root
 
 # Human-friendly aliases for Google scopes.
 SCOPE_MAPPING: Dict[str, str] = {
@@ -133,6 +134,13 @@ def google():
 )
 def auth(credentials_file: Path, scopes_input: str, token_path: Path):
     """Perform Google OAuth flow to obtain and save a token."""
+    # If credentials_file is default and does not exist in CWD, use project root
+    if not credentials_file.is_absolute() and not credentials_file.exists():
+        project_root = get_project_root()
+        alt_path = project_root / credentials_file
+        if alt_path.exists():
+            credentials_file = alt_path
+
     scopes = resolve_scopes(scopes_input)
 
     # Required because the redirect URI is http://127.0.0.1:8765/.
@@ -188,6 +196,16 @@ def auth(credentials_file: Path, scopes_input: str, token_path: Path):
         raise click.ClickException("No credentials were produced by the OAuth flow.")
 
     try:
+        # If token_path is relative and doesn't exist, we'll try project root
+        # But we'll always save to what the user provided if it's absolute,
+        # or relative to CWD if it's relative.
+        # BUT if they just gave "token.json", and "token.json" doesn't exist in CWD,
+        # we'll try putting it in project root if that exists.
+        if not token_path.is_absolute() and not token_path.exists():
+            project_root = get_project_root()
+            if project_root.exists():
+                token_path = project_root / token_path
+        
         token_file = token_path.expanduser().resolve()
         token_file.parent.mkdir(parents=True, exist_ok=True)
         token_file.write_text(credentials.to_json(), encoding="utf-8")
