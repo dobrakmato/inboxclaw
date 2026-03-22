@@ -48,14 +48,14 @@ It is a good fit for:
 
 ## Supported sources
 
-* Gmail
-* Google Calendar
-* Google Drive
-* Fio Banka
-* Faktury Online
-* Home Assistant
-* GoCardless Bank Account Data (Nordigen)
-* Mock source for testing
+* ✉️ Gmail
+* 📅 Google Calendar
+* 💾 Google Drive
+* 🏦 Fio Banka
+* 🧾 Faktury Online
+* 🏠 Home Assistant
+* 💳 GoCardless Bank Account Data (Nordigen)
+* 🧪 Mock source for testing
 
 ## Supported sinks
 

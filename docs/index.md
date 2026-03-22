@@ -58,7 +58,7 @@ It is a good fit for:
 ```yaml
 $schema: ./config.schema.json
 server:
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 8001
 
 database:
@@ -66,13 +66,10 @@ database:
   db_path: ./data/data.db
 
 sources:
-  demo:
-    type: mock
-    poll_interval: "5s"
+  mock: {}
 
 sink:
-  out:
-    type: sse
+  sse:
     match: "*"
 ```
 

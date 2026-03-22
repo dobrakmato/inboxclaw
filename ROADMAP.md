@@ -1,0 +1,4 @@
+- [ ] Unified event model across providers (calendar, email, transaction, ...)
+- [ ] Significantly improve the onboarding experience
+- [ ] Add more CLI commands to simplify creation of config and usage
+- [ ] Implement: Asana source
