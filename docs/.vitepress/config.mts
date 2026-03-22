@@ -7,7 +7,7 @@ export default defineConfig({
     base: '/inboxclaw/',
 
     themeConfig: {
-        logo: 'assets/logo.png',
+        logo: './assets/logo.png',
         // https://vitepress.dev/reference/default-theme-config
         nav: [
             {text: 'Home', link: '/'},
