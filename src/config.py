@@ -161,6 +161,7 @@ class WebhookSinkConfig(BaseSinkConfig, TTLConfig):
     max_retries: int = 3
     retry_interval: Interval = 10.0
     headers: Dict[str, str] = Field(default_factory=dict)
+    payload: Optional[Dict[str, Any]] = None
 
 class HttpPullSinkConfig(BaseSinkConfig, TTLConfig):
     type: Literal["http_pull"] = "http_pull"

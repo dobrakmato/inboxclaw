@@ -701,6 +701,19 @@
           },
           "title": "Headers",
           "type": "object"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payload"
         }
       },
       "required": [

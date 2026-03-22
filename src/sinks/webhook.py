@@ -219,4 +219,32 @@ class WebhookSink:
             session.commit()
 
     def _build_payload(self, event: Event) -> dict[str, Any]:
-        return EventWithMeta.from_event(event).to_dict()
+        default_payload = EventWithMeta.from_event(event).to_dict()
+        if not self.config.payload:
+            return default_payload
+
+        return self._transform_payload(self.config.payload, {"root": default_payload})
+
+    def _transform_payload(self, template: Any, context: dict) -> Any:
+        if isinstance(template, dict):
+            return {k: self._transform_payload(v, context) for k, v in template.items()}
+        elif isinstance(template, list):
+            return [self._transform_payload(i, context) for i in template]
+        elif isinstance(template, str):
+            if template.startswith("#"):
+                return self._resolve_path(template[1:], context)
+            elif template.startswith("$"):
+                import json
+                val = self._resolve_path(template[1:], context)
+                return json.dumps(val)
+        return template
+
+    def _resolve_path(self, path: str, context: dict) -> Any:
+        parts = path.split(".")
+        current = context
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                return None
+        return current

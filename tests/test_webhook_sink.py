@@ -389,3 +389,60 @@ async def test_webhook_sink_delivery_exception(services, db_session_maker, sink_
         delivery = session.scalar(select(HttpWebhookDelivery))
         assert delivery.tries == 1
         assert delivery.delivered is False
+
+@pytest.mark.asyncio
+async def test_webhook_sink_payload_rewriting(services, db_session_maker, sink_id):
+    # Setup source
+    with db_session_maker() as session:
+        source = Source(name="test_source", type="test")
+        session.add(source)
+        session.commit()
+        source_id = source.id
+
+        # Setup event
+        event = Event(
+            event_id="evt_123",
+            source_id=source_id,
+            event_type="test.event",
+            entity_id="entity_1",
+            data={
+                "browser": "Chrome",
+                "nested": {"key": "value"}
+            }
+        )
+        session.add(event)
+        session.commit()
+
+    sink_config = {
+        "url": "http://example.com/webhook",
+        "payload": {
+            "key_a": 1,
+            "key_b": "static",
+            "key_c": "#root.event_id",
+            "key_d": "#root.source.name",
+            "key_e": {
+                "key_1": "#root.data.browser",
+                "key_2": "#root.data.nested",
+                "key_3": "$root.data.nested"
+            }
+        }
+    }
+    sink = WebhookSink("test_sink", sink_config, services, sink_id)
+
+    # Mock httpx.AsyncClient.post
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(200, content=b'{"status": "ok"}')
+
+        await sink.process_pending_events()
+
+        assert mock_post.called
+        call_args = mock_post.call_args
+        payload = call_args.kwargs["json"]
+
+        assert payload["key_a"] == 1
+        assert payload["key_b"] == "static"
+        assert payload["key_c"] == "evt_123"
+        assert payload["key_d"] == "test_source"
+        assert payload["key_e"]["key_1"] == "Chrome"
+        assert payload["key_e"]["key_2"] == {"key": "value"}
+        assert payload["key_e"]["key_3"] == '{"key": "value"}'

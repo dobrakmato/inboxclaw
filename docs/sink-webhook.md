@@ -92,9 +92,43 @@ sink:
 | `match`          | `string\|list` | `"*"`    | Event type filter. Supports `"*"`, `"prefix.*"`, and exact matches.                              |
 | `max_retries`    | `int`          | `3`      | Maximum number of delivery attempts per event.                                                   |
 | `retry_interval` | `string`       | `10.0`   | Minimum wait between retries. Supports human-readable intervals (e.g. `"1m"`) or seconds.        |
+| `payload`        | `dict`         | —        | Optional template for rewriting the JSON body. If omitted, the default envelope is sent.           |
 | `ttl_enabled`    | `bool`         | `true`   | Whether to skip events older than their TTL.                                                     |
 | `default_ttl`    | `string`       | `"1h"`   | Default TTL for events without a specific rule.                                                  |
 | `event_ttl`      | `dict`         | `{}`     | Per-type TTL overrides. Keys use the same matching patterns as `match`.                          |
+
+### Payload Rewriting
+
+By default, the Webhook sink sends the full event envelope. You can customize the structure of the JSON payload by adding a `payload` section to your configuration.
+
+This is useful for:
+- Mapping event fields to the format required by a third-party API.
+- Reducing payload size by only sending necessary fields.
+- Stripping sensitive metadata before delivery.
+
+#### Syntax
+
+- **Literal values**: Any value that doesn't start with `#` or `$` is sent as-is.
+- **`#path`**: Resolves the path from the root event and injects it as its native type (string, number, boolean, object, or array).
+- **`$path`**: Resolves the path and injects it as a JSON-stringified value (useful for APIs that expect "stringified JSON" in certain fields).
+
+#### Example
+
+```yaml
+sink:
+  slack_proxy:
+    type: webhook
+    url: "https://hooks.slack.com/services/..."
+    payload:
+      text: "New event: #root.event_id"
+      source_name: "#root.source.name"
+      event_data_raw: "$root.data"
+      metadata:
+        type: "#root.event_type"
+        env: "production"
+```
+
+The `root` object corresponds to the [Standard Envelope](#webhook-payload) below. You can traverse nested objects using dot notation (e.g., `#root.data.user.email`).
 
 ## Webhook Payload
 
