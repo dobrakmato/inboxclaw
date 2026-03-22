@@ -18,7 +18,7 @@ class TestRestartCommand(unittest.TestCase):
         result = self.runner.invoke(cli, ['restart'])
         
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Validating configuration...", result.output)
+        self.assertIn("Validating configuration", result.output)
         self.assertIn("Restarting inboxclaw.service...", result.output)
         self.assertIn("Successfully restarted inboxclaw.service", result.output)
         mock_run.assert_called_once_with(["systemctl", "--user", "restart", "inboxclaw.service"], check=True)
@@ -32,7 +32,7 @@ class TestRestartCommand(unittest.TestCase):
         result = self.runner.invoke(cli, ['restart', '--system'])
         
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Validating configuration...", result.output)
+        self.assertIn("Validating configuration", result.output)
         self.assertIn("Restarting inboxclaw.service...", result.output)
         mock_run.assert_called_once_with(["systemctl", "restart", "inboxclaw.service"], check=True)
 
@@ -44,7 +44,7 @@ class TestRestartCommand(unittest.TestCase):
         result = self.runner.invoke(cli, ['restart', '--system'])
         
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Validating configuration...", result.output)
+        self.assertIn("Validating configuration", result.output)
         self.assertIn("System-wide restart requires root privileges", result.output)
 
     @patch('src.cli.commands.restart.os.name', 'nt')
@@ -54,7 +54,7 @@ class TestRestartCommand(unittest.TestCase):
         result = self.runner.invoke(cli, ['restart'])
         
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Validating configuration...", result.output)
+        self.assertIn("Validating configuration", result.output)
         self.assertIn("Systemd is only supported on Linux/POSIX systems. Skipping service restart.", result.output)
 
     @patch('src.cli.commands.restart.os.name', 'posix')
@@ -66,7 +66,7 @@ class TestRestartCommand(unittest.TestCase):
         result = self.runner.invoke(cli, ['restart', '--service-name', 'my-claw'])
         
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Validating configuration...", result.output)
+        self.assertIn("Validating configuration", result.output)
         self.assertIn("Restarting my-claw.service...", result.output)
         mock_run.assert_called_once_with(["systemctl", "--user", "restart", "my-claw.service"], check=True)
 

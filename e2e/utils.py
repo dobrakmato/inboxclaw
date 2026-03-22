@@ -64,7 +64,7 @@ class E2EApp:
         # But for now just Popen is fine as we'll use process.kill()
         
         self.process = subprocess.Popen(
-            [sys.executable, "main.py", "listen"],
+            [sys.executable, "main.py", "listen", "--config", self.config_path],
             env=env,
             stdout=self.stdout_file,
             stderr=self.stderr_file,
