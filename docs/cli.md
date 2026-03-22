@@ -113,7 +113,7 @@ python main.py subscribe
 ```
 
 ### `pull`
-Runs a pull request against a locally configured HTTP Pull sink. It extracts a batch of events and marks them as processed. On success, it outputs the raw JSON response to `stdout`, making it suitable for CLI integrations.
+Runs a pull request against a locally configured HTTP Pull sink. It extracts a batch of events and outputs the raw JSON response to `stdout`, making it suitable for CLI integrations.
 
 **Usage:**
 ```bash
@@ -125,15 +125,32 @@ python main.py pull [OPTIONS]
 - `--name TEXT`: Name of the HTTP Pull sink to use (if multiple are configured).
 - `--event-type TEXT`: Filter by event type (supports `*` and `.*`).
 - `--batch-size INTEGER`: Limit the number of events to extract (must be >= 1).
-- `--no-confirm`: Do not mark events as processed after extraction.
 
 **Example:**
 ```bash
-# Pull and automatically mark as processed
+# Pull a batch of events
 python main.py pull --event-type "gmail.*" --batch-size 5
 
 # Output:
-# {"batch_id": 1, "events": [...], "remaining_events": 0}
+# {"batch_id": "abc-123", "events": [...], "remaining_events": 0}
+```
+
+### `pull-mark-processed`
+Marks a specific batch of events as processed in a locally configured HTTP Pull sink. This should be called after you have successfully processed the events returned by the `pull` command.
+
+**Usage:**
+```bash
+python main.py pull-mark-processed [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--name TEXT`: Name of the HTTP Pull sink to use (if multiple are configured).
+- `--batch-id TEXT`: **Required**. The batch ID returned by the `pull` command.
+
+**Example:**
+```bash
+python main.py pull-mark-processed --batch-id "abc-123"
 ```
 
 ### `install`

@@ -36,11 +36,7 @@ class TestPullCommand(unittest.TestCase):
             "remaining_events": 0
         }
         
-        mock_confirm_resp = MagicMock()
-        mock_confirm_resp.status_code = 200
-        
         mock_client.get.return_value = mock_extract_resp
-        mock_client.post.return_value = mock_confirm_resp
         
         result = self.runner.invoke(cli, ["pull"])
         
@@ -53,9 +49,27 @@ class TestPullCommand(unittest.TestCase):
         self.assertEqual(len(output_data["events"]), 1)
         self.assertEqual(output_data["events"][0]["type"], "test")
         
-        # Check params
+        # Check params: only extract should be called
         mock_client.get.assert_called_once_with("http://127.0.0.1:8000/my_pull/extract", params={})
-        mock_client.post.assert_called_once_with("http://127.0.0.1:8000/my_pull/mark-processed", params={"batch_id": 123})
+        mock_client.post.assert_not_called()
+
+    @patch("src.cli.commands.pull.load_config")
+    @patch("src.cli.commands.pull.httpx.Client")
+    def test_pull_mark_processed_success(self, mock_client_class, mock_load_config):
+        mock_load_config.return_value = self.mock_config
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
+        mock_confirm_resp = MagicMock()
+        mock_confirm_resp.status_code = 200
+        mock_client.post.return_value = mock_confirm_resp
+        
+        result = self.runner.invoke(cli, ["pull-mark-processed", "--batch-id", "123"])
+        
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Successfully marked batch 123 as processed", result.output)
+        
+        mock_client.post.assert_called_once_with("http://127.0.0.1:8000/my_pull/mark-processed", params={"batch_id": "123"})
 
     @patch("src.cli.commands.pull.load_config")
     def test_pull_no_sinks(self, mock_load_config):
@@ -105,7 +119,6 @@ class TestPullCommand(unittest.TestCase):
             "remaining_events": 10
         }
         mock_client.get.return_value = mock_extract_resp
-        mock_client.post.return_value = MagicMock(status_code=200)
         
         result = self.runner.invoke(cli, ["pull", "--event-type", "mail.*", "--batch-size", "5"])
         
