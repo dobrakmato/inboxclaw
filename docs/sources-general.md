@@ -61,13 +61,13 @@ See the dedicated [Event Coalescing](coalescing.md) page for detailed explanatio
 
 ## Available Sources
 
-| Source                                                   | Type              | Description                                | Website                                                    |
-|:---------------------------------------------------------|:------------------|:-------------------------------------------|:-----------------------------------------------------------|
-| [Gmail](source-gmail.md)                                 | `gmail`           | Emails received, sent, deleted, labels.    | [mail.google.com](https://mail.google.com)                 |
-| [Google Calendar](source-google-calendar.md)             | `google_calendar` | Calendar events created, updated, deleted. | [calendar.google.com](https://calendar.google.com)         |
-| [Google Drive](source-google-drive.md)                   | `google_drive`    | File changes with debounced updates.       | [drive.google.com](https://drive.google.com)               |
-| [Fio Banka](source-fio.md)                               | `fio`             | Bank transactions.                         | [fio.cz](https://www.fio.cz)                               |
-| [Faktury Online](source-faktury-online.md)               | `faktury_online`  | Invoice changes.                           | [faktury-online.com](https://www.faktury-online.com)       |
-| [Home Assistant](source-home-assistant.md)               | `home_assistant`  | Device tracker and sensor updates.         | [home-assistant.io](https://www.home-assistant.io)         |
-| [GoCardless / Nordigen](source-nordigen.md)              | `nordigen`        | Bank transactions (GoCardless).            | [gocardless.com](https://gocardless.com/bank-account-data) |
-| [Mock](source-mock.md)                                   | `mock`            | Random test events for pipeline testing.   | -                                                          |
+| Source                                                      | Type              | Description                                | Website                                                    |
+|:------------------------------------------------------------|:------------------|:-------------------------------------------|:-----------------------------------------------------------|
+| :email: [Gmail](source-gmail.md)                            | `gmail`           | Emails received, sent, deleted, labels.    | [mail.google.com](https://mail.google.com)                 |
+| :calendar: [Google Calendar](source-google-calendar.md)     | `google_calendar` | Calendar events created, updated, deleted. | [calendar.google.com](https://calendar.google.com)         |
+| :file_folder: [Google Drive](source-google-drive.md)        | `google_drive`    | File changes with debounced updates.       | [drive.google.com](https://drive.google.com)               |
+| :bank: [Fio Banka](source-fio.md)                           | `fio`             | Bank transactions.                         | [fio.cz](https://www.fio.cz)                               |
+| :page_with_curl: [Faktury Online](source-faktury-online.md) | `faktury_online`  | Invoice changes.                           | [faktury-online.com](https://www.faktury-online.com)       |
+| :house: [Home Assistant](source-home-assistant.md)          | `home_assistant`  | Device tracker and sensor updates.         | [home-assistant.io](https://www.home-assistant.io)         |
+| :credit_card: [GoCardless / Nordigen](source-nordigen.md)   | `nordigen`        | Bank transactions (GoCardless).            | [gocardless.com](https://gocardless.com/bank-account-data) |
+| :test_tube: [Mock](source-mock.md)                          | `mock`            | Random test events for pipeline testing.   | -                                                          |

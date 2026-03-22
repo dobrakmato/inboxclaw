@@ -1,8 +1,10 @@
+![Inboxclaw logo](docs/assets/logo.png)
+
 # Inboxclaw
 
 Inboxclaw is a small self-hosted event hub for your personal digital life.
 
-It watches the services you already use, turns their changes into a clean local stream of events, stores them durably, and makes them easy to consume from your own apps, automations, and assistants.
+It watches the services you already use, turns their changes into a clean local stream of events, deduplicates noisy updates, stores them durably, and makes them easy to consume from your own apps, automations, and assistants.
 
 Instead of wiring every API to every downstream tool, you connect each source once and get one place where new emails, calendar changes, bank transactions, file updates, and other signals show up in a consistent way.
 
@@ -93,3 +95,7 @@ Sink-specific docs:
 * [SSE](docs/sink-sse.md)
 * [HTTP Pull](docs/sink-http-pull.md)
 * [Win11 Toast](docs/sink-win11toast.md)
+
+## AI Disclaimer
+
+This project is built using AI. It may contain inaccuracies or errors. Please consider this and do not rely on it for critical decisions.

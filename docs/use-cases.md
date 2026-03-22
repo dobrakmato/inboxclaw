@@ -1,0 +1,3 @@
+- Get updates of emails to your openclaw
+- Avoid polling everything in heartbeat
+- to be written...
