@@ -188,11 +188,12 @@ class WebhookSink:
             return True
 
         logger.warning(
-            "Webhook sink '%s' failed to deliver event %s. Status=%s Response=%s",
+            "Webhook sink '%s' failed to deliver event %s. Status=%s Response=%s Payload=%s",
             self.name,
             event.event_id,
             response.status_code,
             response.text,
+            payload,
         )
         return False
 
