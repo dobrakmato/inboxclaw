@@ -14,8 +14,7 @@ After=network.target
 
 [Service]
 Type=simple
-User={user}
-WorkingDirectory={working_dir}
+{user_directive}WorkingDirectory={working_dir}
 ExecStart={exec_start}
 Restart=always
 Environment=PYTHONPATH={working_dir}
@@ -49,14 +48,17 @@ def install(config_path: str, is_user: bool, is_system: bool, service_name: str)
     
     # Identify the python executable and the entry point
     python_exe = sys.executable
-    exec_start = f"{python_exe} main.py listen --config {config_abs_path}"
+    main_py_path = Path(working_dir) / "main.py"
+    exec_start = f"{python_exe} {main_py_path} listen --config {config_abs_path}"
 
     env_vars = f"Environment=CONFIG_PATH={config_abs_path}"
+    
+    user_directive = f"User={current_user}\n" if not is_user else ""
     
     wanted_by = "default.target" if is_user else "multi-user.target"
     
     service_content = SYSTEMD_SERVICE_TEMPLATE.format(
-        user=current_user,
+        user_directive=user_directive,
         working_dir=working_dir,
         exec_start=exec_start,
         env_vars=env_vars,
