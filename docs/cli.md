@@ -73,6 +73,23 @@ python main.py listen [OPTIONS]
 python main.py listen --config my-custom-config.yaml
 ```
 
+### `subscribe`
+Subscribes to an SSE (Server-Sent Events) endpoint and dumps raw JSON payloads to `stdout`. This is useful for debugging or integrating with other tools that can consume JSON from a pipe.
+
+**Usage:**
+```bash
+python main.py subscribe [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--sink TEXT`: Specific SSE sink name to use (if multiple SSE sinks are configured).
+
+**Example:**
+```bash
+python main.py subscribe
+```
+
 ### `install`
 Installs Inboxclaw as a `systemd` service on Linux. This allows the pipeline to start automatically on boot and restart if it crashes.
 
