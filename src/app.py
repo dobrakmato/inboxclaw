@@ -1,5 +1,6 @@
 import logging
 import contextlib
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.config import load_config
@@ -22,7 +23,13 @@ async def lifespan(app: FastAPI):
     # Get config path from app state if it was set via CLI
     config_path = getattr(app.state, "config_path", None)
     config = load_config(config_path)
-    db_session_maker = init_db(config.database.db_path, echo=config.database.echo)
+    
+    db_path = config.database.db_path
+    if not os.path.isabs(db_path) and config_path:
+        config_dir = os.path.dirname(os.path.abspath(config_path))
+        db_path = os.path.join(config_dir, db_path)
+    
+    db_session_maker = init_db(db_path, echo=config.database.echo)
     
     services = AppServices(
         app=app,

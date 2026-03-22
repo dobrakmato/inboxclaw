@@ -77,7 +77,10 @@ def status(config_path: Optional[str], service_name: str):
 
     # 3. Healthcheck
     click.echo("\n[Healthcheck]")
-    url = f"http://{config.server.host}:{config.server.port}/healthcheck"
+    host = config.server.host
+    if host == "0.0.0.0":
+        host = "127.0.0.1"
+    url = f"http://{host}:{config.server.port}/healthcheck"
     try:
         with httpx.Client(timeout=2.0) as client:
             response = client.get(url)
@@ -132,23 +135,40 @@ def status(config_path: Optional[str], service_name: str):
     # 5. Database Stats
     click.echo("\n[Database Stats]")
     try:
-        session_maker = init_db(config.database.db_path)
+        # Resolve db_path relative to config file if it's relative
+        db_path = config.database.db_path
+        if not os.path.isabs(db_path):
+            config_dir = os.path.dirname(os.path.abspath(config_path))
+            db_path = os.path.join(config_dir, db_path)
+            
+        session_maker = init_db(db_path)
         with session_maker() as session:
-            num_sources = session.query(func.count(Source.id)).scalar()
+            num_sources_db = session.query(func.count(Source.id)).scalar()
             num_events = session.query(func.count(Event.id)).scalar()
             num_pending = session.query(func.count(PendingEvent.id)).scalar()
-            num_sinks = session.query(func.count(Sink.id)).scalar()
+            num_sinks_db = session.query(func.count(Sink.id)).scalar()
             
-            click.echo(f"Sources configured: {num_sources}")
-            click.echo(f"Sinks configured: {num_sinks}")
+            num_sources_cfg = len(config.sources)
+            num_sinks_cfg = len(config.sink)
+            
+            click.echo(f"Sources: {num_sources_cfg} configured, {num_sources_db} in database")
+            click.echo(f"Sinks: {num_sinks_cfg} configured, {num_sinks_db} in database")
             click.echo(f"Total events in DB: {num_events}")
             click.echo(f"Pending (coalescing) events: {num_pending}")
             
-            if num_sources > 0:
+            if num_sources_db > 0:
                 click.echo("\n[Sources Detail]")
                 sources = session.execute(select(Source)).scalars().all()
                 for s in sources:
-                    click.echo(f" - {s.name} ({s.type}): cursor={s.cursor or 'None'}")
+                    status_prefix = "[Active] " if s.name in config.sources else "[Inactive] "
+                    click.echo(f" {status_prefix}{s.name} ({s.type}): cursor={s.cursor or 'None'}")
+            
+            # Identify missing sources in DB
+            missing_sources = [name for name in config.sources if name not in [s.name for s in session.execute(select(Source)).scalars().all()]]
+            if missing_sources:
+                click.echo("\n[Sources Pending Initialization]")
+                for name in missing_sources:
+                    click.echo(f" - {name} ({config.sources[name].type})")
                     
     except Exception as e:
         click.secho(f"Error reading database: {e}", fg="red")
