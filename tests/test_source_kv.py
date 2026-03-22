@@ -218,3 +218,52 @@ def test_delete_expired_with_prefix(services, session_maker):
     
     kv_service.delete_older_than_with_prefix(source_id, cutoff, prefix="snap:")
     assert kv_service.get(source_id, "snap:updated") is None
+
+def test_delete_older_than(services, session_maker):
+    from datetime import datetime, timedelta, timezone
+    kv_service = services.kv
+    source_id = 1
+
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    # Set some keys
+    kv_service.set(source_id, "old_key", "old_val")
+    kv_service.set(source_id, "new_key", "new_val")
+
+    with session_maker() as session:
+        # Manually set created_at for "old" key
+        old_time = datetime.now(timezone.utc) - timedelta(days=2)
+        kv = session.scalar(select(SourceKV).where(SourceKV.source_id == source_id, SourceKV.key == "old_key"))
+        kv.created_at = old_time
+        session.commit()
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    kv_service.delete_older_than(source_id, cutoff)
+
+    assert kv_service.get(source_id, "old_key") is None
+    assert kv_service.get(source_id, "new_key") == "new_val"
+
+def test_list_keys_with_prefix(services, session_maker):
+    kv_service = services.kv
+    source_id = 1
+
+    with session_maker() as session:
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    kv_service.set(source_id, "prefix:1", "val1")
+    kv_service.set(source_id, "prefix:2", "val2")
+    kv_service.set(source_id, "other:1", "val3")
+
+    keys = kv_service.list_keys_with_prefix(source_id, "prefix:")
+    assert len(keys) == 2
+    assert "prefix:1" in keys
+    assert "prefix:2" in keys
+    assert "other:1" not in keys
+
+    keys = kv_service.list_keys_with_prefix(source_id, "non_existent:")
+    assert len(keys) == 0

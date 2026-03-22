@@ -160,3 +160,87 @@ def test_ttl_clause_prefers_exact_match_over_prefix_match():
         event_ids = {event.event_id for event in results}
 
         assert event_ids == {"2", "3"}
+
+def test_ttl_clause_wildcard_combination():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    with Session() as session:
+        from src.database import Source
+        session.add(Source(id=1, name="test", type="test"))
+        now = datetime.now(timezone.utc)
+        
+        # event 1: specific, should use 60s TTL (expired)
+        session.add(Event(event_id="1", source_id=1, event_type="test.exact", created_at=now - timedelta(seconds=120)))
+        
+        # event 2: matches prefix, should use 300s TTL (not expired)
+        session.add(Event(event_id="2", source_id=1, event_type="test.other", created_at=now - timedelta(seconds=120)))
+        
+        # event 3: matches nothing specific, should use wildcard 600s TTL (not expired)
+        session.add(Event(event_id="3", source_id=1, event_type="other.unmatched", created_at=now - timedelta(seconds=400)))
+
+        # event 4: matches nothing specific, wildcard TTL is 600s (expired)
+        session.add(Event(event_id="4", source_id=1, event_type="other.expired", created_at=now - timedelta(seconds=700)))
+        
+        session.commit()
+
+        ttl_clause = EventMatcher.build_ttl_clause(
+            ttl_enabled=True,
+            default_ttl=30, # Should be overridden by wildcard
+            event_ttl={
+                "test.exact": 60,
+                "test.*": 300,
+                "*": 600,
+            }
+        )
+
+        results = session.scalars(select(Event).where(ttl_clause)).all()
+        event_ids = {event.event_id for event in results}
+        assert event_ids == {"2", "3"}
+
+def test_matcher_wildcard_patterns_various():
+    # Test internal _pattern_to_clause via build_sqlalchemy_clause
+    m = EventMatcher(["user.*", "admin.*", "system.ping", "*"])
+    # If wildcard is present, it should simplify to true()
+    assert m.build_sqlalchemy_clause() is true()
+
+    m2 = EventMatcher(["a.b.*", "a.*"])
+    # a.b.c should match a.b.* (more specific) or a.*
+    assert m2.matches("a.b.c") is True
+    assert m2.matches("a.d") is True
+    
+    # Prefix matches MUST have a dot after the prefix (current implementation)
+    # pattern "a.*" -> prefix "a."
+    assert m2.matches("a") is False 
+    assert m2.matches("abc") is False
+
+def test_ttl_clause_no_wildcard_uses_default():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    with Session() as session:
+        from src.database import Source
+        session.add(Source(id=1, name="test", type="test"))
+        now = datetime.now(timezone.utc)
+        
+        # event 1: unmatched, should use default_ttl (expired)
+        session.add(Event(event_id="1", source_id=1, event_type="unmatched", created_at=now - timedelta(seconds=120)))
+        
+        # event 2: unmatched, should use default_ttl (not expired)
+        session.add(Event(event_id="2", source_id=1, event_type="unmatched2", created_at=now - timedelta(seconds=30)))
+        
+        session.commit()
+
+        ttl_clause = EventMatcher.build_ttl_clause(
+            ttl_enabled=True,
+            default_ttl=60,
+            event_ttl={
+                "matched": 300,
+            }
+        )
+
+        results = session.scalars(select(Event).where(ttl_clause)).all()
+        event_ids = {event.event_id for event in results}
+        assert event_ids == {"2"}

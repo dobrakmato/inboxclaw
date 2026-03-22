@@ -76,7 +76,7 @@ class CoalescenceManager:
 
         if pending:
             # Update existing
-            pending.data = aggregation.aggregate(pending.data, event.data)
+            pending.data = aggregation.aggregate(dict(pending.data or {}), event.data)
             pending.count += 1
             pending.last_seen_at = now
             pending.flush_at = timing.calculate_flush_at(
@@ -84,7 +84,7 @@ class CoalescenceManager:
             )
             # Ensure meta is updated if needed, or preserved
             if event.meta:
-                pending.meta = {**pending.meta, **event.meta}
+                pending.meta = {**dict(pending.meta or {}), **event.meta}
             
             logger.debug(f"Updated pending event for {event.event_type}:{event.entity_id} (count: {pending.count})")
         else:
