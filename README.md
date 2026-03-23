@@ -2,49 +2,60 @@
 
 # Inboxclaw
 
-Inboxclaw is a small self-hosted event hub for your personal digital life.
+**The event inbox for your AI assistant.**
 
-It watches the services you already use, turns their changes into a clean local stream of events, deduplicates noisy updates, stores them durably, and makes them easy to consume from your own apps, automations, and assistants.
+Your inbox, calendar, files, bank, and devices are all producing signals. Inboxclaw turns them into one clean, durable event stream your assistant can actually use.
 
-Instead of wiring every API to every downstream tool, you connect each source once and get one place where new emails, calendar changes, bank transactions, file updates, and other signals show up in a consistent way.
+Connect the services you already use — email, calendar, cloud storage, banking, device state — and Inboxclaw watches them for you. Instead of every assistant, script, or automation having to integrate with Gmail, Google Calendar, Google Drive, Home Assistant, or bank APIs separately, you connect each source once and consume everything from one place.
 
-## Why use it
+## Who is it for
 
-Modern personal tooling is fragmented. Your inbox lives in one place, your calendar in another, files in a third, banking in a fourth, and device state somewhere else again.
+Inboxclaw is built for self-hosters, agent builders, [OpenClaw](docs/getting-started-openclaw.md) users, and automation-heavy power users. It is not trying to be a giant enterprise message bus — it is a lightweight event inbox for personal automation and assistant-facing workflows.
 
-Inboxclaw gives you a single event layer across those systems.
+## How it works
 
-That makes it useful when you want to:
+The system works in three stages:
 
-* power a personal assistant or LLM workflow with real-world events
-* build automations without re-implementing polling and deduplication for every API
-* keep a durable local record of interesting changes
-* expose those changes through webhooks, SSE, or pull-based consumers
-* prototype a personal operations hub without standing up heavy infrastructure
+1. **Sources watch external systems.** Gmail, Calendar, Drive, bank APIs, Home Assistant — each source detects changes using polling, cursors, or cached snapshots and converts them into normalized events with a consistent shape: event type, entity ID, timestamp, payload, metadata.
 
-## What it does
+2. **The pipeline deduplicates and stores.** Events are checked against `(source_id, event_id)` to avoid double-writes, then persisted in SQLite *before* anything is delivered. For noisy streams like repeated file edits, optional [coalescing](docs/coalescing.md) collapses rapid bursts into one meaningful update.
 
-Inboxclaw does:
+3. **Sinks deliver to consumers.** Matching events fan out through webhooks, local command execution, SSE streams, or pull-based HTTP batches — each with its own delivery semantics and failure behavior.
 
-* polls or subscribes to supported external services
-* converts changes into normalized events
-* stores them in SQLite
-* deduplicates repeated fetches
-* delivers matching events to one or more sinks
-* supports coalescing for noisy update streams
+```
+System change → Source → Normalize → Optional coalesce → Deduplicate → Durable store → Sink matching → Delivery → Consumer
+```
 
-In practice, it is best thought of as an event inbox for personal systems and assistant-facing workflows.
+## What it guarantees
+
+Practical rather than magical:
+
+* **Idempotent writes** per source event via the `(source_id, event_id)` uniqueness rule.
+* **Durability before delivery** — events are persisted before any delivery attempt, so restarts do not erase accepted events.
+* **Durable sinks retry** — webhook, command, and HTTP pull keep delivery state and retry after failures.
+
+What it does *not* guarantee is universal exactly-once delivery end to end: SSE is fire-and-forget, webhook delivery depends on HTTP acknowledgement, and TTL rules can intentionally discard stale backlog after downtime.
+
+The right promise is: **durable local intake, controlled fan-out, lower noise, and fewer integration mistakes.**
+
+## For OpenClaw users
+
+Inboxclaw is the part that gives OpenClaw eyes and ears.
+
+OpenClaw is the agent. Inboxclaw is the event intake layer that notices what happened in the outside world — new email, changed calendar event, edited Drive file, bank transaction, Home Assistant state change — and feeds those events into OpenClaw in a structured way.
+
+* For a **simple setup**, Inboxclaw can call the OpenClaw CLI directly so new events land in your main conversation with full context.
+* For a **more advanced setup**, it can send webhooks into OpenClaw's hook system so you can route events to separate sessions or agents.
+
+OpenClaw no longer needs to personally integrate with every upstream service. Inboxclaw handles watching, remembering cursors, deduplicating overlaps, reducing noisy bursts, and retrying delivery. OpenClaw gets a cleaner feed of "things worth knowing."
+
+**The simplest mental model: Inboxclaw is OpenClaw's event inbox.**
+
+See the [Inboxclaw + OpenClaw guide](docs/getting-started-openclaw.md) for setup instructions.
 
 ## Current shape
 
-In very active development, some features are missing, might break at any time.
-
-It is a good fit for:
-
-* personal automation
-* local or self-hosted assistant backends
-* side projects and internal tools
-* lightweight integration glue
+In very active development — some features may break at any time. A good fit for personal automation, self-hosted assistant backends, side projects, and lightweight integration glue. Not yet recommended as a conservative "bet the company on it" platform.
 
 ## Supported sources
 
@@ -85,11 +96,7 @@ It is a good fit for:
 
 ## Learn more
 
-Detailed documentation lives in the [`docs/`](docs) folder.
-
 **New here?** Follow the [Onboarding Tutorial](docs/onboarding/index.md) — a step-by-step guide from installation to a running pipeline.
-
-**Using OpenClaw?** See the [Inboxclaw + OpenClaw guide](docs/getting-started-openclaw.md) for connecting to your AI assistant.
 
 Reference docs:
 
