@@ -31,6 +31,7 @@ class CommandSink:
         self.matcher = EventMatcher(config.match)
         
         self.queue = asyncio.Queue()
+        self._processing_ids: set[int] = set()
         self._consecutive_failures = 0
         self._breaker_until: Optional[datetime] = None
         self._processing_task: Optional[asyncio.Task] = None
@@ -109,9 +110,9 @@ class CommandSink:
             event_ids = session.scalars(stmt).all()
             
             for eid in event_ids:
-                # Basic avoidance of flooding the queue if it's already full of the same IDs
-                # But since we're using event_ids from DB, and they'll be processed soon, it's okay.
-                await self.queue.put(eid)
+                if eid not in self._processing_ids:
+                    self._processing_ids.add(eid)
+                    await self.queue.put(eid)
 
     async def _processor(self):
         logger.info("Command sink '%s' processor started", self.name)
@@ -162,7 +163,8 @@ class CommandSink:
             except Exception:
                 logger.exception("Error in command sink '%s' processor", self.name)
             finally:
-                for _ in batch:
+                for eid in batch:
+                    self._processing_ids.discard(eid)
                     self.queue.task_done()
 
     async def _process_one_id(self, event_id: int):
