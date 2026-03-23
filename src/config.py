@@ -178,8 +178,8 @@ class Win11ToastSinkConfig(BaseSinkConfig):
 
 class CommandSinkConfig(BaseSinkConfig, TTLConfig):
     type: Literal["command"] = "command"
-    command: str
-    batch_command: Optional[str] = None
+    command: Union[str, List[str]]
+    batch_command: Optional[Union[str, List[str]]] = None
     batch_threshold: int = 10
     max_retries: int = 3
     retry_interval: Interval = 10.0

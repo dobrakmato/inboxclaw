@@ -98,13 +98,29 @@
           "title": "Match"
         },
         "command": {
-          "title": "Command",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Command"
         },
         "batch_command": {
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"

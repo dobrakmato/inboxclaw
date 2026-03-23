@@ -52,7 +52,8 @@ def transform_template(template: Any, context: dict, shell_quote: bool = False) 
             if prefix == "#":
                 res = str(val) if val is not None else ""
             else:  # prefix == "$"
-                res = json.dumps(val) if val is not None else "null"
+                # Use separators=(',', ':') for compact JSON without extra spaces
+                res = json.dumps(val, separators=(',', ':')) if val is not None else "null"
             
             if shell_quote:
                 return shlex.quote(res)

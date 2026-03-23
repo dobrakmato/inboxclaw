@@ -58,13 +58,34 @@ The Command sink automatically quotes all interpolated values using `shlex.quote
 
 ## Configuration
 
-### Minimal Configuration
+### Robust List Format (Recommended)
+
+To avoid shell interpretation issues and reliably handle special characters, use the list-based command format. This method passes arguments directly to the operating system, bypassing the shell entirely.
+
+```yaml
+sink:
+  openclaw:
+    type: command
+    # Use a list for direct-argv execution (bypasses shell)
+    command:
+      - "/usr/local/bin/openclaw"
+      - "agent"
+      - "--session-id"
+      - "main"
+      - "--message"
+      # $root will be safely interpolated as JSON
+      - "Event just happened: $root"
+```
+
+### Minimal Configuration (Shell)
+
+Using a string will trigger shell execution, which is convenient for piping or redirection but requires careful quoting.
 
 ```yaml
 sink:
   my_cmd:
     type: command
-    command: "echo #root.event_id"
+    command: "echo #root.event_id >> events.log"
 ```
 
 Defaults: `match: "*"`, `batch_threshold: 10`, `max_retries: 3`, `ttl_enabled: true`, `default_ttl: "1h"`.
@@ -75,8 +96,8 @@ Defaults: `match: "*"`, `batch_threshold: 10`, `max_retries: 3`, `ttl_enabled: t
 sink:
   advanced_cmd:
     type: command
-    command: "python process.py --data '$root.data'"
-    batch_command: "python process_batch.py --json '$root'"
+    command: ["python", "process.py", "--data", "$root.data"]
+    batch_command: ["python", "process_batch.py", "--json", "$root"]
     batch_threshold: 50
     max_retries: 5
     retry_interval: "5m"
@@ -94,8 +115,8 @@ sink:
 | Parameter         | Type           | Default  | Description                                                                                       |
 |:------------------|:---------------|:---------|:--------------------------------------------------------------------------------------------------|
 | `type`            | `string`       | —        | Must be `command`.                                                                                |
-| `command`         | `string`       | Required | The shell command to execute. Supports template interpolation.                                     |
-| `batch_command`   | `string`       | —        | Command to use when `batch_threshold` is reached. If omitted, `command` is used.                  |
+| `command`         | `string|list` | Required | The command to execute. String = shell, List = direct exec (robust).                              |
+| `batch_command`   | `string|list` | —        | Command for batches. String = shell, List = direct exec. If omitted, `command` is used.           |
 | `batch_threshold` | `int`          | `10`     | Number of events in queue required to trigger batch processing.                                   |
 | `max_retries`     | `int`          | `3`      | Maximum number of retries for a failed command.                                                   |
 | `retry_interval`  | `string`       | `"10s"`  | Minimum wait between retries.                                                                     |
@@ -106,12 +127,17 @@ sink:
 
 ## Template Interpolation
 
-The Command sink uses the [templating engine](templating.md) to dynamically construct shell commands.
+The Command sink uses the [templating engine](templating.md) to dynamically construct commands.
+
+- `#root.path`: Raw string interpolation (e.g., `evt_123`).
+- `$root.path`: JSON string interpolation (e.g., `{"key":"value"}`).
+
+When using the **list format**, values are interpolated as-is without extra shell quoting. When using the **string format**, values are automatically quoted using `shlex.quote()` for shell safety.
 
 ### Single Event Context
 When processing one by one, `root` is a single event object:
 - `#root.event_id` -> `evt_123`
-- `$root.data` -> `{"key": "value"}`
+- `$root.data` -> `{"key":"value"}`
 
 ### Batch Context
 When processing a batch, `root` is a **list** of event objects:

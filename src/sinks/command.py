@@ -178,12 +178,15 @@ class CommandSink:
             self._record_result(event.id, processed=True, return_code=0)
             return
 
+        # Interpolate variables
+        # Note: we DON'T shell quote if command is a list, because exec handles it
+        shell_quote = isinstance(self.config.command, str)
         context = {"root": EventWithMeta.from_event(event).to_dict()}
-        cmd_str = transform_template(self.config.command, context, shell_quote=True)
+        cmd_transformed = transform_template(self.config.command, context, shell_quote=shell_quote)
         
-        logger.debug("Command sink '%s' executing: %s", self.name, cmd_str)
+        logger.debug("Command sink '%s' executing: %s", self.name, cmd_transformed)
         
-        res = await self._run_command(cmd_str)
+        res = await self._run_command(cmd_transformed)
         success = res["return_code"] == 0
         
         self._record_result(event.id, processed=success, return_code=res["return_code"])
@@ -202,14 +205,17 @@ class CommandSink:
         if not events:
             return
 
+        # Interpolate variables
+        # Note: we DON'T shell quote if command is a list, because exec handles it
         template = self.config.batch_command or self.config.command
+        shell_quote = isinstance(template, str)
         event_dicts = [EventWithMeta.from_event(e).to_dict() for e in events]
         context = {"root": event_dicts}
+        cmd_transformed = transform_template(template, context, shell_quote=shell_quote)
         
-        cmd_str = transform_template(template, context, shell_quote=True)
-        logger.info("Command sink '%s' executing batch (%d events): %s", self.name, len(events), cmd_str)
+        logger.info("Command sink '%s' executing batch (%d events): %s", self.name, len(events), cmd_transformed)
         
-        res = await self._run_command(cmd_str)
+        res = await self._run_command(cmd_transformed)
         success = res["return_code"] == 0
         
         for e in events:
@@ -221,13 +227,22 @@ class CommandSink:
         with self.services.db_session_maker() as session:
             return session.get(Event, event_id, options=[joinedload(Event.source)])
 
-    async def _run_command(self, cmd: str) -> Dict[str, Any]:
+    async def _run_command(self, cmd: Union[str, List[str]]) -> Dict[str, Any]:
         try:
-            process = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+            if isinstance(cmd, list):
+                # Using create_subprocess_exec (direct argv)
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+            else:
+                # Using create_subprocess_shell (shell interpretation)
+                process = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
             stdout, stderr = await process.communicate()
             
             if process.returncode != 0:
