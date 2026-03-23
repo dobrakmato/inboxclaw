@@ -90,6 +90,46 @@ class TestEventsCommands(unittest.TestCase):
         self.assertIn("pending_2", result.output)
         self.assertNotIn("pending_3", result.output)
 
+    def test_events_json(self):
+        result = self.runner.invoke(cli, ["events", "--config", self.config_path, "-n", "3", "-j"])
+        self.assertEqual(result.exit_code, 0)
+        import json
+        data = json.loads(result.output)
+        self.assertEqual(len(data), 3)
+        self.assertEqual(data[0]["event_id"], "evt_0")
+        self.assertEqual(data[0]["source"], "test_source")
+        self.assertEqual(data[0]["event_type"], "test_event")
+        self.assertEqual(data[0]["entity_id"], "entity_0")
+        self.assertEqual(data[0]["data"], {"i": 0})
+        self.assertIn("created_at", data[0])
+        self.assertIn("meta", data[0])
+        self.assertIn("id", data[0])
+
+    def test_pending_events_json(self):
+        result = self.runner.invoke(cli, ["pending-events", "--config", self.config_path, "-n", "2", "-j"])
+        self.assertEqual(result.exit_code, 0)
+        import json
+        data = json.loads(result.output)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["source"], "test_source")
+        self.assertEqual(data[0]["event_type"], "pending_type")
+        self.assertIn("count", data[0])
+        self.assertIn("first_seen_at", data[0])
+        self.assertIn("last_seen_at", data[0])
+        self.assertIn("flush_at", data[0])
+        self.assertIn("strategy", data[0])
+        self.assertIn("window_seconds", data[0])
+
+    def test_events_json_empty(self):
+        db_path_empty = os.path.join(self.test_dir, "empty2.db")
+        config_empty = os.path.join(self.test_dir, "config_empty2.yaml")
+        with open(config_empty, "w") as f:
+            yaml.dump({"database": {"db_path": db_path_empty}, "sources": {}, "sink": {}}, f)
+        init_db(db_path_empty)
+        result = self.runner.invoke(cli, ["events", "--config", config_empty, "-j"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("No published events found.", result.output)
+
     def test_events_empty(self):
         # Create empty db
         db_path_empty = os.path.join(self.test_dir, "empty.db")
