@@ -23,6 +23,42 @@ python main.py status [OPTIONS]
 python main.py status
 ```
 
+### `events`
+Displays the latest published events from the database.
+
+**Usage:**
+```bash
+python main.py events [OPTIONS]
+```
+
+**Options:**
+- `-n INTEGER`: Number of latest published events to display (default: 10).
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+
+**Example:**
+```bash
+# Show the last 20 published events
+python main.py events -n 20
+```
+
+### `pending-events`
+Displays the latest pending (coalescing) events from the database.
+
+**Usage:**
+```bash
+python main.py pending-events [OPTIONS]
+```
+
+**Options:**
+- `-n INTEGER`: Number of latest pending events to display (default: 10).
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+
+**Example:**
+```bash
+# Show the last 5 pending events
+python main.py pending-events -n 5
+```
+
 ### `logs`
 Displays the logs for the Inboxclaw service using `journalctl`. This is only available on Linux systems where Inboxclaw is installed as a systemd service.
 
