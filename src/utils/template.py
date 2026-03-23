@@ -38,7 +38,7 @@ def transform_template(template: Any, context: dict, shell_quote: bool = False) 
             return val
         if template.startswith("$") and " " not in template:
             val = resolve_path(template[1:], context)
-            json_val = json.dumps(val)
+            json_val = json.dumps(val, ensure_ascii=False)
             if shell_quote:
                 return shlex.quote(json_val)
             return json_val
@@ -53,7 +53,7 @@ def transform_template(template: Any, context: dict, shell_quote: bool = False) 
                 res = str(val) if val is not None else ""
             else:  # prefix == "$"
                 # Use separators=(',', ':') for compact JSON without extra spaces
-                res = json.dumps(val, separators=(',', ':')) if val is not None else "null"
+                res = json.dumps(val, separators=(',', ':'), ensure_ascii=False) if val is not None else "null"
             
             if shell_quote:
                 return shlex.quote(res)

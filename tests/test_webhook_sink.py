@@ -488,7 +488,7 @@ async def test_webhook_sink_string_interpolation_advanced(services, db_session_m
         payload = mock_post.call_args.kwargs["json"]
 
         assert payload["msg"] == "Event evt_789 happened with bar"
-        assert payload["full_json"] == 'Data: {"foo": "bar", "num": 123}'
+        assert payload["full_json"] == 'Data: {"foo":"bar","num":123}'
         assert payload["nested"]["info"] == "Source test_source_interp"
         assert payload["types"] == "Num is 123, string is bar"
         assert payload["raw_num"] == 123 # Important check for type preservation when no other text
