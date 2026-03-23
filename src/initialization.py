@@ -14,6 +14,7 @@ from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
 from src.sinks.win11toast import Win11ToastSink
+from src.sinks.command import CommandSink
 
 logger = logging.getLogger("inboxclaw")
 
@@ -109,5 +110,10 @@ def init_sinks(services: AppServices):
                 sink = Win11ToastSink(name, snk_config, services)
                 services.sinks[name] = sink
                 services.add_task(sink.start())
+            elif snk_type == "command":
+                logger.info(f"Initializing Command sink: {name} (id={sink_id})")
+                sink = CommandSink(name, snk_config, services, sink_id)
+                services.sinks[name] = sink
+                sink.start()
             else:
                 logger.warning(f"Sink type {snk_type} for {name} not implemented yet.")

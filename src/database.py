@@ -101,6 +101,21 @@ class HttpPullBatchEvent(Base):
     event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
     processed = Column(Boolean, default=False)
 
+class CommandSinkDelivery(Base):
+    __tablename__ = 'command_sink_deliveries'
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete="CASCADE"), nullable=False)
+    sink_id = Column(Integer, ForeignKey('sinks.id', ondelete="CASCADE"), nullable=False)
+    tries = Column(Integer, default=0)
+    last_try = Column(DateTime)
+    processed = Column(Boolean, default=False)
+    processed_at = Column(DateTime)
+    return_code = Column(Integer)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint('event_id', 'sink_id', name='_event_sink_command_uc'),
+    )
+
 def init_db(db_path: str, echo: bool = False):
     # Ensure directory exists
     db_dir = os.path.dirname(db_path)

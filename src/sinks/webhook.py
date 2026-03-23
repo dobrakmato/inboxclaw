@@ -13,6 +13,7 @@ from src.schemas import EventWithMeta
 from src.services import AppServices
 from src.pipeline.matcher import EventMatcher
 from src.config import WebhookSinkConfig
+from src.utils.template import transform_template, resolve_path
 
 logger = logging.getLogger(__name__)
 
@@ -224,49 +225,4 @@ class WebhookSink:
         if not self.config.payload:
             return default_payload
 
-        return self._transform_payload(self.config.payload, {"root": default_payload})
-
-    def _transform_payload(self, template: Any, context: dict) -> Any:
-        if isinstance(template, dict):
-            return {k: self._transform_payload(v, context) for k, v in template.items()}
-        elif isinstance(template, list):
-            return [self._transform_payload(i, context) for i in template]
-        elif isinstance(template, str):
-            # Special case: if the whole string is a path (old behavior, supports non-string returns)
-            if template.startswith("#") and " " not in template:
-                return self._resolve_path(template[1:], context)
-            if template.startswith("$") and " " not in template:
-                import json
-                val = self._resolve_path(template[1:], context)
-                return json.dumps(val)
-
-            # String interpolation
-            import re
-            import json
-
-            def replace_match(match):
-                prefix = match.group(1)
-                path = match.group(2)
-                val = self._resolve_path(path, context)
-                if prefix == "#":
-                    return str(val) if val is not None else ""
-                else:  # prefix == "$"
-                    return json.dumps(val) if val is not None else "null"
-
-            # Regex to find #path.to.field or $path.to.field
-            # We assume paths are alphanumeric with dots, starting with root
-            # This matches #root.something or $root.something
-            pattern = r"([#\$])(root(?:\.[a-zA-Z0-9_]+)*)"
-            return re.sub(pattern, replace_match, template)
-
-        return template
-
-    def _resolve_path(self, path: str, context: dict) -> Any:
-        parts = path.split(".")
-        current = context
-        for part in parts:
-            if isinstance(current, dict):
-                current = current.get(part)
-            else:
-                return None
-        return current
+        return transform_template(self.config.payload, {"root": default_payload})

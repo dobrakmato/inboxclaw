@@ -176,12 +176,21 @@ class Win11ToastSinkConfig(BaseSinkConfig):
     type: Literal["win11toast"] = "win11toast"
     max_body_length: int = 220
 
+class CommandSinkConfig(BaseSinkConfig, TTLConfig):
+    type: Literal["command"] = "command"
+    command: str
+    batch_command: Optional[str] = None
+    batch_threshold: int = 10
+    max_retries: int = 3
+    retry_interval: Interval = 10.0
+
 SinkConfig = Annotated[
     Union[
         WebhookSinkConfig,
         HttpPullSinkConfig,
         SSESinkConfig,
         Win11ToastSinkConfig,
+        CommandSinkConfig,
     ],
     Field(discriminator="type")
 ]

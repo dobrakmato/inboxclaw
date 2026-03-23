@@ -51,6 +51,95 @@
       "title": "CoalesceStrategy",
       "type": "string"
     },
+    "CommandSinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "ttl_enabled": {
+          "default": true,
+          "title": "Ttl Enabled",
+          "type": "boolean"
+        },
+        "default_ttl": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "event_ttl": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Event Ttl",
+          "type": "object"
+        },
+        "type": {
+          "const": "command",
+          "default": "command",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "batch_command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Command"
+        },
+        "batch_threshold": {
+          "default": 10,
+          "title": "Batch Threshold",
+          "type": "integer"
+        },
+        "max_retries": {
+          "default": 3,
+          "title": "Max Retries",
+          "type": "integer"
+        },
+        "retry_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "CommandSinkConfig",
+      "type": "object"
+    },
     "DatabaseConfig": {
       "properties": {
         "days": {
@@ -839,6 +928,9 @@
           },
           {
             "$ref": "#/$defs/Win11ToastSinkConfig"
+          },
+          {
+            "$ref": "#/$defs/CommandSinkConfig"
           }
         ]
       },

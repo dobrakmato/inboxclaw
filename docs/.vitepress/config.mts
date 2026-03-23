@@ -50,6 +50,7 @@ export default defineConfig({
                     {text: 'Webhook', link: '/sink-webhook'},
                     {text: 'SSE', link: '/sink-sse'},
                     {text: 'HTTP Pull', link: '/sink-http-pull'},
+                    {text: 'Bash Command', link: '/sink-command'},
                     {text: 'Win11 Toast', link: '/sink-win11toast'},
                 ]
             },
@@ -60,6 +61,7 @@ export default defineConfig({
                     {text: 'CLI Reference', link: '/cli'},
                     {text: 'Key/Value storage', link: '/kv-general'},
                     {text: 'Configuration', link: '/configuration'},
+                    {text: 'Templating', link: '/templating'},
                     {text: 'Data model', link: '/data-model'},
                     {text: 'Google Auth CLI', link: '/google-auth-cli'},
                 ]

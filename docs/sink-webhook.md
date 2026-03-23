@@ -99,18 +99,12 @@ sink:
 
 ### Payload Rewriting
 
-By default, the Webhook sink sends the full event envelope. You can customize the structure of the JSON payload by adding a `payload` section to your configuration.
+By default, the Webhook sink sends the full event envelope. You can customize the structure of the JSON payload using the [templating engine](templating.md) by adding a `payload` section to your configuration.
 
 This is useful for:
 - Mapping event fields to the format required by a third-party API.
 - Reducing payload size by only sending necessary fields.
 - Stripping sensitive metadata before delivery.
-
-#### Syntax
-
-- **Literal values**: Any value that doesn't start with `#` or `$` is sent as-is.
-- **`#path`**: Resolves the path from the root event and injects it as its native type (string, number, boolean, object, or array).
-- **`$path`**: Resolves the path and injects it as a JSON-stringified value (useful for APIs that expect "stringified JSON" in certain fields).
 
 #### Example
 
@@ -128,7 +122,7 @@ sink:
         env: "production"
 ```
 
-The `root` object corresponds to the [Standard Envelope](#webhook-payload) below. You can traverse nested objects using dot notation (e.g., `#root.data.user.email`).
+The `root` object corresponds to the [Standard Envelope](#webhook-payload) below.
 
 ## Webhook Payload
 
