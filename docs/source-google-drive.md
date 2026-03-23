@@ -11,7 +11,7 @@ A key feature is **debounced updates**: when a document is actively edited, the 
 Generate a Google OAuth token with the `drive` scope using the [Google Auth CLI](google-auth-cli.md):
 
 ```bash
-python main.py google auth \
+inboxclaw google auth \
   --credentials-file data/credentials.json \
   --scopes drive \
   --token data/google_token.json

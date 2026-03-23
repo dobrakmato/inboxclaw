@@ -15,7 +15,7 @@ The CLI tool requires this file via the `--credentials-file` parameter.
 ### Step 1: Run the auth command
 
 ```bash
-python main.py google auth \
+inboxclaw google auth \
   --credentials-file data/credentials.json \
   --token "data/google_token.json" \
   --scopes "gmail,calendar,drive"

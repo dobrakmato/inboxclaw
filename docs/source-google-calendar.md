@@ -11,7 +11,7 @@ Use this source to keep your systems in sync with real-world schedules — log m
 Generate a Google OAuth token with the `calendar` scope using the [Google Auth CLI](google-auth-cli.md):
 
 ```bash
-python main.py google auth \
+inboxclaw google auth \
   --credentials-file data/credentials.json \
   --scopes calendar \
   --token data/google_token.json
@@ -33,7 +33,7 @@ On the first run, the source performs a baseline sync — it fetches all current
 By default, the source monitors your `primary` calendar. To monitor additional calendars, list them with the CLI:
 
 ```bash
-python main.py google list-calendars --token-file data/google_token.json
+inboxclaw google list-calendars --token-file data/google_token.json
 ```
 
 Then add the IDs to your config:

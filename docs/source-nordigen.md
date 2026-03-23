@@ -63,7 +63,7 @@ NORDIGEN_SECRET_KEY=your_secret_key
 The refresh token is a long-lived credential (~30 days) that the pipeline uses to obtain short-lived access tokens automatically. Run this once:
 
 ```
-python main.py nordigen auth
+inboxclaw nordigen auth
 ```
 
 The command contacts GoCardless, prints your refresh token, and tells you exactly what to add to your `.env`:
@@ -79,7 +79,7 @@ NORDIGEN_REFRESH_TOKEN=your_refresh_token
 Run the interactive connect wizard:
 
 ```
-python main.py nordigen connect --country CZ
+inboxclaw nordigen connect --country CZ
 ```
 
 Replace `CZ` with the [ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2) code for your bank's country (e.g. `DE`, `GB`, `SK`).
@@ -96,7 +96,7 @@ To connect a second bank account, simply run the command again. Each run adds a 
 ### Step 4 — Restart the pipeline
 
 ```
-python main.py listen
+inboxclaw listen
 ```
 
 The source will perform an initial sync covering `initial_history_days` of history (default: 90 days), then poll every `poll_interval` (default: 6 hours).
@@ -221,7 +221,7 @@ When access expires or is revoked, the source emits an actionable error event so
     "source": "nordigen_checking",
     "summary": "AccessExpiredError",
     "detail": "Access has expired or it has been revoked.",
-    "action": "Reconnect the bank account using: python main.py nordigen connect"
+    "action": "Reconnect the bank account using: inboxclaw nordigen connect"
   },
   "meta": {}
 }
@@ -236,7 +236,7 @@ The `action` field tells you exactly what to do. Non-actionable errors (institut
 Exchanges your `secret_id` and `secret_key` for a long-lived refresh token. Run once.
 
 ```
-python main.py nordigen auth [--secret-id ID] [--secret-key KEY]
+inboxclaw nordigen auth [--secret-id ID] [--secret-key KEY]
 ```
 
 Options are read from `NORDIGEN_SECRET_ID` / `NORDIGEN_SECRET_KEY` env vars if not provided.
@@ -246,7 +246,7 @@ Options are read from `NORDIGEN_SECRET_ID` / `NORDIGEN_SECRET_KEY` env vars if n
 Interactive wizard to connect a bank account and add it to `config.yaml`.
 
 ```
-python main.py nordigen connect --country COUNTRY [OPTIONS]
+inboxclaw nordigen connect --country COUNTRY [OPTIONS]
 ```
 
 | Option           | Default                          | Description                                                          |

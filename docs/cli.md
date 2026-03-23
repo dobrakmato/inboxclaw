@@ -2,7 +2,11 @@
 
 Inboxclaw provides a command-line interface for running the server and performing maintenance or setup tasks, such as authenticating with external APIs.
 
-The CLI is built with `Click` and can be invoked using `python main.py`.
+The CLI is built with `Click` and is invoked using the `inboxclaw` command.
+
+::: tip When is the `inboxclaw` command available?
+The `inboxclaw` command becomes available automatically after the first run of `python main.py` (which sets up the virtual environment and installs dependencies). After that, you can use `inboxclaw` for all commands. If you haven't run the initial setup yet, see [Step 1: Install](onboarding/step-1-install.md).
+:::
 
 ## Core Commands
 
@@ -11,7 +15,7 @@ Checks the status of the Inboxclaw system, including the systemd service, logs, 
 
 **Usage:**
 ```bash
-python main.py status [OPTIONS]
+inboxclaw status [OPTIONS]
 ```
 
 **Options:**
@@ -20,7 +24,7 @@ python main.py status [OPTIONS]
 
 **Example:**
 ```bash
-python main.py status
+inboxclaw status
 ```
 
 ### `events`
@@ -28,7 +32,7 @@ Displays the latest published events from the database.
 
 **Usage:**
 ```bash
-python main.py events [OPTIONS]
+inboxclaw events [OPTIONS]
 ```
 
 **Options:**
@@ -38,7 +42,7 @@ python main.py events [OPTIONS]
 **Example:**
 ```bash
 # Show the last 20 published events
-python main.py events -n 20
+inboxclaw events -n 20
 ```
 
 ### `pending-events`
@@ -46,7 +50,7 @@ Displays the latest pending (coalescing) events from the database.
 
 **Usage:**
 ```bash
-python main.py pending-events [OPTIONS]
+inboxclaw pending-events [OPTIONS]
 ```
 
 **Options:**
@@ -56,7 +60,7 @@ python main.py pending-events [OPTIONS]
 **Example:**
 ```bash
 # Show the last 5 pending events
-python main.py pending-events -n 5
+inboxclaw pending-events -n 5
 ```
 
 ### `logs`
@@ -64,7 +68,7 @@ Displays the logs for the Inboxclaw service using `journalctl`. This is only ava
 
 **Usage:**
 ```bash
-python main.py logs [OPTIONS]
+inboxclaw logs [OPTIONS]
 ```
 
 **Options:**
@@ -75,7 +79,7 @@ python main.py logs [OPTIONS]
 **Example:**
 ```bash
 # Show last 50 lines and follow
-python main.py logs -n 50 -f
+inboxclaw logs -n 50 -f
 ```
 
 ### `restart`
@@ -85,7 +89,7 @@ On non-Linux systems, this command will only perform configuration validation an
 
 **Usage:**
 ```bash
-python main.py restart [OPTIONS]
+inboxclaw restart [OPTIONS]
 ```
 
 **Options:**
@@ -96,7 +100,7 @@ python main.py restart [OPTIONS]
 
 **Example:**
 ```bash
-python main.py restart
+inboxclaw restart
 ```
 
 ### `update`
@@ -104,7 +108,7 @@ Checks the GitHub repository for updates, pulls them, and installs any new depen
 
 **Usage:**
 ```bash
-python main.py update [OPTIONS]
+inboxclaw update [OPTIONS]
 ```
 
 **Options:**
@@ -112,7 +116,7 @@ python main.py update [OPTIONS]
 
 **Example:**
 ```bash
-python main.py update
+inboxclaw update
 ```
 
 ### `listen`
@@ -120,7 +124,7 @@ Starts the Inboxclaw server. This command is the main entry point for running th
 
 **Usage:**
 ```bash
-python main.py listen [OPTIONS]
+inboxclaw listen [OPTIONS]
 ```
 
 **Options:**
@@ -128,7 +132,7 @@ python main.py listen [OPTIONS]
 
 **Example:**
 ```bash
-python main.py listen --config my-custom-config.yaml
+inboxclaw listen --config my-custom-config.yaml
 ```
 
 ### `subscribe`
@@ -136,7 +140,7 @@ Subscribes to an SSE (Server-Sent Events) endpoint and dumps raw JSON payloads t
 
 **Usage:**
 ```bash
-python main.py subscribe [OPTIONS]
+inboxclaw subscribe [OPTIONS]
 ```
 
 **Options:**
@@ -145,7 +149,7 @@ python main.py subscribe [OPTIONS]
 
 **Example:**
 ```bash
-python main.py subscribe
+inboxclaw subscribe
 ```
 
 ### `pull`
@@ -153,7 +157,7 @@ Runs a pull request against a locally configured HTTP Pull sink. It extracts a b
 
 **Usage:**
 ```bash
-python main.py pull [OPTIONS]
+inboxclaw pull [OPTIONS]
 ```
 
 **Options:**
@@ -165,7 +169,7 @@ python main.py pull [OPTIONS]
 **Example:**
 ```bash
 # Pull a batch of events
-python main.py pull --event-type "gmail.*" --batch-size 5
+inboxclaw pull --event-type "gmail.*" --batch-size 5
 
 # Output:
 # {"batch_id": "abc-123", "events": [...], "remaining_events": 0}
@@ -176,7 +180,7 @@ Marks a specific batch of events as processed in a locally configured HTTP Pull 
 
 **Usage:**
 ```bash
-python main.py pull-mark-processed [OPTIONS]
+inboxclaw pull-mark-processed [OPTIONS]
 ```
 
 **Options:**
@@ -186,17 +190,17 @@ python main.py pull-mark-processed [OPTIONS]
 
 **Example:**
 ```bash
-python main.py pull-mark-processed --batch-id "abc-123"
+inboxclaw pull-mark-processed --batch-id "abc-123"
 ```
 
 ### `install`
 Installs Inboxclaw as a `systemd` service on Linux. This allows the pipeline to start automatically on boot and restart if it crashes.
 
-Additionally, it creates a symlink to the `inboxclaw` CLI command in your PATH (`~/.local/bin` for user installations or `/usr/local/bin` for system-wide ones), allowing you to run `inboxclaw` from any directory.
+Additionally, it creates a symlink to the `inboxclaw` CLI command in your system PATH (`~/.local/bin` for user installations or `/usr/local/bin` for system-wide ones), making `inboxclaw` accessible from any directory outside the virtual environment.
 
 **Usage:**
 ```bash
-python main.py install [OPTIONS]
+inboxclaw install [OPTIONS]
 ```
 
 **Options:**
@@ -209,7 +213,7 @@ python main.py install [OPTIONS]
 
 **User Installation (Non-root):**
 ```bash
-python main.py install --user
+inboxclaw install --user
 ```
 After installing as a user, you may want to enable "linger" for your user so the service starts on boot without you having to log in:
 ```bash
@@ -218,7 +222,7 @@ loginctl enable-linger $USER
 
 **System-wide Installation (Root):**
 ```bash
-sudo python main.py install --system
+sudo inboxclaw install --system
 ```
 
 ---
@@ -257,5 +261,5 @@ See [Nordigen Source](source-nordigen.md) for more information.
 
 **Example:**
 ```bash
-python main.py google auth --help
+inboxclaw google auth --help
 ```

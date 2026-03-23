@@ -48,42 +48,15 @@ It is a good fit for:
 
 ## Getting Started
 
-1. **Clone and Configure**:
-   - Clone the repository: `git clone ... && cd inboxclaw`
-   - Copy `config.example.yaml` to `config.yaml` to use as a starting point.
-   - Create a `.env` file with your API tokens.
-   - **Important for Google**: If you're using Google services (Gmail, Calendar, Drive), you must run `python main.py google auth` to authenticate. A simple API key is not enough. Check the [Google Auth CLI Guide](google-auth-cli.md) for more details.
-   - Or create a minimal `config.yaml` (note that the top-level sink key is singular: `sink`):
+Follow the **[Onboarding Tutorial](onboarding/index.md)** for a complete step-by-step walkthrough:
 
-```yaml
-$schema: ./config.schema.json
-server:
-  host: 127.0.0.1
-  port: 8001
+1. [Install and run Inboxclaw](onboarding/step-1-install.md) with a minimal test config
+2. [Configure sources](onboarding/step-2-sources.md) — connect Gmail, your bank, calendar, etc.
+3. [Configure sinks](onboarding/step-3-sinks.md) — decide where events go
+4. [Run your pipeline](onboarding/step-4-run.md) — verify everything works
+5. [Maintenance](onboarding/step-5-maintenance.md) — updates, restarts, and upkeep
 
-database:
-  retention_days: 7
-  db_path: ./data/data.db
-
-sources:
-  mock: {}
-
-sink:
-  sse:
-    match: "*"
-```
-
-2. **Run the Application**:
-   Just run `python main.py listen`. On the first run, Inboxclaw will automatically create a virtual environment and install all necessary dependencies for you.
-
-```bash
-python main.py listen
-```
-
-3. **Explore the API**:
-   Open the API docs at `http://127.0.0.1:8000/docs` and connect a sink client (for example SSE).
-
-Then continue with [Configuration](configuration.md), [Sources](sources-general.md), and [Sinks](sinks-general.md).
+**Using OpenClaw?** See the dedicated [Inboxclaw + OpenClaw guide](getting-started-openclaw.md) for connecting to your AI assistant.
 
 ## Core Concepts
 

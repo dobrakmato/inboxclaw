@@ -23,6 +23,23 @@ export default defineConfig({
 
         sidebar: [
             {
+                text: 'Onboarding Tutorial',
+                items: [
+                    {text: 'Overview', link: '/onboarding/'},
+                    {text: '1. Install & Run', link: '/onboarding/step-1-install'},
+                    {text: '2. Configure Sources', link: '/onboarding/step-2-sources'},
+                    {text: '3. Configure Sinks', link: '/onboarding/step-3-sinks'},
+                    {text: '4. Run Your Pipeline', link: '/onboarding/step-4-run'},
+                    {text: '5. Maintenance', link: '/onboarding/step-5-maintenance'},
+                ]
+            },
+            {
+                text: 'Guides',
+                items: [
+                    {text: 'Inboxclaw + OpenClaw', link: '/getting-started-openclaw'},
+                ]
+            },
+            {
                 text: 'Concepts',
                 items: [
                     {text: 'Pipeline', link: '/pipeline'},

@@ -75,19 +75,23 @@ It is a good fit for:
 2. **Configure**:
    - Create a `.env` file for your API tokens.
    - Create a `config.yaml` by copying `config.example.yaml` as a template.
-   - **Note for Google Services**: If you use Gmail, Google Calendar, or Google Drive, you will need to perform a one-time authentication step using the CLI: `python main.py google auth`. An API key is not enough.
+   - **Note for Google Services**: If you use Gmail, Google Calendar, or Google Drive, you will need to perform a one-time authentication step using the CLI: `inboxclaw google auth`. An API key is not enough.
 
 3. **Run**:
    ```bash
    python main.py listen
    ```
-   *The first run will automatically set up a virtual environment and install dependencies.*
+   *The first run will automatically set up a virtual environment and install dependencies. After that, you can use the `inboxclaw` command instead of `python main.py`.*
 
 ## Learn more
 
 Detailed documentation lives in the [`docs/`](docs) folder.
 
-Start here:
+**New here?** Follow the [Onboarding Tutorial](docs/onboarding/index.md) — a step-by-step guide from installation to a running pipeline.
+
+**Using OpenClaw?** See the [Inboxclaw + OpenClaw guide](docs/getting-started-openclaw.md) for connecting to your AI assistant.
+
+Reference docs:
 
 * [Getting started and overview](docs/index.md)
 * [Configuration](docs/configuration.md)
