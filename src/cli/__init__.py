@@ -18,3 +18,4 @@ import src.cli.commands.restart # noqa: F401
 import src.cli.commands.subscribe # noqa: F401
 import src.cli.commands.pull # noqa: F401
 import src.cli.commands.events # noqa: F401
+import src.cli.commands.config # noqa: F401
