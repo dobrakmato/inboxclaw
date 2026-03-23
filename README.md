@@ -62,6 +62,7 @@ It is a good fit for:
 * Webhook
 * Server-Sent Events (SSE)
 * HTTP Pull
+* Command (CLI execution)
 
 ## Quick Start
 
@@ -113,6 +114,7 @@ Sink-specific docs:
 * [Webhook](docs/sink-webhook.md)
 * [SSE](docs/sink-sse.md)
 * [HTTP Pull](docs/sink-http-pull.md)
+* [Command](docs/sink-command.md)
 * [Win11 Toast](docs/sink-win11toast.md)
 
 ## AI Disclaimer

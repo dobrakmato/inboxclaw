@@ -117,6 +117,7 @@ Then continue with [Configuration](configuration.md), [Sources](sources-general.
 - [Webhook](sink-webhook.md)
 - [SSE](sink-sse.md)
 - [HTTP Pull](sink-http-pull.md)
+- [Command](sink-command.md)
 - [Win11 Toast](sink-win11toast.md)
 
 ## Additional Guides

@@ -22,6 +22,7 @@ sink:
 | Sink                                    | Type         | How it works                                                                 |
 |:----------------------------------------|:-------------|:-----------------------------------------------------------------------------|
 | [Webhook](sink-webhook.md)              | `webhook`    | Pushes each event to a URL via HTTP POST. Retries on failure.                |
+| [Command](sink-command.md)              | `command`    | Executes a CLI command for each event. Supports sequential processing.       |
 | [HTTP Pull](sink-http-pull.md)          | `http_pull`  | Your app polls for batches of events and confirms receipt.                   |
 | [SSE](sink-sse.md)                      | `sse`        | Streams events in real-time over a persistent HTTP connection.               |
 | [Win11 Toast](sink-win11toast.md)       | `win11toast` | Shows a Windows 11 desktop notification per event. For debugging only.       |

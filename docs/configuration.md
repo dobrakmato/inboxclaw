@@ -78,10 +78,15 @@ Sources are defined as a dictionary where the key is a unique name for the sourc
 | `coalesce` | List of [Coalescing Rules](coalescing.md) for this source. |
 
 Each source type has its own specific configuration. See the dedicated documentation for each source:
+- [Gmail](source-gmail.md)
+- [Google Calendar](source-google-calendar.md)
+- [Google Drive](source-google-drive.md)
 - [Fio Banka](source-fio.md)
 - [Faktury Online](source-faktury-online.md)
 - [Home Assistant](source-home-assistant.md)
-- [Google Services](google-auth-cli.md) (Gmail, Calendar, Drive)
+- [GoCardless / Nordigen](source-nordigen.md)
+- [Mock Source](source-mock.md)
+- [Google Auth CLI](google-auth-cli.md) (Authentication guide)
 
 ### Sinks (`sink`)
 
@@ -106,6 +111,7 @@ See the dedicated documentation for each sink:
 - [Webhook](sink-webhook.md)
 - [SSE](sink-sse.md)
 - [HTTP Pull](sink-http-pull.md)
+- [Command](sink-command.md)
 - [Windows 11 Toast](sink-win11toast.md)
 
 ## Full Example

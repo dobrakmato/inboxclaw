@@ -28,6 +28,7 @@ Depending on sink type:
 - **Webhook** pushes event-by-event with retry behavior.
 - **SSE** streams in near real-time to connected clients.
 - **HTTP Pull** creates batches that clients fetch and confirm.
+- **Command** executes a CLI command for each event or batch.
 - **Win11 Toast** shows local desktop notifications (debug/developer usage).
 
 ## Coalescing (What It Means)
