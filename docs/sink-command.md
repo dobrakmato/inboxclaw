@@ -52,6 +52,10 @@ TTL is **enabled by default** with a `default_ttl` of `1h`. Events older than th
 ### Persistence
 All executions are recorded in the `command_sink_deliveries` table. Every received event has an entry with a `processed` flag. If the command fails, the error is logged, and the sink will periodically retry the event.
 
+::: tip Automatic Shell Quoting
+The Command sink automatically quotes all interpolated values using `shlex.quote()`. This ensures that even if your event data contains spaces, quotes, or other special shell characters, the command will remain safe and valid. You do **not** need to manually add quotes around `#root` or `$root` placeholders in your `command` or `batch_command` configuration.
+:::
+
 ## Configuration
 
 ### Minimal Configuration

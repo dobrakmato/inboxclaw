@@ -179,7 +179,7 @@ class CommandSink:
             return
 
         context = {"root": EventWithMeta.from_event(event).to_dict()}
-        cmd_str = transform_template(self.config.command, context)
+        cmd_str = transform_template(self.config.command, context, shell_quote=True)
         
         logger.debug("Command sink '%s' executing: %s", self.name, cmd_str)
         
@@ -206,7 +206,7 @@ class CommandSink:
         event_dicts = [EventWithMeta.from_event(e).to_dict() for e in events]
         context = {"root": event_dicts}
         
-        cmd_str = transform_template(template, context)
+        cmd_str = transform_template(template, context, shell_quote=True)
         logger.info("Command sink '%s' executing batch (%d events): %s", self.name, len(events), cmd_str)
         
         res = await self._run_command(cmd_str)

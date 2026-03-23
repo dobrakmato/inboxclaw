@@ -1,5 +1,6 @@
 import re
 import json
+import shlex
 from typing import Any, Dict, Optional
 
 def resolve_path(path: str, context: dict) -> Any:
@@ -13,7 +14,7 @@ def resolve_path(path: str, context: dict) -> Any:
             return None
     return current
 
-def transform_template(template: Any, context: dict) -> Any:
+def transform_template(template: Any, context: dict, shell_quote: bool = False) -> Any:
     """
     Recursively transform a template (dict, list, or string) using the provided context.
     
@@ -21,28 +22,41 @@ def transform_template(template: Any, context: dict) -> Any:
     - #root.path.to.field: Interpolate field as string.
     - $root.path.to.field: Interpolate field as JSON string.
     - If a string starts with # or $ and has no spaces, it's treated as a direct path resolution.
+    
+    If shell_quote is True, the interpolated values are escaped for safe shell use.
     """
     if isinstance(template, dict):
-        return {k: transform_template(v, context) for k, v in template.items()}
+        return {k: transform_template(v, context, shell_quote) for k, v in template.items()}
     elif isinstance(template, list):
-        return [transform_template(i, context) for i in template]
+        return [transform_template(i, context, shell_quote) for i in template]
     elif isinstance(template, str):
         # Special case: if the whole string is a path (supports non-string returns)
         if template.startswith("#") and " " not in template:
-            return resolve_path(template[1:], context)
+            val = resolve_path(template[1:], context)
+            if shell_quote and val is not None:
+                return shlex.quote(str(val))
+            return val
         if template.startswith("$") and " " not in template:
             val = resolve_path(template[1:], context)
-            return json.dumps(val)
+            json_val = json.dumps(val)
+            if shell_quote:
+                return shlex.quote(json_val)
+            return json_val
 
         # String interpolation
         def replace_match(match):
             prefix = match.group(1)
             path = match.group(2)
             val = resolve_path(path, context)
+            
             if prefix == "#":
-                return str(val) if val is not None else ""
+                res = str(val) if val is not None else ""
             else:  # prefix == "$"
-                return json.dumps(val) if val is not None else "null"
+                res = json.dumps(val) if val is not None else "null"
+            
+            if shell_quote:
+                return shlex.quote(res)
+            return res
 
         # Regex to find #path.to.field or $path.to.field
         # We assume paths are alphanumeric with dots, starting with root
