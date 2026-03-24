@@ -1,8 +1,8 @@
 import os
-
 import click
 
 from src.cli import cli
+from src.config import load_config
 from src.utils.paths import get_project_root
 
 
@@ -42,6 +42,9 @@ def config(vim: bool, nano: bool):
     if not os.path.isfile(config_path):
         raise click.ClickException(f"Config file not found: {config_path}")
 
+    # Record modification time before editing
+    mtime_before = os.path.getmtime(config_path)
+
     kwargs = {"filename": config_path}
     if vim:
         kwargs["editor"] = "vim"
@@ -49,3 +52,15 @@ def config(vim: bool, nano: bool):
         kwargs["editor"] = "nano"
 
     click.edit(**kwargs)
+
+    # Check if the file was modified
+    mtime_after = os.path.getmtime(config_path)
+    if mtime_after > mtime_before:
+        click.echo("Config file changed. Validating...")
+        try:
+            load_config(config_path)
+            click.secho("Configuration is valid.", fg="green")
+            click.echo("\nYou likely want to restart Inboxclaw to apply changes.")
+            click.secho("Run: inboxclaw restart", fg="yellow")
+        except Exception as e:
+            click.secho(f"Configuration validation failed: {e}", fg="red")

@@ -103,6 +103,27 @@ inboxclaw restart [OPTIONS]
 inboxclaw restart
 ```
 
+### `config`
+Opens the configuration file in your default editor (or a specified one). If the file is modified and saved, the CLI **automatically validates the new configuration** and suggests a restart if the validation passes.
+
+**Usage:**
+```bash
+inboxclaw config [OPTIONS]
+```
+
+**Options:**
+- `--vim`: Open the configuration in `vim`.
+- `--nano`: Open the configuration in `nano`.
+
+**Example:**
+```bash
+# Open in default editor
+inboxclaw config
+
+# Open in nano
+inboxclaw config --nano
+```
+
 ### `update`
 Checks the GitHub repository for updates, pulls them, and installs any new dependencies.
 
