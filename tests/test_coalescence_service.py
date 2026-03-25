@@ -186,3 +186,57 @@ async def test_coalescence_service_run_loop(services, monkeypatch):
         pass
 
     assert flush_called >= 2
+
+@pytest.mark.asyncio
+async def test_coalescence_service_flush_single_event(services, session_maker):
+    """
+    Ensures that for single events (count=1), no coalescence metadata is added.
+    """
+    source_id = 1
+    with session_maker() as session:
+        # SQLite with PRAGMA foreign_keys=ON requires the source to exist
+        src = Source(id=source_id, name="test_source", type="mock")
+        session.add(src)
+        session.commit()
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    
+    with session_maker() as session:
+        # Single event (count=1)
+        p1 = PendingEvent(
+            source_id=source_id,
+            event_type="test.single",
+            entity_id="e1",
+            data={"v": 1},
+            meta={"original": "meta"},
+            first_seen_at=now - timedelta(minutes=5),
+            last_seen_at=now - timedelta(minutes=1),
+            flush_at=now - timedelta(seconds=10),
+            count=1,
+            strategy="debounce",
+            window_seconds=10
+        )
+        session.add(p1)
+        session.commit()
+
+    service = CoalescenceBackgroundService(services)
+    await service.flush_expired()
+
+    with session_maker() as session:
+        events = session.scalars(select(Event).where(Event.event_type == "test.single")).all()
+        assert len(events) == 1
+        e = events[0]
+        assert e.entity_id == "e1"
+        assert e.data == {"v": 1}
+        
+        # Coalescence metadata should NOT be present
+        assert "coalesced" not in e.meta
+        assert "coalesced_count" not in e.meta
+        assert "first_seen_at" not in e.meta
+        assert "last_seen_at" not in e.meta
+        
+        # Original meta should be preserved
+        assert e.meta["original"] == "meta"
+
+        # PendingEvent should be gone
+        assert session.scalar(select(PendingEvent)) is None

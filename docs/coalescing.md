@@ -98,13 +98,18 @@ When events are coalesced, the system needs to know how to merge their `data` pa
 
 ### Metadata
 
-Promoted events include special metadata fields to help you understand what happened:
+Promoted events include special metadata fields to help you understand what happened. These are only added if more than one event was actually coalesced (`meta.coalesced_count > 1`):
 
 | Field | Description |
 | :--- | :--- |
+| `meta.coalesced` | Set to `true` to indicate this event was formed by merging multiple raw events. |
 | `meta.coalesced_count` | Total number of raw events merged into this one. |
 | `meta.first_seen_at` | Timestamp of the very first event in the window. |
 | `meta.last_seen_at` | Timestamp of the last event that contributed to this one. |
+
+::: tip Single Events
+If only one event was received during the coalescence window, it is promoted to the main table without any additional coalescence metadata, preserving its original form.
+:::
 
 ---
 

@@ -53,10 +53,11 @@ class CoalescenceBackgroundService:
                     event_id += f":{int(now.timestamp())}"
 
                 meta = (pending.meta or {}).copy()
-                meta["coalesced_count"] = pending.count
-                meta["first_seen_at"] = pending.first_seen_at.isoformat()
-                meta["last_seen_at"] = pending.last_seen_at.isoformat()
-                meta["coalesced"] = True
+                if pending.count > 1:
+                    meta["coalesced_count"] = pending.count
+                    meta["first_seen_at"] = pending.first_seen_at.isoformat()
+                    meta["last_seen_at"] = pending.last_seen_at.isoformat()
+                    meta["coalesced"] = True
 
                 new_event = Event(
                     event_id=event_id,
