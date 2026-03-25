@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from email.utils import parseaddr
 
@@ -85,6 +86,38 @@ class GmailSource:
             occurred_at=occurred_at
         )
 
+    def _should_filter(self, msg: dict) -> bool:
+        """Check if message matches any configured filters."""
+        if not self.config.filters:
+            return False
+
+        payload = msg.get('payload', {})
+        headers_list = payload.get('headers', [])
+        headers = {h['name']: h['value'] for h in headers_list}
+        
+        subject = headers.get("Subject", "")
+        snippet = msg.get("snippet", "")
+        sender = headers.get("From", "")
+
+        for filter_dict in self.config.filters:
+            for name, f in filter_dict.items():
+                value_to_check = ""
+                if f.in_field == "subject":
+                    value_to_check = subject
+                elif f.in_field == "snippet":
+                    value_to_check = snippet
+                elif f.in_field == "sender":
+                    value_to_check = sender
+                
+                if f.contains and f.contains.lower() in value_to_check.lower():
+                    logger.info(f"Filtering out message because it matched filter '{name}' (contains)")
+                    return True
+                if f.regex and re.search(f.regex, value_to_check):
+                    logger.info(f"Filtering out message because it matched filter '{name}' (regex)")
+                    return True
+
+        return False
+
     def _create_message_deleted_event(self, msg_id: str, thread_id: str, history_id: str) -> NewEvent:
         return NewEvent(
             event_id=f"{msg_id}-deleted",
@@ -169,6 +202,11 @@ class GmailSource:
                         label_ids = msg.get('labelIds', [])
                         if any(l in self.config.exclude_label_ids for l in label_ids):
                             continue
+                        
+                        if self._should_filter(msg):
+                            logger.info(f"Filtering out message {msg_id} based on content filters")
+                            continue
+                            
                         events.append(self._create_message_event(msg_id, msg))
 
                     # 2. Messages Deleted

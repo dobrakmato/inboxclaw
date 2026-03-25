@@ -264,6 +264,48 @@
       "title": "FioSourceConfig",
       "type": "object"
     },
+    "GmailFilterItem": {
+      "properties": {
+        "in": {
+          "enum": [
+            "subject",
+            "snippet",
+            "sender"
+          ],
+          "title": "In",
+          "type": "string"
+        },
+        "regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Regex"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        }
+      },
+      "required": [
+        "in"
+      ],
+      "title": "GmailFilterItem",
+      "type": "object"
+    },
     "GmailSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -305,6 +347,16 @@
           "default": false,
           "title": "Emit Label Events",
           "type": "boolean"
+        },
+        "filters": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/GmailFilterItem"
+            },
+            "type": "object"
+          },
+          "title": "Filters",
+          "type": "array"
         }
       },
       "required": [

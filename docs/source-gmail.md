@@ -38,6 +38,34 @@ The source uses Gmail's `history.list` API with a stored `historyId` cursor. Eac
 
 By default, messages with the `SPAM` label are skipped. You can customize this with `exclude_label_ids` — any message that has at least one matching label is ignored.
 
+### Content Filtering
+
+You can filter emails by their subject, snippet (body preview), or sender using either exact string matching (case-insensitive) or regular expressions. This is useful for ignoring automated emails, newsletters, or specific alerts.
+
+Each filter is a named object within a list. You specify which field to check with `in` (`subject`, `snippet`, or `sender`) and the match criteria with `contains` or `regex`.
+
+If an email matches **any** of the configured filters, it is ignored and no event is emitted.
+
+```yaml
+sources:
+  my_gmail:
+    type: gmail
+    token_file: "data/google_token.json"
+    filters:
+      - ignore_internal:
+          in: subject
+          contains: "[Internal]"
+      - no_alerts:
+          in: subject
+          regex: "^Alert:.*(Resolved|Fixed)$"
+      - unsubscribe_newsletters:
+          in: snippet
+          contains: "Unsubscribe"
+      - ignore_sender:
+          in: sender
+          contains: "no-reply@important-service.com"
+```
+
 ## Configuration
 
 ### Minimal Configuration
@@ -71,6 +99,17 @@ sources:
 | `poll_interval`     | `string` | `"10m"`      | How often to check for changes. Supports human-readable intervals (e.g. `"5m"`, `"30s"`).    |
 | `exclude_label_ids` | `list`   | `["SPAM"]`   | Messages with any of these labels are skipped. Common labels: `SPAM`, `TRASH`, `UNREAD`, `STARRED`, `IMPORTANT`, `INBOX`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`. |
 | `emit_label_events` | `boolean`| `false`      | Whether to emit events when labels are added or removed from emails.                         |
+| `filters`           | `list`   | `[]`         | Content-based filters to skip emails. Each item is a filter object.                          |
+
+### Filter Object
+
+The `filters` list contains objects where the key is the name of the filter (for logging purposes) and the value is a filter definition:
+
+| Property   | Type     | Required | Description                                                                 |
+|:-----------|:---------|:---------|:----------------------------------------------------------------------------|
+| `in`       | `string` | Yes      | Which field to search in. Must be `subject`, `snippet`, or `sender`.        |
+| `contains` | `string` | No       | Filters if the field contains this string (case-insensitive).               |
+| `regex`    | `string` | No       | Filters if the field matches this regular expression.                       |
 
 ## Event Definitions
 
