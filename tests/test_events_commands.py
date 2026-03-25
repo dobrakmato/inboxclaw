@@ -143,5 +143,33 @@ class TestEventsCommands(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("No published events found.", result.output)
 
+    def test_events_filter_source(self):
+        result = self.runner.invoke(cli, ["events", "--config", self.config_path, "--source", "test_source"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("evt_0", result.output)
+        
+        result = self.runner.invoke(cli, ["events", "--config", self.config_path, "--source", "non_existent"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("No published events found.", result.output)
+
+    def test_events_filter_type(self):
+        result = self.runner.invoke(cli, ["events", "--config", self.config_path, "--event-type", "test_event"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("evt_0", result.output)
+        
+        result = self.runner.invoke(cli, ["events", "--config", self.config_path, "--event-type", "other_type"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("No published events found.", result.output)
+
+    def test_pending_events_filter_source(self):
+        result = self.runner.invoke(cli, ["pending-events", "--config", self.config_path, "--source", "test_source"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("pending_0", result.output)
+
+    def test_pending_events_filter_type(self):
+        result = self.runner.invoke(cli, ["pending-events", "--config", self.config_path, "--event-type", "pending_type"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("pending_0", result.output)
+
 if __name__ == "__main__":
     unittest.main()

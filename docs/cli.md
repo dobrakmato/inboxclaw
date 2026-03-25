@@ -37,12 +37,21 @@ inboxclaw events [OPTIONS]
 
 **Options:**
 - `-n INTEGER`: Number of latest published events to display (default: 10).
+- `--source TEXT`: Filter events by source name.
+- `--event-type TEXT`: Filter events by event type.
+- `-j`: Output events as JSON objects.
 - `--config TEXT`: Path to the configuration file (default: `config.yaml`).
 
 **Example:**
 ```bash
 # Show the last 20 published events
 inboxclaw events -n 20
+
+# Show the last 10 events from a specific source
+inboxclaw events --source gmail
+
+# Show only events of a specific type
+inboxclaw events --event-type new_email
 ```
 
 ### `pending-events`
@@ -55,12 +64,18 @@ inboxclaw pending-events [OPTIONS]
 
 **Options:**
 - `-n INTEGER`: Number of latest pending events to display (default: 10).
+- `--source TEXT`: Filter pending events by source name.
+- `--event-type TEXT`: Filter pending events by event type.
+- `-j`: Output pending events as JSON objects.
 - `--config TEXT`: Path to the configuration file (default: `config.yaml`).
 
 **Example:**
 ```bash
 # Show the last 5 pending events
 inboxclaw pending-events -n 5
+
+# Show pending events for a specific source
+inboxclaw pending-events --source gmail
 ```
 
 ### `logs`

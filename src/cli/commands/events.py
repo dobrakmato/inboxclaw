@@ -36,12 +36,21 @@ def get_db_session(config_path: Optional[str]):
 @cli.command()
 @click.option("-n", default=10, help="Number of latest published events to display (default: 10).")
 @click.option("-j", "as_json", is_flag=True, default=False, help="Output events as JSON objects.")
+@click.option("--source", help="Filter events by source name.")
+@click.option("--event-type", help="Filter events by event type.")
 @click.option("--config", "config_path", default=None, help="Path to the configuration file.")
-def events(n: int, as_json: bool, config_path: Optional[str]):
+def events(n: int, as_json: bool, source: Optional[str], event_type: Optional[str], config_path: Optional[str]):
     """Display latest N published events."""
     session = get_db_session(config_path)
     try:
-        stmt = select(Event).order_by(desc(Event.created_at)).limit(n)
+        stmt = select(Event).order_by(desc(Event.created_at))
+        
+        if source:
+            stmt = stmt.join(Source).where(Source.name == source)
+        if event_type:
+            stmt = stmt.where(Event.event_type == event_type)
+            
+        stmt = stmt.limit(n)
         results = session.execute(stmt).scalars().all()
         
         if not results:
@@ -75,12 +84,21 @@ def events(n: int, as_json: bool, config_path: Optional[str]):
 @cli.command("pending-events")
 @click.option("-n", default=10, help="Number of latest pending events to display (default: 10).")
 @click.option("-j", "as_json", is_flag=True, default=False, help="Output pending events as JSON objects.")
+@click.option("--source", help="Filter pending events by source name.")
+@click.option("--event-type", help="Filter pending events by event type.")
 @click.option("--config", "config_path", default=None, help="Path to the configuration file.")
-def pending_events(n: int, as_json: bool, config_path: Optional[str]):
+def pending_events(n: int, as_json: bool, source: Optional[str], event_type: Optional[str], config_path: Optional[str]):
     """Display latest N pending events."""
     session = get_db_session(config_path)
     try:
-        stmt = select(PendingEvent).order_by(desc(PendingEvent.last_seen_at)).limit(n)
+        stmt = select(PendingEvent).order_by(desc(PendingEvent.last_seen_at))
+        
+        if source:
+            stmt = stmt.join(Source).where(Source.name == source)
+        if event_type:
+            stmt = stmt.where(PendingEvent.event_type == event_type)
+            
+        stmt = stmt.limit(n)
         results = session.execute(stmt).scalars().all()
         
         if not results:
