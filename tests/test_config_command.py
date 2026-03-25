@@ -13,8 +13,9 @@ class TestConfigCommand:
 
     @patch("src.cli.commands.config._resolve_config_path")
     @patch("os.path.isfile", return_value=True)
+    @patch("os.path.getmtime", return_value=123456789.0)
     @patch("click.edit")
-    def test_opens_config_in_default_editor(self, mock_edit, mock_isfile, mock_resolve):
+    def test_opens_config_in_default_editor(self, mock_edit, mock_mtime, mock_isfile, mock_resolve):
         mock_resolve.return_value = "/fake/config.yaml"
         mock_edit.return_value = None
 
@@ -28,8 +29,9 @@ class TestConfigCommand:
 
     @patch("src.cli.commands.config._resolve_config_path")
     @patch("os.path.isfile", return_value=True)
+    @patch("os.path.getmtime", return_value=123456789.0)
     @patch("click.edit")
-    def test_opens_config_in_vim(self, mock_edit, mock_isfile, mock_resolve):
+    def test_opens_config_in_vim(self, mock_edit, mock_mtime, mock_isfile, mock_resolve):
         mock_resolve.return_value = "/fake/config.yaml"
         mock_edit.return_value = None
 
@@ -42,8 +44,9 @@ class TestConfigCommand:
 
     @patch("src.cli.commands.config._resolve_config_path")
     @patch("os.path.isfile", return_value=True)
+    @patch("os.path.getmtime", return_value=123456789.0)
     @patch("click.edit")
-    def test_opens_config_in_nano(self, mock_edit, mock_isfile, mock_resolve):
+    def test_opens_config_in_nano(self, mock_edit, mock_mtime, mock_isfile, mock_resolve):
         mock_resolve.return_value = "/fake/config.yaml"
         mock_edit.return_value = None
 
