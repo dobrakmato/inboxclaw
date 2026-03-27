@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 from datetime import datetime, timezone
 from email.utils import parseaddr
 
@@ -12,6 +11,7 @@ from src.pipeline.cursor import SourceCursor
 from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
+from src.utils.filtering import matches_filter
 
 logger = logging.getLogger(__name__)
 
@@ -94,26 +94,19 @@ class GmailSource:
         payload = msg.get('payload', {})
         headers_list = payload.get('headers', [])
         headers = {h['name']: h['value'] for h in headers_list}
-        
-        subject = headers.get("Subject", "")
-        snippet = msg.get("snippet", "")
-        sender = headers.get("From", "")
 
         for filter_dict in self.config.filters:
             for name, f in filter_dict.items():
                 value_to_check = ""
                 if f.in_field == "subject":
-                    value_to_check = subject
+                    value_to_check = headers.get("Subject", "")
                 elif f.in_field == "snippet":
-                    value_to_check = snippet
+                    value_to_check = msg.get("snippet", "")
                 elif f.in_field == "sender":
-                    value_to_check = sender
+                    value_to_check = headers.get("From", "")
                 
-                if f.contains and f.contains.lower() in value_to_check.lower():
-                    logger.info(f"Filtering out message because it matched filter '{name}' (contains)")
-                    return True
-                if f.regex and re.search(f.regex, value_to_check):
-                    logger.info(f"Filtering out message because it matched filter '{name}' (regex)")
+                if matches_filter(value_to_check, f, name):
+                    logger.info(f"Filtering out message because it matched filter '{name}'")
                     return True
 
         return False

@@ -111,6 +111,24 @@ def test_gmail_source_filtering_edge_cases(mock_services):
     }
     assert source_multi._should_filter(msg_multi) is True
 
+def test_gmail_source_filtering_with_html_entities(mock_services):
+    config = GmailSourceConfig(
+        token_file="fake_token.json",
+        filters=[
+            {"ignore_aws_bounces": GmailFilterItem(in_field="snippet", contains='"notificationType":"Bounce"')}
+        ]
+    )
+    source = GmailSource("test_gmail", config, mock_services, 1)
+
+    # Encoded snippet from real-world example
+    msg = {
+        "payload": {"headers": []},
+        "snippet": "{&quot;notificationType&quot;:&quot;Bounce&quot;,&quot;bounce&quot;:{&quot;feedbackId&quot;:&quot;...&quot;}}"
+    }
+    
+    # This currently FAILS, but should return True after the fix
+    assert source._should_filter(msg) is True
+
 @patch("src.sources.gmail.build")
 @patch("src.sources.gmail.get_google_credentials")
 @patch("src.pipeline.cursor.SourceCursor.get_last_cursor")
