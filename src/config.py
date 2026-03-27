@@ -63,6 +63,12 @@ class GmailFilterItem(BaseModel):
     contains: Optional[str] = None
     model_config = ConfigDict(populate_by_name=True)
 
+class CalendarFilterItem(BaseModel):
+    in_field: Literal["summary", "description", "location", "organizer", "attendees"] = Field(alias="in")
+    regex: Optional[str] = None
+    contains: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
 class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
     exclude_label_ids: List[str] = Field(default_factory=lambda: ["SPAM"])
@@ -96,6 +102,7 @@ class GoogleCalendarSourceConfig(GoogleSourceConfig):
     show_deleted: bool = True
     single_events: bool = True
     collapse_recurring_events: bool = True
+    filters: List[Dict[str, CalendarFilterItem]] = Field(default_factory=list)
 
 class FakturyOnlineSourceConfig(BaseSourceConfig):
     type: Literal["faktury_online"] = "faktury_online"

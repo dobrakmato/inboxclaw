@@ -14,6 +14,7 @@ from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
 from src.utils.diff import DictDiff
+from src.utils.filtering import matches_filter
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +388,10 @@ class GoogleCalendarSource:
         if not isinstance(entity_id, str) or not entity_id:
             return []
 
+        if self._should_filter(event_item):
+            logger.debug("Event %s filtered out", entity_id)
+            return []
+
         previous_event = self.get_cached(calendar_id, entity_id)
         version = self._event_version(event_item)
         occurred_at = self._make_occurred_at(event_item, previous_event)
@@ -462,6 +467,30 @@ class GoogleCalendarSource:
 
         self.set_cache(calendar_id, entity_id, event_item)
         return emitted
+
+    def _should_filter(self, event_item: dict[str, Any]) -> bool:
+        if not self.config.filters:
+            return False
+
+        for filter_dict in self.config.filters:
+            for name, f in filter_dict.items():
+                value_to_check = ""
+                if f.in_field == "summary":
+                    value_to_check = event_item.get("summary", "")
+                elif f.in_field == "description":
+                    value_to_check = event_item.get("description", "")
+                elif f.in_field == "location":
+                    value_to_check = event_item.get("location", "")
+                elif f.in_field == "organizer":
+                    organizer = event_item.get("organizer", {})
+                    value_to_check = organizer.get("email", "") or organizer.get("displayName", "")
+                elif f.in_field == "attendees":
+                    attendees = event_item.get("attendees", [])
+                    value_to_check = " ".join([a.get("email", "") for a in attendees if a.get("email")])
+
+                if matches_filter(value_to_check, f, name):
+                    return True
+        return False
 
     def get_cached(self, calendar_id: str, event_id: str) -> Optional[dict[str, Any]]:
         """

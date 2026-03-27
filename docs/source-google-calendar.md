@@ -77,6 +77,38 @@ Events are filtered by age and future distance:
 
 ## Configuration
 
+### Filtering
+
+You can filter out events based on their properties using regular expressions or simple substring matching. This is useful for ignoring internal meetings, focus time, or events from specific people.
+
+#### Supported Fields
+
+| Field         | Description                                                                 |
+| :------------ | :-------------------------------------------------------------------------- |
+| `summary`     | The title of the event.                                                     |
+| `description` | The event description/notes.                                                |
+| `location`    | The physical or virtual location.                                           |
+| `organizer`   | The email or display name of the person who organized the event.            |
+| `attendees`   | A space-separated list of all attendee email addresses.                     |
+
+#### Example: Ignore All-Hands and Focus Time
+
+```yaml
+sources:
+  my_calendar:
+    type: google_calendar
+    filters:
+      - ignore_all_hands:
+          in: summary
+          contains: "All-Hands"
+      - ignore_focus_time:
+          in: summary
+          regex: ".*Focus Time.*"
+      - internal_only:
+          in: attendees
+          regex: ".*@external-vendor\\.com"
+```
+
 ### Minimal Configuration
 
 ```yaml
@@ -120,6 +152,7 @@ sources:
 | `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this time horizon.                                                                                                             |
 | `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`, `show_deleted`, `single_events`, and `collapse_recurring_events`. Keyed by calendar ID.                       |
 | `show_deleted`              | `bool`   | `true`        | Whether to emit events for cancelled/deleted calendar entries.                                                                                              |
+| `filters`                   | `list`   | `[]`          | List of filters to ignore specific events.                                                                                                                  |
 | `single_events`             | `bool`   | `true`        | Whether to expand recurring events into individual instances (this is useful for discovering new instances of the same event).                              |
 | `collapse_recurring_events` | `bool`   | `true`        | Whether to collapse multiple occurrences of the same recurring event in a single poll batch (this is to avoid getting one update for every event in a row). |
 

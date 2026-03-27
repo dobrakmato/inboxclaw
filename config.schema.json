@@ -1,5 +1,49 @@
-﻿{
+{
   "$defs": {
+    "CalendarFilterItem": {
+      "properties": {
+        "in": {
+          "enum": [
+            "summary",
+            "description",
+            "location",
+            "organizer",
+            "attendees"
+          ],
+          "title": "In",
+          "type": "string"
+        },
+        "regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Regex"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        }
+      },
+      "required": [
+        "in"
+      ],
+      "title": "CalendarFilterItem",
+      "type": "object"
+    },
     "CoalesceRule": {
       "properties": {
         "match": {
@@ -20,8 +64,14 @@
           "$ref": "#/$defs/CoalesceStrategy"
         },
         "window": {
-          "title": "Window",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "aggregation": {
           "default": "latest",
@@ -54,9 +104,14 @@
           "type": "boolean"
         },
         "default_ttl": {
-          "default": "1h",
-          "title": "Default Ttl",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "event_ttl": {
           "additionalProperties": {
@@ -129,9 +184,14 @@
           "type": "integer"
         },
         "retry_interval": {
-          "default": 10.0,
-          "title": "Retry Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -186,9 +246,14 @@
           "type": "string"
         },
         "poll_interval": {
-          "default": "6h",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "max_days_back": {
           "default": 30,
@@ -220,9 +285,14 @@
           "type": "string"
         },
         "poll_interval": {
-          "default": "30m",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "max_days_back": {
           "default": 15,
@@ -301,9 +371,14 @@
           "type": "string"
         },
         "poll_interval": {
-          "default": "10m",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "exclude_label_ids": {
           "items": {
@@ -355,9 +430,14 @@
           "type": "string"
         },
         "poll_interval": {
-          "default": "10m",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "calendar_ids": {
           "items": {
@@ -379,9 +459,14 @@
           "title": "Max Event Age Days"
         },
         "max_into_future": {
-          "default": "365d",
-          "title": "Max Into Future",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "calendar_overrides": {
           "additionalProperties": {
@@ -405,6 +490,16 @@
           "default": true,
           "title": "Collapse Recurring Events",
           "type": "boolean"
+        },
+        "filters": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/CalendarFilterItem"
+            },
+            "type": "object"
+          },
+          "title": "Filters",
+          "type": "array"
         }
       },
       "required": [
@@ -434,9 +529,14 @@
           "type": "string"
         },
         "poll_interval": {
-          "default": "10m",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "restrict_to_my_drive": {
           "default": false,
@@ -540,9 +640,14 @@
           "type": "boolean"
         },
         "default_ttl": {
-          "default": "1h",
-          "title": "Default Ttl",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "event_ttl": {
           "additionalProperties": {
@@ -600,9 +705,14 @@
           "type": "array"
         },
         "interval": {
-          "default": "10s",
-          "title": "Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         }
       },
       "title": "MockSourceConfig",
@@ -654,9 +764,14 @@
           "title": "Label"
         },
         "poll_interval": {
-          "default": "6h",
-          "title": "Poll Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "initial_history_days": {
           "default": 90,
@@ -697,9 +812,14 @@
           "type": "string"
         },
         "heartbeat_timeout": {
-          "default": 30.0,
-          "title": "Heartbeat Timeout",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         }
       },
       "title": "SSESinkConfig",
@@ -730,9 +850,14 @@
           "type": "boolean"
         },
         "default_ttl": {
-          "default": "1h",
-          "title": "Default Ttl",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "event_ttl": {
           "additionalProperties": {
@@ -772,9 +897,14 @@
           "type": "integer"
         },
         "retry_interval": {
-          "default": 10.0,
-          "title": "Retry Interval",
-          "type": "number"
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "headers": {
           "additionalProperties": {
@@ -850,19 +980,6 @@
     },
     "sources": {
       "additionalProperties": {
-        "discriminator": {
-          "mapping": {
-            "faktury_online": "#/$defs/FakturyOnlineSourceConfig",
-            "fio": "#/$defs/FioSourceConfig",
-            "gmail": "#/$defs/GmailSourceConfig",
-            "google_calendar": "#/$defs/GoogleCalendarSourceConfig",
-            "google_drive": "#/$defs/GoogleDriveSourceConfig",
-            "home_assistant": "#/$defs/HomeAssistantSourceConfig",
-            "mock": "#/$defs/MockSourceConfig",
-            "nordigen": "#/$defs/NordigenSourceConfig"
-          },
-          "propertyName": "type"
-        },
         "oneOf": [
           {
             "$ref": "#/$defs/GmailSourceConfig"
@@ -891,20 +1008,36 @@
         ]
       },
       "title": "Sources",
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "gmail": {
+          "$ref": "#/$defs/GmailSourceConfig"
+        },
+        "google_drive": {
+          "$ref": "#/$defs/GoogleDriveSourceConfig"
+        },
+        "google_calendar": {
+          "$ref": "#/$defs/GoogleCalendarSourceConfig"
+        },
+        "faktury_online": {
+          "$ref": "#/$defs/FakturyOnlineSourceConfig"
+        },
+        "fio": {
+          "$ref": "#/$defs/FioSourceConfig"
+        },
+        "mock": {
+          "$ref": "#/$defs/MockSourceConfig"
+        },
+        "home_assistant": {
+          "$ref": "#/$defs/HomeAssistantSourceConfig"
+        },
+        "nordigen": {
+          "$ref": "#/$defs/NordigenSourceConfig"
+        }
+      }
     },
     "sink": {
       "additionalProperties": {
-        "discriminator": {
-          "mapping": {
-            "command": "#/$defs/CommandSinkConfig",
-            "http_pull": "#/$defs/HttpPullSinkConfig",
-            "sse": "#/$defs/SSESinkConfig",
-            "webhook": "#/$defs/WebhookSinkConfig",
-            "win11toast": "#/$defs/Win11ToastSinkConfig"
-          },
-          "propertyName": "type"
-        },
         "oneOf": [
           {
             "$ref": "#/$defs/WebhookSinkConfig"
@@ -924,7 +1057,21 @@
         ]
       },
       "title": "Sink",
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "webhook": {
+          "$ref": "#/$defs/WebhookSinkConfig"
+        },
+        "http_pull": {
+          "$ref": "#/$defs/HttpPullSinkConfig"
+        },
+        "sse": {
+          "$ref": "#/$defs/SSESinkConfig"
+        },
+        "win11toast": {
+          "$ref": "#/$defs/Win11ToastSinkConfig"
+        }
+      }
     }
   },
   "required": [
