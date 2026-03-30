@@ -142,6 +142,7 @@ class HomeAssistantSourceConfig(BaseSourceConfig):
     url: str
     access_token: str = Field(default_factory=lambda: os.environ.get("HOME_ASSISTANT_TOKEN", ""))
     entity_ids: List[str]
+    location_threshold_meters: float = 0.0
 
 SourceConfig = Annotated[
     Union[

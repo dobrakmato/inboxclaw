@@ -622,6 +622,11 @@
           },
           "title": "Entity Ids",
           "type": "array"
+        },
+        "location_threshold_meters": {
+          "default": 0.0,
+          "title": "Location Threshold Meters",
+          "type": "number"
         }
       },
       "required": [

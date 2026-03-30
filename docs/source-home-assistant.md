@@ -38,6 +38,7 @@ sources:
       - "device_tracker.my_phone"
       - "sensor.my_phone_geocoded_location"
       - "sensor.my_phone_next_alarm"
+    location_threshold_meters: 10 # Only emit updates if moved at least 10 meters
 ```
 
 ### 4. (Recommended) Enable precise location
@@ -63,8 +64,8 @@ The source uses Home Assistant's `subscribe_trigger` API with a `state` platform
 
 Updates are automatically classified based on the entity type:
 
-- **Zone updates** (`device_tracker.*`): Triggered when the zone state changes (e.g. `home` → `not_home`). Coordinate-only changes within the same zone are ignored.
-- **Geocoded location** (`sensor.*_geocoded_location`): Triggered when the human-readable address changes.
+- **Zone updates** (`device_tracker.*`): Triggered when the zone state changes (e.g. `home` → `not_home`) or when coordinates change significantly (if `location_threshold_meters` is set). Coordinate-only changes within the same zone are ignored by default.
+- **Geocoded location** (`sensor.*_geocoded_location`): Triggered when the human-readable address changes or when the coordinate location changes significantly (if `location_threshold_meters` is set).
 - **Alarm changes** (`sensor.*_next_alarm`): Triggered when the next scheduled alarm changes.
 - **Generic sensors** (any other `sensor.*`): Triggered when the sensor state changes.
 
@@ -99,11 +100,12 @@ sources:
 
 ### Configuration Reference
 
-| Parameter      | Type     | Default  | Description                                                                          |
-|:---------------|:---------|:---------|:-------------------------------------------------------------------------------------|
-| `url`          | `string` | Required | Home Assistant WebSocket URL (e.g. `wss://ha.example.com/api/websocket`).            |
-| `access_token` | `string` | Env var  | Long-Lived Access Token. Defaults to `HOME_ASSISTANT_TOKEN` environment variable.    |
-| `entity_ids`   | `list`   | Required | List of entity IDs to track (e.g. `device_tracker.my_phone`).                        |
+| Parameter                   | Type     | Default  | Description                                                                          |
+|:----------------------------|:---------|:---------|:-------------------------------------------------------------------------------------|
+| `url`                       | `string` | Required | Home Assistant WebSocket URL (e.g. `wss://ha.example.com/api/websocket`).            |
+| `access_token`              | `string` | Env var  | Long-Lived Access Token. Defaults to `HOME_ASSISTANT_TOKEN` environment variable.    |
+| `entity_ids`                | `list`   | Required | List of entity IDs to track (e.g. `device_tracker.my_phone`).                        |
+| `location_threshold_meters` | `float`  | `0.0`    | Minimum distance in meters to move before emitting a coordinate-only update.        |
 
 ## Event Definitions
 

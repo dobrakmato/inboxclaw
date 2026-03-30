@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 from datetime import datetime, timezone
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -31,6 +32,52 @@ class HomeAssistantSource:
         old_attrs = old.get("attributes", {}) if old else {}
         new_attrs = new.get("attributes", {}) if new else {}
         return old_attrs.get(attr) != new_attrs.get(attr)
+
+    def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculate the Haversine distance between two points in meters."""
+        if lat1 == lat2 and lon1 == lon2:
+            return 0.0
+
+        R = 6371000  # Radius of the earth in meters
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+
+        a = math.sin(dphi / 2)**2 + \
+            math.cos(phi1) * math.cos(phi2) * \
+            math.sin(dlambda / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        return R * c
+
+    def _should_filter_location(self, old_state: dict, new_state: dict) -> bool:
+        """Check if the location update should be filtered based on threshold."""
+        if self.config.location_threshold_meters <= 0:
+            return False
+
+        old_attr = old_state.get("attributes") or {}
+        new_attr = new_state.get("attributes") or {}
+
+        # For geocoded location, coordinates might be in 'location' attribute as [lat, lon]
+        old_loc = old_attr.get("location")
+        new_loc = new_attr.get("location")
+
+        if isinstance(old_loc, list) and len(old_loc) == 2 and isinstance(new_loc, list) and len(new_loc) == 2:
+            dist = self._calculate_distance(old_loc[0], old_loc[1], new_loc[0], new_loc[1])
+            return dist < self.config.location_threshold_meters
+
+        # For device_tracker, coordinates are in 'latitude' and 'longitude' attributes
+        old_lat = old_attr.get("latitude")
+        old_lon = old_attr.get("longitude")
+        new_lat = new_attr.get("latitude")
+        new_lon = new_attr.get("longitude")
+
+        if all(v is not None for v in [old_lat, old_lon, new_lat, new_lon]):
+            dist = self._calculate_distance(old_lat, old_lon, new_lat, new_lon)
+            return dist < self.config.location_threshold_meters
+
+        return False
 
     def _summarize_location_update(self, trigger: dict) -> dict:
         old_state = trigger.get("from_state") or {}
@@ -176,12 +223,15 @@ class HomeAssistantSource:
                 if entity_id.startswith("device_tracker."):
                     update = self._summarize_location_update(trigger)
                     if not update["state_changed"]:
+                        # If zone hasn't changed, we don't emit zone update events
                         continue
                     event_type = "home_assistant.zone_update"
                 elif entity_id.endswith("_geocoded_location"):
                     update = self._summarize_geocoded_location_update(trigger)
-                    # We report any label change for geocoded location
                     if not update["label_changed"]:
+                        continue
+                    if self._should_filter_location(trigger.get("from_state") or {}, trigger.get("to_state") or {}):
+                        logger.debug(f"Filtering geocoded location update for {entity_id} - below threshold")
                         continue
                     event_type = "home_assistant.geocoded_location_update"
                 elif entity_id.endswith("_next_alarm"):
