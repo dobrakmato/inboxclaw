@@ -65,6 +65,7 @@ In very active development — some features may break at any time. A good fit f
 * 🏦 Fio Banka
 * 🧾 Faktury Online
 * 🏠 Home Assistant
+* 📝 Jira
 * 💳 GoCardless Bank Account Data (Nordigen)
 * 🧪 Mock source for testing
 
@@ -118,6 +119,7 @@ Source-specific docs:
 * [Faktury Online](docs/source-faktury-online.md)
 * [Home Assistant](docs/source-home-assistant.md)
 * [Nordigen](docs/source-nordigen.md)
+* [Jira](docs/source-jira.md)
 * [Mock source](docs/source-mock.md)
 
 Sink-specific docs:

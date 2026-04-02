@@ -144,6 +144,16 @@ class HomeAssistantSourceConfig(BaseSourceConfig):
     entity_ids: List[str]
     location_threshold_meters: float = 0.0
 
+class JiraSourceConfig(BaseSourceConfig):
+    type: Literal["jira"] = "jira"
+    url: str
+    email: str = Field(default_factory=lambda: os.environ.get("JIRA_EMAIL", ""))
+    api_token: str = Field(default_factory=lambda: os.environ.get("JIRA_API_TOKEN", ""))
+    jql: str = "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+    poll_interval: Interval = "1m"
+    field_discovery_interval: Interval = "24h"
+    ignored_fields: List[str] = Field(default_factory=lambda: ["updated", "workratio", "lastViewed", "aggregateprogress", "progress"])
+
 SourceConfig = Annotated[
     Union[
         GmailSourceConfig,
@@ -153,7 +163,8 @@ SourceConfig = Annotated[
         FioSourceConfig,
         MockSourceConfig,
         HomeAssistantSourceConfig,
-        NordigenSourceConfig
+        NordigenSourceConfig,
+        JiraSourceConfig
     ],
     Field(discriminator="type")
 ]

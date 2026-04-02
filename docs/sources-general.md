@@ -69,5 +69,6 @@ See the dedicated [Event Coalescing](coalescing.md) page for detailed explanatio
 | :bank: [Fio Banka](source-fio.md)                           | `fio`             | Bank transactions.                         | [fio.cz](https://www.fio.cz)                               |
 | :page_with_curl: [Faktury Online](source-faktury-online.md) | `faktury_online`  | Invoice changes.                           | [faktury-online.com](https://www.faktury-online.com)       |
 | :house: [Home Assistant](source-home-assistant.md)          | `home_assistant`  | Device tracker and sensor updates.         | [home-assistant.io](https://www.home-assistant.io)         |
+| :jira: [Jira](source-jira.md)                              | `jira`            | Assigned tasks updates and changes.        | [atlassian.com](https://www.atlassian.com/software/jira)   |
 | :credit_card: [GoCardless / Nordigen](source-nordigen.md)   | `nordigen`        | Bank transactions (GoCardless).            | [gocardless.com](https://gocardless.com/bank-account-data) |
 | :test_tube: [Mock](source-mock.md)                          | `mock`            | Random test events for pipeline testing.   | -                                                          |

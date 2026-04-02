@@ -10,6 +10,7 @@ from src.sources.mock import MockSource
 from src.sources.home_assistant import HomeAssistantSource
 from src.sources.fio import FioSource
 from src.sources.nordigen import NordigenSource
+from src.sources.jira import JiraSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
@@ -72,6 +73,11 @@ def init_sources(services: AppServices):
             elif s_type == "nordigen":
                 logger.info(f"Initializing Nordigen source: {name} (id={source_id})")
                 source_instance = NordigenSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "jira":
+                logger.info(f"Initializing Jira source: {name} (id={source_id})")
+                source_instance = JiraSource(name, s_config, services, source_id)
                 services.sources[name] = source_instance
                 services.add_task(source_instance.run())
             else:

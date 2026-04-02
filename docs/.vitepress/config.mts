@@ -57,6 +57,7 @@ export default defineConfig({
                     {text: 'Fio Banka', link: '/source-fio'},
                     {text: 'Faktury Online', link: '/source-faktury-online'},
                     {text: 'Home Assistant', link: '/source-home-assistant'},
+                    {text: 'Jira', link: '/source-jira'},
                     {text: 'GoCardless / Nordigen', link: '/source-nordigen'},
                     {text: 'Mock', link: '/source-mock'},
                 ]

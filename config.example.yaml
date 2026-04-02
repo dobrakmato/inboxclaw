@@ -34,6 +34,12 @@ sources:
     calendar_overrides:
       "shared-calendar-id@group.calendar.google.com":
         max_into_future: "7d" # don't report forever repeating events from work calendar
+  jira:
+    url: "https://your-domain.atlassian.net"
+    email: "your-email@example.com"
+    api_token: "${JIRA_API_TOKEN}" # Use env var or literal
+    jql: "assignee = currentUser() AND resolution = Unresolved"
+    poll_interval: "1m"
   # add more sources according to docs
 
 # Publish SSE stream of events.

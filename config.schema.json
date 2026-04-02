@@ -693,6 +693,68 @@
       "title": "HttpPullSinkConfig",
       "type": "object"
     },
+    "JiraSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "jira",
+          "default": "jira",
+          "title": "Type",
+          "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "email": {
+          "title": "Email",
+          "type": "string"
+        },
+        "api_token": {
+          "title": "Api Token",
+          "type": "string"
+        },
+        "jql": {
+          "default": "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC",
+          "title": "Jql",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "field_discovery_interval": {
+          "default": "24h",
+          "title": "Field Discovery Interval",
+          "type": "number"
+        },
+        "ignored_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignored Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "JiraSourceConfig",
+      "type": "object"
+    },
     "MockSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1009,6 +1071,9 @@
           },
           {
             "$ref": "#/$defs/NordigenSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/JiraSourceConfig"
           }
         ]
       },
