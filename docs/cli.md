@@ -27,6 +27,22 @@ inboxclaw status [OPTIONS]
 inboxclaw status
 ```
 
+### `stats`
+Computes and displays statistics about events in the system, including event counts per source and per type for the last 1, 7, and 30 days, as well as the average event size by event type.
+
+**Usage:**
+```bash
+inboxclaw stats [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+
+**Example:**
+```bash
+inboxclaw stats
+```
+
 ### `events`
 Displays the latest published events from the database.
 
