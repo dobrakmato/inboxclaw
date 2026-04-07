@@ -1,0 +1,17 @@
+click
+fastapi
+google-api-python-client
+google-auth-oauthlib
+httpx
+pydantic
+pytimeparse>=1.1.8
+pyyaml
+python-dotenv>=1.2.2
+ruamel.yaml>=0.18.15
+sqlalchemy
+sse-starlette
+uvicorn
+websockets
+
+[:sys_platform == "win32"]
+win11toast>=0.35

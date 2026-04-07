@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: inboxclaw
+Version: 0.1.0
+Summary: Unified inbox for your openclaw instance
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: click
+Requires-Dist: fastapi
+Requires-Dist: google-api-python-client
+Requires-Dist: google-auth-oauthlib
+Requires-Dist: httpx
+Requires-Dist: pydantic
+Requires-Dist: pytimeparse>=1.1.8
+Requires-Dist: pyyaml
+Requires-Dist: python-dotenv>=1.2.2
+Requires-Dist: ruamel.yaml>=0.18.15
+Requires-Dist: sqlalchemy
+Requires-Dist: sse-starlette
+Requires-Dist: uvicorn
+Requires-Dist: websockets
+Requires-Dist: win11toast>=0.35; sys_platform == "win32"
+Dynamic: license-file
