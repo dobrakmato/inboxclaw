@@ -288,6 +288,35 @@ async def test_webhook_sink_filtering(services, db_session_maker, sink_id):
              # Events already delivered: evt_match (1), exact.match (3), and now evt_no_match (2)
              assert len(delivered_event_ids) == 3
 
+@pytest.mark.asyncio
+async def test_webhook_sink_negative_filtering(services, db_session_maker, sink_id):
+    # Setup events
+    with db_session_maker() as session:
+        source = Source(name="test_source_neg", type="test")
+        session.add(source)
+        session.commit()
+        
+        session.add(Event(event_id="evt_gmail_1", source_id=source.id, event_type="gmail.new", entity_id="1"))
+        session.add(Event(event_id="evt_gmail_2", source_id=source.id, event_type="gmail.delete", entity_id="2"))
+        session.add(Event(event_id="evt_other", source_id=source.id, event_type="other", entity_id="3"))
+        session.commit()
+
+    # match gmail.*, exclude gmail.delete
+    sink_config = {
+        "url": "http://example.com/webhook",
+        "match": ["gmail.*", "!gmail.delete"]
+    }
+    sink = WebhookSink("test_sink_neg", sink_config, services, sink_id)
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(200)
+        await sink.process_pending_events()
+        
+        # Should only be called once for "gmail.new"
+        assert mock_post.call_count == 1
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["event_id"] == "evt_gmail_1"
+
 def test_webhook_sink_config_error(services, sink_id):
     with pytest.raises(ValueError, match="requires a 'url' configuration"):
         WebhookSink("test", {}, services, sink_id)

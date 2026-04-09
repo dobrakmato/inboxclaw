@@ -14,16 +14,42 @@ class EventMatcher:
 
     def __init__(self, patterns: Union[str, List[str]]):
         if isinstance(patterns, str):
-            self.patterns = [patterns]
+            all_patterns = [patterns]
         elif patterns is None:
-            self.patterns = ["*"]
+            all_patterns = ["*"]
         else:
-            self.patterns = list(patterns)
+            all_patterns = list(patterns)
+
+        self.patterns = []
+        self.negative_patterns = []
+
+        for p in all_patterns:
+            if p.startswith("!"):
+                self.negative_patterns.append(p[1:])
+            else:
+                self.patterns.append(p)
+
+        # If no positive patterns were provided, default to "*" unless there are negative ones
+        if not self.patterns and not self.negative_patterns:
+            if all_patterns == []: # Explicitly provided empty list
+                self.patterns = []
+            else:
+                self.patterns = ["*"]
+        elif not self.patterns and self.negative_patterns:
+            # If only negative patterns, we assume it's "match everything EXCEPT these"
+            self.patterns = ["*"]
 
     def matches(self, event_type: str) -> bool:
         """Checks if a single event_type matches any of the patterns (in-memory)."""
-        patterns_to_check = self.patterns
-        for pattern in patterns_to_check:
+        # Negative matches have priority
+        if self._matches_pattern_list(event_type, self.negative_patterns):
+            return False
+
+        return self._matches_pattern_list(event_type, self.patterns)
+
+    def _matches_pattern_list(self, event_type: str, patterns: List[str]) -> bool:
+        """Checks if a single event_type matches any of the patterns in the list."""
+        for pattern in patterns:
             if pattern == "*":
                 return True
             if pattern.endswith(".*"):
@@ -38,18 +64,24 @@ class EventMatcher:
         """
         Builds an SQLAlchemy OR clause for filtering events by type.
         If a selector is provided, it must match BOTH the selector AND the matcher's patterns.
+        Negative patterns are also incorporated and have priority.
         """
         # 1. Build clause for internal patterns
         matcher_clause = self._patterns_to_clause(self.patterns)
 
-        # 2. If no selector, just return matcher_clause
+        # 2. Build clause for negative patterns
+        if self.negative_patterns:
+            neg_clause = not_(self._patterns_to_clause(self.negative_patterns))
+            matcher_clause = and_(matcher_clause, neg_clause)
+
+        # 3. If no selector, just return matcher_clause
         if not selector:
             return matcher_clause
 
-        # 3. Build clause for selector
+        # 4. Build clause for selector
         selector_clause = self._patterns_to_clause([selector])
 
-        # 4. Combine: (match selector) AND (match internal patterns)
+        # 5. Combine: (match selector) AND (match internal patterns)
         if matcher_clause is true():
             return selector_clause
         if matcher_clause is false():

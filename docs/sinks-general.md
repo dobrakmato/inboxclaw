@@ -29,13 +29,39 @@ sink:
 
 ## Event Matching
 
-Every sink has a `match` parameter that controls which event types it receives. The matching supports three patterns:
+Every sink has a `match` parameter that controls which event types it receives. Matching supports three patterns:
 
 - `"*"` — matches all events (default).
 - `"prefix.*"` — matches any event type starting with `prefix.` (e.g. `gmail.*` matches `gmail.message_received`).
 - `"exact.type"` — matches only that exact event type.
 
-You can provide a single pattern or a list:
+### Negative Matching (Exclusions)
+
+You can exclude specific event types by prefixing a pattern with `!`. **Exclusions always have priority over inclusions.** This is useful for subscribing to a broad range of events while skipping specific ones.
+
+For example, to receive all Google Drive events *except* deletions:
+
+```yaml
+sink:
+  drive_sync:
+    type: webhook
+    url: "https://example.com/drive"
+    match: 
+      - "google.drive.*"
+      - "!google.drive.file_deleted"
+```
+
+If you only provide negative patterns, Inboxclaw assumes you want to match everything else:
+
+```yaml
+sink:
+  all_but_noisy:
+    type: webhook
+    url: "https://example.com/events"
+    match: "!noisy.event.type" # Matches everything EXCEPT noisy.event.type
+```
+
+The `match` parameter can be a single string or a list:
 
 ```yaml
 sink:
@@ -45,6 +71,7 @@ sink:
     match:
       - "gmail.message_received"
       - "fio.transaction.*"
+      - "!fio.transaction.low_balance"
 ```
 
 ## Event Envelope
