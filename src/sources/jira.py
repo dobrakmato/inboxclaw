@@ -164,10 +164,10 @@ class JiraSource:
             data={
                 "issue_key": key,
                 "summary": full_issue["fields"].get("summary"),
-                "status": full_issue["fields"].get("status", {}).get("name"),
-                "priority": full_issue["fields"].get("priority", {}).get("name"),
-                "issue_type": full_issue["fields"].get("issuetype", {}).get("name"),
-                "project": full_issue["fields"].get("project", {}).get("name"),
+                "status": (full_issue["fields"].get("status") or {}).get("name"),
+                "priority": (full_issue["fields"].get("priority") or {}).get("name"),
+                "issue_type": (full_issue["fields"].get("issuetype") or {}).get("name"),
+                "project": (full_issue["fields"].get("project") or {}).get("name"),
                 "full_issue": full_issue
             },
             occurred_at=self._parse_jira_date(full_issue["fields"]["updated"])
@@ -224,11 +224,11 @@ class JiraSource:
         if cached_issue and "fields" in cached_issue:
             f = cached_issue["fields"]
             data.update({
-                "status": f.get("status", {}).get("name"),
-                "priority": f.get("priority", {}).get("name"),
-                "assignee": f.get("assignee", {}).get("displayName"),
-                "issuetype": f.get("issuetype", {}).get("name"),
-                "project": f.get("project", {}).get("name"),
+                "status": (f.get("status") or {}).get("name"),
+                "priority": (f.get("priority") or {}).get("name"),
+                "assignee": (f.get("assignee") or {}).get("displayName"),
+                "issuetype": (f.get("issuetype") or {}).get("name"),
+                "project": (f.get("project") or {}).get("name"),
             })
 
         self.services.writer.write_events(self.source_id, [NewEvent(
@@ -334,11 +334,13 @@ class JiraSource:
         # or ISO format. httpx might have issues with +0000 but modern python handles it well if it's +HHMM
         try:
             # Replace +HHMM with +HH:MM for ISO parser if needed
-            if "+" in date_str and ":" not in date_str.split("+")[-1]:
-                parts = date_str.split("+")
-                tz_part = parts[-1]
-                if len(tz_part) == 4:
-                    date_str = "+".join(parts[:-1]) + "+" + tz_part[:2] + ":" + tz_part[2:]
+            # Handle +HHMM or -HHMM (no colon) timezone offsets
+            for sep in ("+", "-"):
+                if sep in date_str and ":" not in date_str.rsplit(sep, 1)[-1]:
+                    prefix, tz_part = date_str.rsplit(sep, 1)
+                    if len(tz_part) == 4 and tz_part.isdigit():
+                        date_str = prefix + sep + tz_part[:2] + ":" + tz_part[2:]
+                        break
             return datetime.fromisoformat(date_str)
         except Exception as e:
             logger.debug(f"Failed to parse Jira date '{date_str}': {e}")

@@ -456,3 +456,62 @@ async def test_fetch_and_publish_search_error(source, mock_services, mock_kv, mo
     with patch.object(source.client, 'post', side_effect=Exception("API Down")):
         with pytest.raises(Exception, match="API Down"):
             await source.fetch_and_publish()
+
+def test_parse_jira_date_negative_offset_without_colon(source):
+    """Jira can return dates with negative offsets like -0530 (no colon)."""
+    dt = source._parse_jira_date("2024-03-22T14:55:00.000-0530")
+    assert dt.year == 2024
+    assert dt.hour == 14
+    assert dt.minute == 55
+    assert dt.tzinfo is not None
+
+@pytest.mark.asyncio
+async def test_handle_removed_issue_with_none_fields(source, mock_kv, mock_writer):
+    """When Jira fields like priority/assignee are None, _handle_removed_issue should not crash."""
+    cached_issue = {
+        "key": "PROJ-1",
+        "fields": {
+            "summary": "Test",
+            "status": None,
+            "priority": None,
+            "assignee": None,
+            "issuetype": None,
+            "project": None,
+            "updated": "2024-01-01T00:00:00.000+0000"
+        }
+    }
+    mock_kv.get.return_value = cached_issue
+    
+    await source._handle_removed_issue("PROJ-1")
+    
+    mock_writer.write_events.assert_called_once()
+    events = mock_writer.write_events.call_args[0][1]
+    assert events[0].event_type == "jira.task_unassigned"
+    assert events[0].data["status"] is None
+    assert events[0].data["priority"] is None
+
+@pytest.mark.asyncio
+async def test_handle_new_issue_with_none_fields(source, mock_kv, mock_writer):
+    """When Jira fields like priority/status are None, _handle_new_issue should not crash."""
+    issue = {
+        "key": "PROJ-1",
+        "fields": {
+            "summary": "Test",
+            "status": None,
+            "priority": None,
+            "issuetype": None,
+            "project": None,
+            "updated": "2024-01-01T00:00:00.000+0000"
+        }
+    }
+    mock_detail = MagicMock()
+    mock_detail.json.return_value = issue
+    mock_detail.raise_for_status = MagicMock()
+    
+    with patch.object(source.client, 'get', return_value=mock_detail):
+        await source._handle_new_issue(issue)
+    
+    mock_writer.write_events.assert_called_once()
+    events = mock_writer.write_events.call_args[0][1]
+    assert events[0].data["status"] is None
+    assert events[0].data["priority"] is None
