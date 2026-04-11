@@ -312,3 +312,69 @@ async def test_diff_produced_after_baseline_only_bootstrap(services):
     updated_events = [e for e in events2 if e.event_type == GoogleDriveEventType.FILE_UPDATED]
     assert len(updated_events) == 1
     assert "contentDiff" in updated_events[0].data
+
+
+@pytest.mark.asyncio
+async def test_event_unique_uses_version_when_change_time_missing(services):
+    """When the change has no 'time' field, event_unique should fall back to
+    the file version. This requires DriveFileSnapshot to carry a version field."""
+    from src.utils.google_drive_sync import DriveFileSnapshot
+
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    source._set_cached_snapshot = MagicMock()
+
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Notes",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-01T00:00:00Z",
+        "modifiedTime": "2026-04-01T00:00:00Z",
+        "version": "42",
+        "ownedByMe": True,
+    })
+
+    events = source._process_change(
+        service=MagicMock(),
+        change={"fileId": "f1", "removed": False},  # no "time" key
+        now=datetime.now(timezone.utc),
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_CREATED
+    # The unique part should contain the version "42"
+    assert "42" in events[0].event_id
+
+
+@pytest.mark.asyncio
+async def test_occurred_at_uses_change_time_not_now(services):
+    """Events should carry the change timestamp from the API, not the wall-clock
+    time when the poll happened."""
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    source._set_cached_snapshot = MagicMock()
+
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Notes",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-01T00:00:00Z",
+        "modifiedTime": "2026-04-01T00:00:00Z",
+        "version": "1",
+        "ownedByMe": True,
+    })
+
+    now = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    events = source._process_change(
+        service=MagicMock(),
+        change={"fileId": "f1", "removed": False, "time": "2026-04-01T10:00:00Z"},
+        now=now,
+    )
+
+    assert len(events) == 1
+    # occurred_at should be the change time, not "now"
+    assert events[0].occurred_at == datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)

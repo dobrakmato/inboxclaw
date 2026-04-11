@@ -36,6 +36,7 @@ class DriveFileSnapshot:
     last_modifying_user: Optional[dict[str, str]] = None
     web_view_link: Optional[str] = None
     size: Optional[str] = None
+    version: Optional[str] = None
     content_hash: Optional[str] = None
     content_snapshot: Optional[str] = None
 
@@ -60,6 +61,7 @@ class DriveFileSnapshot:
             last_modifying_user=file_resource.get("lastModifyingUser"),
             web_view_link=file_resource.get("webViewLink"),
             size=file_resource.get("size"),
+            version=file_resource.get("version"),
         )
 
     @classmethod
@@ -82,6 +84,7 @@ class DriveFileSnapshot:
             last_modifying_user=data.get("last_modifying_user"),
             web_view_link=data.get("web_view_link"),
             size=data.get("size"),
+            version=data.get("version"),
             content_hash=data.get("content_hash"),
             content_snapshot=data.get("content_snapshot"),
         )
@@ -105,6 +108,7 @@ class DriveFileSnapshot:
             "last_modifying_user": self.last_modifying_user,
             "web_view_link": self.web_view_link,
             "size": self.size,
+            "version": self.version,
             "content_hash": self.content_hash,
             "content_snapshot": self.content_snapshot,
         }

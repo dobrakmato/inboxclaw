@@ -261,7 +261,7 @@ class GoogleDriveSource:
                 self._build_event(
                     event_type=event_type,
                     file_id=file_id,
-                    occurred_at=now,  # Use current time for emissions
+                    occurred_at=occurred_at,
                     change_time=change_time,
                     event_data=event_data,
                     event_unique=unique,
