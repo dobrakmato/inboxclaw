@@ -239,6 +239,10 @@ class GoogleDriveSource:
                     # Preserve old content if fetch failed
                     current.content_snapshot = previous.content_snapshot
                     current.content_hash = previous.content_hash
+            elif is_text and previous:
+                # Non-content change (e.g. move, permission change): preserve existing content
+                current.content_snapshot = previous.content_snapshot
+                current.content_hash = previous.content_hash
 
         events: list[NewEvent] = []
         for event_type in self.classifier.classify(

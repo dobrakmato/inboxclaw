@@ -183,3 +183,132 @@ async def test_bootstrap_repository_populates_kv(services):
     snapshot2 = call_args_list[1][0][2]
     assert snapshot2["file_id"] == "f2"
     assert snapshot2["name"] == "File 2"
+
+
+@pytest.mark.asyncio
+async def test_content_snapshot_preserved_on_non_content_change(services):
+    """After a text file has content cached, a non-content change (e.g. move)
+    must NOT lose the stored content_snapshot so that future diffs still work."""
+    from src.utils.google_drive_sync import DriveFileSnapshot, DriveTextDiffCalculator
+
+    config = make_config()
+    source = GoogleDriveSource("drive", config, services, source_id=1)
+
+    # Simulate a previously cached snapshot WITH content (as if a prior update stored it)
+    prev = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc",
+        mime_type="application/vnd.google-apps.document",
+        parents=["folder-a"],
+        trashed=False,
+        created_time="2026-01-01T00:00:00Z",
+        modified_time="2026-01-01T00:00:00Z",
+        owned_by_me=True,
+        content_snapshot="Hello world",
+        content_hash=DriveTextDiffCalculator.get_hash("Hello world"),
+    )
+    source._get_cached_snapshot = MagicMock(return_value=prev)
+    set_snapshot_mock = MagicMock()
+    source._set_cached_snapshot = set_snapshot_mock
+
+    # The file was moved (parents changed) but modifiedTime is the same → no update signal
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc",
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": ["folder-b"],
+        "trashed": False,
+        "createdTime": "2026-01-01T00:00:00Z",
+        "modifiedTime": "2026-01-01T00:00:00Z",
+        "ownedByMe": True,
+    })
+
+    events = source._process_change(
+        service=MagicMock(),
+        change={"fileId": "f1", "removed": False, "time": "2026-01-02T00:00:00Z"},
+        now=datetime.now(timezone.utc),
+    )
+
+    # Should emit a move event
+    assert any(e.event_type == GoogleDriveEventType.FILE_MOVED for e in events)
+
+    # The cached snapshot must still have content_snapshot preserved
+    cached = set_snapshot_mock.call_args[0][1]  # second positional arg is the snapshot
+    assert cached.content_snapshot == "Hello world"
+    assert cached.content_hash == DriveTextDiffCalculator.get_hash("Hello world")
+
+
+@pytest.mark.asyncio
+async def test_diff_produced_after_baseline_only_bootstrap(services):
+    """After baseline_only bootstrap (no content), the first content update stores
+    content, and the second content update produces a diff."""
+    from src.utils.google_drive_sync import DriveFileSnapshot, DriveTextDiffCalculator
+
+    config = make_config(bootstrap_mode="baseline_only")
+    source = GoogleDriveSource("drive", config, services, source_id=1)
+
+    # --- First update: previous from bootstrap has no content ---
+    prev_bootstrap = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc",
+        mime_type="application/vnd.google-apps.document",
+        parents=["folder-a"],
+        trashed=False,
+        created_time="2026-01-01T00:00:00Z",
+        modified_time="2026-01-01T00:00:00Z",
+        owned_by_me=True,
+        content_snapshot=None,
+        content_hash=None,
+    )
+    source._get_cached_snapshot = MagicMock(return_value=prev_bootstrap)
+    set_mock = MagicMock()
+    source._set_cached_snapshot = set_mock
+
+    mock_service = MagicMock()
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc",
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": ["folder-a"],
+        "trashed": False,
+        "createdTime": "2026-01-01T00:00:00Z",
+        "modifiedTime": "2026-01-02T00:00:00Z",
+        "ownedByMe": True,
+    })
+    source._fetch_text_content = MagicMock(return_value="Version 1 content")
+
+    events1 = source._process_change(
+        service=mock_service,
+        change={"fileId": "f1", "removed": False, "time": "2026-01-02T00:00:00Z"},
+        now=datetime.now(timezone.utc),
+    )
+
+    assert any(e.event_type == GoogleDriveEventType.FILE_UPDATED for e in events1)
+    cached_after_first = set_mock.call_args[0][1]
+    assert cached_after_first.content_snapshot == "Version 1 content"
+
+    # --- Second update: previous now has content from first update ---
+    source._get_cached_snapshot = MagicMock(return_value=cached_after_first)
+    set_mock.reset_mock()
+
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc",
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": ["folder-a"],
+        "trashed": False,
+        "createdTime": "2026-01-01T00:00:00Z",
+        "modifiedTime": "2026-01-03T00:00:00Z",
+        "ownedByMe": True,
+    })
+    source._fetch_text_content = MagicMock(return_value="Version 2 content")
+
+    events2 = source._process_change(
+        service=mock_service,
+        change={"fileId": "f1", "removed": False, "time": "2026-01-03T00:00:00Z"},
+        now=datetime.now(timezone.utc),
+    )
+
+    updated_events = [e for e in events2 if e.event_type == GoogleDriveEventType.FILE_UPDATED]
+    assert len(updated_events) == 1
+    assert "contentDiff" in updated_events[0].data
