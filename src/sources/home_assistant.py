@@ -92,6 +92,7 @@ class HomeAssistantSource:
         acc_changed = old_attr.get("gps_accuracy") != new_attr.get("gps_accuracy")
 
         return {
+            "kind": "zone_update",
             "entity_id": trigger.get("entity_id"),
             "state_changed": state_changed,
             "coords_changed": lat_changed or lon_changed,
@@ -168,6 +169,7 @@ class HomeAssistantSource:
                 await asyncio.sleep(30)
 
     async def _listen(self):
+        self.message_id = 1
         async with websockets.connect(self.ws_url) as ws:
             # 1) Receive auth_required
             msg = json.loads(await ws.recv())

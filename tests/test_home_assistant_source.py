@@ -40,6 +40,7 @@ def test_summarize_location_update(ha_config, mock_services):
     }
     
     summary = source._summarize_location_update(trigger)
+    assert summary["kind"] == "zone_update"
     assert summary["coords_changed"] is True
     assert summary["state_changed"] is False
     assert summary["gps_accuracy_changed"] is True
@@ -314,3 +315,57 @@ async def test_listen_and_publish_various_events(mock_services):
     args3 = mock_services.writer.write_events.call_args_list[2][0]
     assert args3[1][0].event_type == "home_assistant.generic_sensor_update"
     assert args3[1][0].data["new_state"] == "99"
+
+
+@pytest.mark.asyncio
+async def test_message_id_resets_on_reconnect(mock_services):
+    """message_id must reset to 1 for each new WebSocket connection."""
+    config = HomeAssistantSourceConfig(
+        type="home_assistant",
+        url="ws://localhost:8123/api/websocket",
+        access_token="fake_token",
+        entity_ids=["device_tracker.phone_1"]
+    )
+    source = HomeAssistantSource("ha_test", config, mock_services, 1)
+
+    from websockets.exceptions import ConnectionClosed
+
+    # First connection — subscribe uses id=1, then connection drops
+    mock_ws1 = AsyncMock()
+    mock_ws1.recv.side_effect = [
+        json.dumps({"type": "auth_required"}),
+        json.dumps({"type": "auth_ok"}),
+        json.dumps({"id": 1, "type": "result", "success": True}),
+        ConnectionClosed(None, None),
+    ]
+
+    # Second connection — subscribe should again use id=1
+    mock_ws2 = AsyncMock()
+    mock_ws2.recv.side_effect = [
+        json.dumps({"type": "auth_required"}),
+        json.dumps({"type": "auth_ok"}),
+        json.dumps({"id": 1, "type": "result", "success": True}),
+        ConnectionClosed(None, None),
+    ]
+
+    ctx1 = AsyncMock(__aenter__=AsyncMock(return_value=mock_ws1))
+    ctx2 = AsyncMock(__aenter__=AsyncMock(return_value=mock_ws2))
+
+    with patch("websockets.connect", side_effect=[ctx1, ctx2]):
+        # First listen
+        try:
+            await source._listen()
+        except ConnectionClosed:
+            pass
+
+        # Second listen (simulates reconnect)
+        try:
+            await source._listen()
+        except ConnectionClosed:
+            pass
+
+    # Verify both connections sent subscribe with id starting at 1
+    sent1 = json.loads(mock_ws1.send.call_args_list[-1][0][0])
+    sent2 = json.loads(mock_ws2.send.call_args_list[-1][0][0])
+    assert sent1["id"] == 1, f"First connection subscribe id should be 1, got {sent1['id']}"
+    assert sent2["id"] == 1, f"Second connection subscribe id should be 1, got {sent2['id']}"
