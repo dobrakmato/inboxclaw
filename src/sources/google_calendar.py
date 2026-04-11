@@ -678,7 +678,7 @@ class GoogleCalendarSource:
                             calendar_id
                         )
                         if self._rebuild_sync_baseline(service, calendar_id):
-                            self.services.kv.set(self.source_id, config_key, str(float(max_into_future)))
+                            self.services.kv.set(self.source_id, config_key, float(max_into_future))
                         return
                     raise
 

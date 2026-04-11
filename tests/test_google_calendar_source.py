@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timezone, timedelta
+from googleapiclient.errors import HttpError
 from src.sources.google_calendar import GoogleCalendarSource, CalendarEventType
 from src.config import GoogleCalendarSourceConfig
 
@@ -206,7 +207,7 @@ async def test_google_calendar_collapse_recurring(mock_services, config):
             return "sync_v1"
         if "config_max_into_future" in key:
             # Match the default from config (365d = 31536000.0)
-            return str(31536000.0)
+            return 31536000.0
         return None
     
     mock_services.kv.get.side_effect = kv_get_mock
@@ -254,7 +255,7 @@ async def test_google_calendar_no_collapse(mock_services, config):
         if "sync_token" in key:
             return "sync_v1"
         if "config_max_into_future" in key:
-            return str(31536000.0)
+            return 31536000.0
         return None
     
     mock_services.kv.get.side_effect = kv_get_mock
@@ -266,6 +267,58 @@ async def test_google_calendar_no_collapse(mock_services, config):
     args, _ = mock_services.writer.write_events.call_args
     emitted = args[1]
     assert len(emitted) == 2
+
+@pytest.mark.asyncio
+async def test_google_calendar_410_recovery_stores_config_as_float(mock_services, config):
+    """
+    After a 410 (sync token expired) recovery, the config_max_into_future
+    must be stored as a float, not a string. Storing it as a string would
+    cause config_changed to be True on the next poll, triggering an
+    unnecessary baseline rebuild every cycle.
+    """
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    # Mock _fetch_page: first call raises 410, rebuild succeeds
+    mock_resp = MagicMock()
+    mock_resp.status = 410
+    http_error = HttpError(resp=mock_resp, content=b"sync token expired")
+
+    call_count = {"n": 0}
+    def fetch_page_side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise http_error
+        # Rebuild baseline pages
+        return {
+            "items": [],
+            "nextSyncToken": "new_sync_token"
+        }
+
+    source._fetch_page = MagicMock(side_effect=fetch_page_side_effect)
+
+    # KV: has a sync token but no config stored yet
+    def kv_get_mock(sid, key):
+        if "sync_token" in key:
+            return "old_sync_token"
+        if "config_max_into_future" in key:
+            return 31536000.0
+        return None
+
+    mock_services.kv.get.side_effect = kv_get_mock
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    # Verify that config was stored as float, not string
+    set_calls = mock_services.kv.set.call_args_list
+    config_set_calls = [c for c in set_calls if "config_max_into_future" in str(c)]
+    assert len(config_set_calls) > 0, "config_max_into_future should have been saved"
+    # The value argument (3rd positional) must be a float, not a string
+    for call in config_set_calls:
+        stored_value = call[0][2]  # positional args: (source_id, key, value)
+        assert isinstance(stored_value, float), (
+            f"config_max_into_future should be stored as float, got {type(stored_value).__name__}: {stored_value!r}"
+        )
+
 
 def test_google_calendar_past_event_age_filter(mock_services, config):
     """
