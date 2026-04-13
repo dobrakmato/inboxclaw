@@ -26,8 +26,9 @@ class CoalescenceBackgroundService:
         now = datetime.now(timezone.utc)
         
         with self.services.db_session_maker() as session:
-            # Query pending_events where flush_at <= now()
-            stmt = select(PendingEvent).where(PendingEvent.flush_at <= now)
+            # Query pending_events where flush_at <= now() with row-level locking
+            # to prevent double promotion if two flush cycles overlap
+            stmt = select(PendingEvent).where(PendingEvent.flush_at <= now).with_for_update()
             expired_events = session.scalars(stmt).all()
             
             if not expired_events:

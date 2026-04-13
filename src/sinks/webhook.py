@@ -15,6 +15,8 @@ from src.pipeline.matcher import EventMatcher
 from src.config import WebhookSinkConfig
 from src.utils.template import transform_template, resolve_path
 
+from typing import List, Tuple
+
 logger = logging.getLogger(__name__)
 
 
@@ -93,21 +95,21 @@ class WebhookSink:
                 self.services.notifier.unsubscribe(notification_event)
 
     async def process_pending_events(self) -> None:
-        events = self._load_pending_events()
-        if not events:
+        pending = self._load_pending_events()
+        if not pending:
             return
 
         logger.info(
             "Webhook sink '%s' found %d events to deliver",
             self.name,
-            len(events),
+            len(pending),
         )
 
         async with httpx.AsyncClient() as client:
-            for event in events:
-                await self._deliver_one_event(client, event)
+            for event_db_id, event_dto in pending:
+                await self._deliver_one_event(client, event_db_id, event_dto)
 
-    def _load_pending_events(self) -> list[Event]:
+    def _load_pending_events(self) -> List[Tuple[int, EventWithMeta]]:
         with self.services.db_session_maker() as session:
             stmt = (
                 select(Event)
@@ -126,7 +128,8 @@ class WebhookSink:
                 ))
                 .order_by(Event.created_at.asc())
             )
-            return list(session.scalars(stmt).all())
+            events = session.scalars(stmt).all()
+            return [(e.id, EventWithMeta.from_event(e)) for e in events]
 
     def _not_delivered_clause(self):
         return or_(
@@ -148,22 +151,22 @@ class WebhookSink:
         )
 
 
-    async def _deliver_one_event(self, client: httpx.AsyncClient, event: Event) -> None:
-        payload = self._build_payload(event)
-        delivered = await self._post_payload(client, event, payload)
-        self._record_delivery_attempt(event.id, delivered)
+    async def _deliver_one_event(self, client: httpx.AsyncClient, event_db_id: int, event_dto: EventWithMeta) -> None:
+        payload = self._build_payload(event_dto)
+        delivered = await self._post_payload(client, event_dto, payload)
+        self._record_delivery_attempt(event_db_id, delivered)
 
     async def _post_payload(
         self,
         client: httpx.AsyncClient,
-        event: Event,
+        event_dto: EventWithMeta,
         payload: dict[str, Any],
     ) -> bool:
         try:
             logger.debug(
                 "Webhook sink '%s' delivering event %s to %s",
                 self.name,
-                event.event_id,
+                event_dto.event_id,
                 self.url,
             )
             response = await client.post(
@@ -176,7 +179,7 @@ class WebhookSink:
             logger.exception(
                 "Webhook sink '%s' error delivering event %s",
                 self.name,
-                event.event_id,
+                event_dto.event_id,
             )
             return False
 
@@ -184,14 +187,14 @@ class WebhookSink:
             logger.info(
                 "Webhook sink '%s' delivered event %s successfully",
                 self.name,
-                event.event_id,
+                event_dto.event_id,
             )
             return True
 
         logger.warning(
             "Webhook sink '%s' failed to deliver event %s. Status=%s Response=%s Payload=%s",
             self.name,
-            event.event_id,
+            event_dto.event_id,
             response.status_code,
             response.text,
             payload,
@@ -220,8 +223,8 @@ class WebhookSink:
 
             session.commit()
 
-    def _build_payload(self, event: Event) -> dict[str, Any]:
-        default_payload = EventWithMeta.from_event(event).to_dict()
+    def _build_payload(self, event_dto: EventWithMeta) -> dict[str, Any]:
+        default_payload = event_dto.to_dict()
         if not self.config.payload:
             return default_payload
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Tuple, Union, Optional
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import joinedload
@@ -37,8 +37,13 @@ class CommandSink:
         self._processing_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
 
-    def match(self, event: Event) -> bool:
-        return self.matcher.matches(event.event_type)
+    def _processing_ids_add(self, eid: int) -> bool:
+        """Atomically check and add an event ID to the processing set.
+        Returns True if the ID was not already present and was added."""
+        if eid in self._processing_ids:
+            return False
+        self._processing_ids.add(eid)
+        return True
 
     def start(self):
         # Start background processor
@@ -110,8 +115,7 @@ class CommandSink:
             event_ids = session.scalars(stmt).all()
             
             for eid in event_ids:
-                if eid not in self._processing_ids:
-                    self._processing_ids.add(eid)
+                if self._processing_ids_add(eid):
                     await self.queue.put(eid)
 
     async def _processor(self):
@@ -168,22 +172,18 @@ class CommandSink:
                     self.queue.task_done()
 
     async def _process_one_id(self, event_id: int):
-        event = self._load_event(event_id)
-        if not event:
+        event_dto = self._load_event(event_id)
+        if not event_dto:
             return
 
-        if not self.match(event):
-            # Record that we matched it but decided not to process? 
-            # Actually if it doesn't match the sink, it shouldn't even be here.
-            # But matcher can change, or we might have over-queued.
-            # Let's record it as processed so we don't pick it up again.
-            self._record_result(event.id, processed=True, return_code=0)
+        if not self.matcher.matches(event_dto.event_type):
+            self._record_result(event_id, processed=True, return_code=0)
             return
 
         # Interpolate variables
         # Note: we DON'T shell quote if command is a list, because exec handles it
         shell_quote = isinstance(self.config.command, str)
-        context = {"root": EventWithMeta.from_event(event).to_dict()}
+        context = {"root": event_dto.to_dict()}
         cmd_transformed = transform_template(self.config.command, context, shell_quote=shell_quote)
         
         logger.debug("Command sink '%s' executing: %s", self.name, cmd_transformed)
@@ -191,43 +191,46 @@ class CommandSink:
         res = await self._run_command(cmd_transformed)
         success = res["return_code"] == 0
         
-        self._record_result(event.id, processed=success, return_code=res["return_code"])
+        self._record_result(event_id, processed=success, return_code=res["return_code"])
         self._update_breaker(success)
 
     async def _process_batch_ids(self, event_ids: List[int]):
-        events = []
+        loaded: List[Tuple[int, EventWithMeta]] = []
         for eid in event_ids:
-            e = self._load_event(eid)
-            if e:
-                if not self.match(e):
-                    self._record_result(e.id, processed=True, return_code=0)
+            dto = self._load_event(eid)
+            if dto:
+                if not self.matcher.matches(dto.event_type):
+                    self._record_result(eid, processed=True, return_code=0)
                     continue
-                events.append(e)
+                loaded.append((eid, dto))
         
-        if not events:
+        if not loaded:
             return
 
         # Interpolate variables
         # Note: we DON'T shell quote if command is a list, because exec handles it
         template = self.config.batch_command or self.config.command
         shell_quote = isinstance(template, str)
-        event_dicts = [EventWithMeta.from_event(e).to_dict() for e in events]
+        event_dicts = [dto.to_dict() for _, dto in loaded]
         context = {"root": event_dicts}
         cmd_transformed = transform_template(template, context, shell_quote=shell_quote)
         
-        logger.info("Command sink '%s' executing batch (%d events): %s", self.name, len(events), cmd_transformed)
+        logger.info("Command sink '%s' executing batch (%d events): %s", self.name, len(loaded), cmd_transformed)
         
         res = await self._run_command(cmd_transformed)
         success = res["return_code"] == 0
         
-        for e in events:
-            self._record_result(e.id, processed=success, return_code=res["return_code"])
+        for eid, _ in loaded:
+            self._record_result(eid, processed=success, return_code=res["return_code"])
         
         self._update_breaker(success)
 
-    def _load_event(self, event_id: int) -> Optional[Event]:
+    def _load_event(self, event_id: int) -> Optional[EventWithMeta]:
         with self.services.db_session_maker() as session:
-            return session.get(Event, event_id, options=[joinedload(Event.source)])
+            event = session.get(Event, event_id, options=[joinedload(Event.source)])
+            if event is None:
+                return None
+            return EventWithMeta.from_event(event)
 
     async def _run_command(self, cmd: Union[str, List[str]]) -> Dict[str, Any]:
         try:

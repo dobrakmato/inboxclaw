@@ -36,7 +36,12 @@ class AppServices:
         task = asyncio.create_task(coro)
         self.background_tasks.append(task)
         # Clean up finished tasks from the list to avoid memory leaks
-        task.add_done_callback(lambda t: self.background_tasks.remove(t) if t in self.background_tasks else None)
+        def _remove_task(t: asyncio.Task) -> None:
+            try:
+                self.background_tasks.remove(t)
+            except ValueError:
+                pass
+        task.add_done_callback(_remove_task)
         return task
 
     async def stop_tasks(self):
