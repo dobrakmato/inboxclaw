@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, List, Union
 
 class EventWithMeta(BaseModel):
     """
@@ -64,3 +64,69 @@ class NewEvent(BaseModel):
     entity_id: Optional[str] = None
     occurred_at: Optional[datetime] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+# --- Read-only API response schemas ---
+
+class EventResponse(BaseModel):
+    """Response schema for a single event."""
+    id: int
+    event_id: str
+    event_type: str
+    entity_id: Optional[str] = None
+    source_id: int
+    source_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    occurred_at: Optional[datetime] = None
+    data: Optional[Dict[str, Any]] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class EventListResponse(BaseModel):
+    """Response schema for a list of events."""
+    events: List[EventResponse]
+    total: int
+
+
+class PendingEventResponse(BaseModel):
+    """Response schema for a pending (coalescing) event."""
+    id: int
+    source_id: int
+    event_type: str
+    entity_id: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+    count: int
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    flush_at: Optional[datetime] = None
+    strategy: str
+    window_seconds: int
+
+    model_config = {"from_attributes": True}
+
+
+class PendingEventListResponse(BaseModel):
+    """Response schema for a list of pending events."""
+    events: List[PendingEventResponse]
+    total: int
+
+
+class SourceResponse(BaseModel):
+    """Response schema for a source."""
+    id: int
+    name: str
+    type: str
+
+    model_config = {"from_attributes": True}
+
+
+class SinkResponse(BaseModel):
+    """Response schema for a sink."""
+    id: int
+    name: str
+    type: str
+
+    model_config = {"from_attributes": True}

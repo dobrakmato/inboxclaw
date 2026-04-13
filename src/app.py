@@ -10,6 +10,7 @@ from src.pipeline.notifier import EventNotifier
 from src.initialization import init_sources, init_sinks
 from src.pipeline.cleanup import cleanup_task
 from src.pipeline.coalescence_service import CoalescenceBackgroundService
+from src.api_readonly import router as readonly_router
 
 logger = logging.getLogger("inboxclaw")
 
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     await services.stop_tasks()
 
 app = FastAPI(title="Inboxclaw", lifespan=lifespan)
+app.include_router(readonly_router)
 
 app.add_middleware(
     CORSMiddleware,

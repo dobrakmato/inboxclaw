@@ -80,6 +80,7 @@ export default defineConfig({
                     {text: 'Key/Value storage', link: '/kv-general'},
                     {text: 'Configuration', link: '/configuration'},
                     {text: 'Templating', link: '/templating'},
+                    {text: 'Read-Only API', link: '/api-readonly'},
                     {text: 'Data model', link: '/data-model'},
                     {text: 'Google Auth CLI', link: '/google-auth-cli'},
                 ]
