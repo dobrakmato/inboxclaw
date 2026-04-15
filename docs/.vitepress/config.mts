@@ -58,6 +58,7 @@ export default defineConfig({
                     {text: 'Faktury Online', link: '/source-faktury-online'},
                     {text: 'Home Assistant', link: '/source-home-assistant'},
                     {text: 'Jira', link: '/source-jira'},
+                    {text: 'Asana', link: '/source-asana'},
                     {text: 'GoCardless / Nordigen', link: '/source-nordigen'},
                     {text: 'Mock', link: '/source-mock'},
                 ]
