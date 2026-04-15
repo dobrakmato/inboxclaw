@@ -82,21 +82,27 @@ async def test_fetch_and_publish_new_issue(source, mock_services, mock_kv, mock_
         "total": 1
     }
     
-    # New issue also needs full detail fetch
+    # New issue also needs full detail fetch + comments fetch
     full_issue = _make_issue("PROJ-1")
     full_issue["fields"]["description"] = "Full description"
     mock_detail_response = MagicMock()
     mock_detail_response.json.return_value = full_issue
     
+    mock_comments_response = MagicMock()
+    mock_comments_response.json.return_value = {"comments": []}
+    mock_comments_response.raise_for_status = MagicMock()
+    
     # Mock KV state: empty
     mock_kv.list_keys_with_prefix.return_value = []
     
     with patch.object(source.client, 'post', return_value=mock_search_response), \
-         patch.object(source.client, 'get', return_value=mock_detail_response):
+         patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = [mock_detail_response, mock_comments_response]
         await source.fetch_and_publish()
         
-        # Verify KV set with FULL issue
-        mock_kv.set.assert_called_with(source.source_id, "issue:PROJ-1", full_issue)
+        # Verify KV set with FULL issue and comments
+        mock_kv.set.assert_any_call(source.source_id, "issue:PROJ-1", full_issue)
+        mock_kv.set.assert_any_call(source.source_id, "comments:PROJ-1", [])
         
         # Verify event emitted
         mock_writer.write_events.assert_called_once()
@@ -114,7 +120,7 @@ async def test_fetch_and_publish_updated_issue(source, mock_services, mock_kv, m
     # Old issue in KV
     old_issue = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
     mock_kv.list_keys_with_prefix.return_value = ["issue:PROJ-1"]
-    mock_kv.get.return_value = old_issue
+    mock_kv.get.side_effect = lambda sid, key: old_issue if key == "issue:PROJ-1" else []
     
     # New issue from search
     new_issue_summary = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
@@ -131,15 +137,20 @@ async def test_fetch_and_publish_updated_issue(source, mock_services, mock_kv, m
     mock_changelog_response = MagicMock()
     mock_changelog_response.json.return_value = {"values": [{"id": "101", "items": [{"field": "description", "toString": "New description"}]}]}
     
+    # Comments
+    mock_comments_response = MagicMock()
+    mock_comments_response.json.return_value = {"comments": []}
+    mock_comments_response.raise_for_status = MagicMock()
+    
     with patch.object(source.client, 'post', return_value=mock_search_response), \
          patch.object(source.client, 'get') as mock_get:
         
-        mock_get.side_effect = [mock_detail_response, mock_changelog_response]
+        mock_get.side_effect = [mock_detail_response, mock_changelog_response, mock_comments_response]
         
         await source.fetch_and_publish()
         
         # Verify KV update
-        mock_kv.set.assert_called_with(source.source_id, "issue:PROJ-1", full_issue)
+        mock_kv.set.assert_any_call(source.source_id, "issue:PROJ-1", full_issue)
         
         # Verify update event
         mock_writer.write_events.assert_called_once()
@@ -163,7 +174,8 @@ async def test_fetch_and_publish_unassigned_issue(source, mock_services, mock_kv
         await source.fetch_and_publish()
         
         # Verify KV deletion
-        mock_kv.delete.assert_called_with(source.source_id, "issue:PROJ-1")
+        mock_kv.delete.assert_any_call(source.source_id, "issue:PROJ-1")
+        mock_kv.delete.assert_any_call(source.source_id, "comments:PROJ-1")
         
         # Verify unassigned event
         mock_writer.write_events.assert_called_once()
@@ -255,7 +267,8 @@ async def test_fetch_and_publish_partial_failure(source, mock_services, mock_kv,
     
     # PROJ-1 is existing but detail fetch will fail
     mock_kv.list_keys_with_prefix.return_value = ["issue:PROJ-1"]
-    mock_kv.get.return_value = _make_issue("PROJ-1", updated="2024-01-01")
+    old_proj1 = _make_issue("PROJ-1", updated="2024-01-01")
+    mock_kv.get.side_effect = lambda sid, key: old_proj1 if key == "issue:PROJ-1" else []
     
     with patch.object(source.client, 'post', return_value=mock_search_response), \
          patch.object(source.client, 'get') as mock_get:
@@ -267,14 +280,18 @@ async def test_fetch_and_publish_partial_failure(source, mock_services, mock_kv,
         res2 = MagicMock()
         res2.json.return_value = _make_issue("PROJ-2")
         res2.raise_for_status = MagicMock()
+        
+        res_comments = MagicMock()
+        res_comments.json.return_value = {"comments": []}
+        res_comments.raise_for_status = MagicMock()
 
-        # PROJ-1 fail, then PROJ-2 success for detail fetch
-        mock_get.side_effect = [res1, res2]
+        # PROJ-1 detail fail, then PROJ-2 detail success, then PROJ-2 comments
+        mock_get.side_effect = [res1, res2, res_comments]
 
         await source.fetch_and_publish()
         
         # PROJ-2 should still be handled as new issue
-        mock_kv.set.assert_called_with(source.source_id, "issue:PROJ-2", _make_issue("PROJ-2"))
+        mock_kv.set.assert_any_call(source.source_id, "issue:PROJ-2", _make_issue("PROJ-2"))
         
         # We should have at least the event for PROJ-2
         assert mock_writer.write_events.call_count >= 1
@@ -324,7 +341,7 @@ async def test_fetch_and_publish_changelog_filtering(source, mock_services, mock
     
     old_issue = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
     mock_kv.list_keys_with_prefix.return_value = ["issue:PROJ-1"]
-    mock_kv.get.return_value = old_issue
+    mock_kv.get.side_effect = lambda sid, key: old_issue if key == "issue:PROJ-1" else []
     
     new_issue = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
     new_issue["fields"]["description"] = "New description"
@@ -350,18 +367,24 @@ async def test_fetch_and_publish_changelog_filtering(source, mock_services, mock
         ]
     }
     
+    mock_comments_response = MagicMock()
+    mock_comments_response.json.return_value = {"comments": []}
+    mock_comments_response.raise_for_status = MagicMock()
+    
     with patch.object(source.client, 'post', return_value=mock_search_response), \
          patch.object(source.client, 'get') as mock_get:
         
-        mock_get.side_effect = [mock_detail_response, mock_changelog_response]
+        mock_get.side_effect = [mock_detail_response, mock_changelog_response, mock_comments_response]
         
         await source.fetch_and_publish()
         
         # Verify event emitted
         events = mock_writer.write_events.call_args[0][1]
-        assert len(events) == 1
+        # Description change -> task_updated (status is ignored so no status_changed event)
+        assert any(e.event_type == "jira.task_updated" for e in events)
+        updated_event = [e for e in events if e.event_type == "jira.task_updated"][0]
         
-        changelog = events[0].data["changelog"]
+        changelog = updated_event.data["changelog"]
         assert len(changelog) == 1
         items = changelog[0]["items"]
         # Only description should be present in the items if we filter it
@@ -508,10 +531,393 @@ async def test_handle_new_issue_with_none_fields(source, mock_kv, mock_writer):
     mock_detail.json.return_value = issue
     mock_detail.raise_for_status = MagicMock()
     
-    with patch.object(source.client, 'get', return_value=mock_detail):
+    mock_comments = MagicMock()
+    mock_comments.json.return_value = {"comments": []}
+    mock_comments.raise_for_status = MagicMock()
+    
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = [mock_detail, mock_comments]
         await source._handle_new_issue(issue)
     
     mock_writer.write_events.assert_called_once()
     events = mock_writer.write_events.call_args[0][1]
     assert events[0].data["status"] is None
     assert events[0].data["priority"] is None
+
+
+# --- Helper for existing-issue tests ---
+
+def _setup_existing_issue_test(source, mock_kv, old_issue, new_issue, changelog_values=None, comments=None, cached_comments=None):
+    """Helper to set up mocks for _handle_existing_issue tests."""
+    source.field_map = {"summary": "Summary", "status": "Status", "assignee": "Assignee",
+                        "priority": "Priority", "description": "Description",
+                        "issuetype": "Issue Type", "project": "Project"}
+
+    mock_kv.get.side_effect = lambda sid, key: (
+        old_issue if key == f"issue:{old_issue['key']}" else
+        (cached_comments or []) if key == f"comments:{old_issue['key']}" else None
+    )
+
+    mock_detail = MagicMock()
+    mock_detail.json.return_value = new_issue
+    mock_detail.raise_for_status = MagicMock()
+
+    mock_changelog = MagicMock()
+    mock_changelog.json.return_value = {"values": changelog_values or []}
+    mock_changelog.raise_for_status = MagicMock()
+
+    mock_comments_resp = MagicMock()
+    mock_comments_resp.json.return_value = {"comments": comments or []}
+    mock_comments_resp.raise_for_status = MagicMock()
+
+    return [mock_detail, mock_changelog, mock_comments_resp]
+
+
+@pytest.mark.asyncio
+async def test_status_changed_event(source, mock_kv, mock_writer):
+    """Status change emits jira.task_status_changed instead of generic task_updated."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["status"] = {"name": "In Progress"}
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new)
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    assert len(events) == 1
+    assert events[0].event_type == "jira.task_status_changed"
+    assert events[0].entity_id == "PROJ-1"
+    assert events[0].data["status_before"] == "To Do"
+    assert events[0].data["status_after"] == "In Progress"
+    assert "jira-PROJ-1-status-" in events[0].event_id
+
+
+@pytest.mark.asyncio
+async def test_reassigned_event(source, mock_kv, mock_writer):
+    """Assignee change emits jira.task_reassigned."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    old["fields"]["assignee"] = {"displayName": "Alice"}
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["assignee"] = {"displayName": "Bob"}
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new)
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    assert len(events) == 1
+    assert events[0].event_type == "jira.task_reassigned"
+    assert events[0].data["assignee_before"] == "Alice"
+    assert events[0].data["assignee_after"] == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_comment_added_event(source, mock_kv, mock_writer):
+    """New comment emits jira.comment_added."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+
+    new_comment = {
+        "id": "10042",
+        "author": {"displayName": "Jane"},
+        "body": "Looks good!",
+        "created": "2024-01-02T09:00:00.000+0000",
+        "updated": "2024-01-02T09:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[new_comment], cached_comments=[])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    comment_events = [e for e in events if e.event_type == "jira.comment_added"]
+    assert len(comment_events) == 1
+    assert comment_events[0].data["comment_id"] == "10042"
+    assert comment_events[0].data["author"] == "Jane"
+    assert comment_events[0].data["body"] == "Looks good!"
+    assert comment_events[0].event_id == "jira-PROJ-1-comment-10042-created"
+
+
+@pytest.mark.asyncio
+async def test_comment_updated_event(source, mock_kv, mock_writer):
+    """Edited comment emits jira.comment_updated with before/after body."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+
+    old_comment = {
+        "id": "10042",
+        "author": {"displayName": "Jane"},
+        "body": "Original text",
+        "created": "2024-01-01T09:00:00.000+0000",
+        "updated": "2024-01-01T09:00:00.000+0000"
+    }
+    edited_comment = {
+        "id": "10042",
+        "author": {"displayName": "Jane"},
+        "body": "Edited text",
+        "created": "2024-01-01T09:00:00.000+0000",
+        "updated": "2024-01-02T10:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[edited_comment], cached_comments=[old_comment])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    edit_events = [e for e in events if e.event_type == "jira.comment_updated"]
+    assert len(edit_events) == 1
+    assert edit_events[0].data["body_before"] == "Original text"
+    assert edit_events[0].data["body_after"] == "Edited text"
+    assert edit_events[0].data["comment_id"] == "10042"
+
+
+@pytest.mark.asyncio
+async def test_mixed_events_single_poll(source, mock_kv, mock_writer):
+    """A single poll cycle can emit multiple event types simultaneously."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    old["fields"]["assignee"] = {"displayName": "Alice"}
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["status"] = {"name": "In Progress"}
+    new["fields"]["assignee"] = {"displayName": "Bob"}
+    new["fields"]["description"] = "Updated desc"
+
+    new_comment = {
+        "id": "10050",
+        "author": {"displayName": "Charlie"},
+        "body": "New comment",
+        "created": "2024-01-02T08:00:00.000+0000",
+        "updated": "2024-01-02T08:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[new_comment], cached_comments=[])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    event_types = {e.event_type for e in events}
+    assert "jira.task_status_changed" in event_types
+    assert "jira.task_reassigned" in event_types
+    assert "jira.task_updated" in event_types  # description change
+    assert "jira.comment_added" in event_types
+    assert len(events) == 4
+
+
+@pytest.mark.asyncio
+async def test_status_change_excluded_from_task_updated_diff(source, mock_kv, mock_writer):
+    """When status changes alongside other fields, status is NOT in the task_updated diff."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["status"] = {"name": "Done"}
+    new["fields"]["description"] = "New desc"
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new)
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    updated_events = [e for e in events if e.event_type == "jira.task_updated"]
+    assert len(updated_events) == 1
+    assert "Status" not in updated_events[0].data["diff"]
+    assert "Description" in updated_events[0].data["diff"]
+
+
+@pytest.mark.asyncio
+async def test_only_comment_change_no_field_events(source, mock_kv, mock_writer):
+    """When only a comment is added (no field changes), only comment_added is emitted."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+
+    new_comment = {
+        "id": "10060",
+        "author": {"displayName": "Dave"},
+        "body": "Just a comment",
+        "created": "2024-01-02T12:00:00.000+0000",
+        "updated": "2024-01-02T12:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[new_comment], cached_comments=[])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    assert len(events) == 1
+    assert events[0].event_type == "jira.comment_added"
+
+
+@pytest.mark.asyncio
+async def test_multiple_comments_added(source, mock_kv, mock_writer):
+    """Multiple new comments each emit their own comment_added event."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+
+    comments = [
+        {"id": "10070", "author": {"displayName": "A"}, "body": "First",
+         "created": "2024-01-02T08:00:00.000+0000", "updated": "2024-01-02T08:00:00.000+0000"},
+        {"id": "10071", "author": {"displayName": "B"}, "body": "Second",
+         "created": "2024-01-02T09:00:00.000+0000", "updated": "2024-01-02T09:00:00.000+0000"},
+    ]
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=comments, cached_comments=[])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    comment_events = [e for e in events if e.event_type == "jira.comment_added"]
+    assert len(comment_events) == 2
+    assert {e.data["comment_id"] for e in comment_events} == {"10070", "10071"}
+
+
+@pytest.mark.asyncio
+async def test_unchanged_comment_no_event(source, mock_kv, mock_writer):
+    """A comment that hasn't changed should not emit any event."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["description"] = "Changed desc"
+
+    existing_comment = {
+        "id": "10080",
+        "author": {"displayName": "Eve"},
+        "body": "Same text",
+        "created": "2024-01-01T08:00:00.000+0000",
+        "updated": "2024-01-01T08:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[existing_comment], cached_comments=[existing_comment])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    events = mock_writer.write_events.call_args[0][1]
+    assert all(e.event_type != "jira.comment_added" for e in events)
+    assert all(e.event_type != "jira.comment_updated" for e in events)
+    # Only the description change should be emitted
+    assert len(events) == 1
+    assert events[0].event_type == "jira.task_updated"
+
+
+@pytest.mark.asyncio
+async def test_no_events_when_only_ignored_fields_change(source, mock_kv, mock_writer):
+    """If only ignored fields changed and no comment changes, no events are emitted."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    # updated field is in ignored_fields by default, so a new 'updated' value
+    # triggers the fetch but produces no diff
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new)
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    mock_writer.write_events.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_comment_cache_updated_after_processing(source, mock_kv, mock_writer):
+    """After processing, both issue and comments caches are updated."""
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["description"] = "Changed"
+
+    new_comment = {
+        "id": "10090",
+        "author": {"displayName": "Frank"},
+        "body": "Hello",
+        "created": "2024-01-02T08:00:00.000+0000",
+        "updated": "2024-01-02T08:00:00.000+0000"
+    }
+
+    mocks = _setup_existing_issue_test(source, mock_kv, old, new,
+                                        comments=[new_comment], cached_comments=[])
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = mocks
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    mock_kv.set.assert_any_call(source.source_id, "issue:PROJ-1", new)
+    mock_kv.set.assert_any_call(source.source_id, "comments:PROJ-1", [new_comment])
+
+
+@pytest.mark.asyncio
+async def test_comment_fetch_failure_no_false_diffs(source, mock_kv, mock_writer):
+    """When comment fetch fails, cached comments are used and comment cache is NOT updated."""
+    source.field_map = {"summary": "Summary", "status": "Status", "description": "Description"}
+
+    old = _make_issue("PROJ-1", updated="2024-01-01T00:00:00.000+0000")
+    new = _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000")
+    new["fields"]["description"] = "Changed"
+
+    existing_comment = {
+        "id": "10099",
+        "author": {"displayName": "Grace"},
+        "body": "Existing comment",
+        "created": "2024-01-01T08:00:00.000+0000",
+        "updated": "2024-01-01T08:00:00.000+0000"
+    }
+
+    mock_kv.get.side_effect = lambda sid, key: (
+        old if key == "issue:PROJ-1" else
+        [existing_comment] if key == "comments:PROJ-1" else None
+    )
+
+    mock_detail = MagicMock()
+    mock_detail.json.return_value = new
+    mock_detail.raise_for_status = MagicMock()
+
+    mock_changelog = MagicMock()
+    mock_changelog.json.return_value = {"values": []}
+    mock_changelog.raise_for_status = MagicMock()
+
+    # Comment fetch fails
+    mock_comments_resp = MagicMock()
+    mock_comments_resp.raise_for_status.side_effect = Exception("Comment API down")
+
+    with patch.object(source.client, 'get') as mock_get:
+        mock_get.side_effect = [mock_detail, mock_changelog, mock_comments_resp]
+        await source._handle_existing_issue(
+            _make_issue("PROJ-1", updated="2024-01-02T00:00:00.000+0000"))
+
+    # Should emit task_updated for description change but NO comment events
+    events = mock_writer.write_events.call_args[0][1]
+    assert all(e.event_type not in ("jira.comment_added", "jira.comment_updated") for e in events)
+    assert any(e.event_type == "jira.task_updated" for e in events)
+
+    # Comment cache should NOT be updated (only issue cache)
+    set_calls = mock_kv.set.call_args_list
+    comment_cache_calls = [c for c in set_calls if c[0][1] == "comments:PROJ-1"]
+    assert len(comment_cache_calls) == 0

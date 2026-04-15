@@ -149,12 +149,12 @@ class JiraSource:
         key = issue["key"]
         logger.info(f"New Jira issue detected: {key}")
         
-        # We might have only partial fields from search, fetch detail for full view if needed
-        # but let's try to emit what we have first, or fetch details immediately for consistency
         full_issue = await self._fetch_issue_detail(key)
+        comments = await self._fetch_comments(key) or []
         
         # Save to KV
         self.services.kv.set(self.source_id, f"issue:{key}", full_issue)
+        self.services.kv.set(self.source_id, f"comments:{key}", comments)
         
         # Emit event
         self.services.writer.write_events(self.source_id, [NewEvent(
@@ -178,37 +178,134 @@ class JiraSource:
         cached_issue = self.services.kv.get(self.source_id, f"issue:{key}")
         
         if not cached_issue:
-            # Should not happen given existing_keys logic, but safety first
             await self._handle_new_issue(issue)
             return
 
         if cached_issue["fields"]["updated"] != issue["fields"]["updated"]:
             logger.info(f"Jira issue updated: {key}")
             
-            # Fetch full issue details and changelog for precise diffing
             full_issue = await self._fetch_issue_detail(key)
             changelog = await self._fetch_issue_changelog(key)
+            fetched_comments = await self._fetch_comments(key)
+            cached_comments = self.services.kv.get(self.source_id, f"comments:{key}") or []
+            # If comment fetch failed, use cached comments to avoid false diffs
+            comments = fetched_comments if fetched_comments is not None else cached_comments
             
             diff = self._compute_diff(cached_issue, full_issue)
+            # Remove comment container from field diff — comments are handled separately
+            diff.pop("comment", None)
+            diff.pop("Comment", None)
             
+            occurred_at = self._parse_jira_date(full_issue["fields"]["updated"])
+            summary = full_issue["fields"].get("summary")
+            events: List[NewEvent] = []
+            
+            # Extract specific field-level events before emitting generic task_updated
+            # Pop both possible key variants to avoid leaking into generic task_updated
+            status_diff = diff.pop("Status", None) or diff.pop("status", None)
+            if "status" in diff:
+                diff.pop("status")
+            if "Status" in diff:
+                diff.pop("Status")
+            assignee_diff = diff.pop("Assignee", None) or diff.pop("assignee", None)
+            if "assignee" in diff:
+                diff.pop("assignee")
+            if "Assignee" in diff:
+                diff.pop("Assignee")
+            
+            if status_diff:
+                events.append(NewEvent(
+                    event_id=f"jira-{key}-status-{full_issue['fields']['updated']}",
+                    event_type="jira.task_status_changed",
+                    entity_id=key,
+                    data={
+                        "issue_key": key,
+                        "summary": summary,
+                        "status_before": status_diff["before"],
+                        "status_after": status_diff["after"],
+                        "changelog": changelog,
+                        "full_issue": full_issue
+                    },
+                    occurred_at=occurred_at
+                ))
+            
+            if assignee_diff:
+                events.append(NewEvent(
+                    event_id=f"jira-{key}-reassigned-{full_issue['fields']['updated']}",
+                    event_type="jira.task_reassigned",
+                    entity_id=key,
+                    data={
+                        "issue_key": key,
+                        "summary": summary,
+                        "assignee_before": assignee_diff["before"],
+                        "assignee_after": assignee_diff["after"],
+                        "changelog": changelog,
+                        "full_issue": full_issue
+                    },
+                    occurred_at=occurred_at
+                ))
+            
+            # Remaining field changes → generic task_updated
             if diff:
-                # Emit event
-                self.services.writer.write_events(self.source_id, [NewEvent(
+                events.append(NewEvent(
                     event_id=f"jira-{key}-{full_issue['fields']['updated']}",
                     event_type="jira.task_updated",
                     entity_id=key,
                     data={
                         "issue_key": key,
-                        "summary": full_issue["fields"].get("summary"),
+                        "summary": summary,
                         "diff": diff,
                         "changelog": changelog,
                         "full_issue": full_issue
                     },
-                    occurred_at=self._parse_jira_date(full_issue["fields"]["updated"])
-                )])
+                    occurred_at=occurred_at
+                ))
             
-            # Update cache
+            # Detect new comments
+            old_comment_ids = {c["id"] for c in cached_comments}
+            old_comments_by_id = {c["id"]: c for c in cached_comments}
+            for c in comments:
+                if c["id"] not in old_comment_ids:
+                    events.append(NewEvent(
+                        event_id=f"jira-{key}-comment-{c['id']}-created",
+                        event_type="jira.comment_added",
+                        entity_id=key,
+                        data={
+                            "issue_key": key,
+                            "summary": summary,
+                            "comment_id": c["id"],
+                            "author": (c.get("author") or {}).get("displayName"),
+                            "body": c.get("body"),
+                            "created": c.get("created")
+                        },
+                        occurred_at=self._parse_jira_date(c.get("created", "")) if c.get("created") else occurred_at
+                    ))
+                elif c.get("updated") != old_comments_by_id[c["id"]].get("updated"):
+                    events.append(NewEvent(
+                        event_id=f"jira-{key}-comment-{c['id']}-updated-{c.get('updated', '')}",
+                        event_type="jira.comment_updated",
+                        entity_id=key,
+                        data={
+                            "issue_key": key,
+                            "summary": summary,
+                            "comment_id": c["id"],
+                            "author": (c.get("author") or {}).get("displayName"),
+                            "body_before": old_comments_by_id[c["id"]].get("body"),
+                            "body_after": c.get("body"),
+                            "updated": c.get("updated")
+                        },
+                        occurred_at=self._parse_jira_date(c.get("updated", "")) if c.get("updated") else occurred_at
+                    ))
+            
+            # Write all events
+            if events:
+                self.services.writer.write_events(self.source_id, events)
+            
+            # Update caches
             self.services.kv.set(self.source_id, f"issue:{key}", full_issue)
+            # Only update comment cache if fetch succeeded to avoid false diffs on next poll
+            if fetched_comments is not None:
+                self.services.kv.set(self.source_id, f"comments:{key}", comments)
 
     async def _handle_removed_issue(self, key: str):
         logger.info(f"Jira issue no longer assigned: {key}")
@@ -241,6 +338,18 @@ class JiraSource:
         
         # Remove from cache
         self.services.kv.delete(self.source_id, f"issue:{key}")
+        self.services.kv.delete(self.source_id, f"comments:{key}")
+
+    async def _fetch_comments(self, key: str) -> Optional[List[Dict[str, Any]]]:
+        """Fetch comments for an issue. Returns None on failure to distinguish from empty list."""
+        try:
+            response = await self.client.get(f"/rest/api/3/issue/{key}/comment")
+            response.raise_for_status()
+            data = response.json()
+            return data.get("comments", [])
+        except Exception as e:
+            logger.error(f"Failed to fetch comments for {key}: {e}")
+            return None
 
     async def _fetch_issue_detail(self, key: str) -> Dict[str, Any]:
         response = await self.client.get(f"/rest/api/3/issue/{key}")
