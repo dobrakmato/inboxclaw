@@ -154,6 +154,15 @@ class JiraSourceConfig(BaseSourceConfig):
     field_discovery_interval: Interval = "24h"
     ignored_fields: List[str] = Field(default_factory=lambda: ["updated", "workratio", "lastViewed", "aggregateprogress", "progress"])
 
+class AsanaSourceConfig(BaseSourceConfig):
+    type: Literal["asana"] = "asana"
+    access_token: str = Field(default_factory=lambda: os.environ.get("ASANA_ACCESS_TOKEN", ""))
+    project_gids: List[str]
+    poll_interval: Interval = "1m"
+    field_discovery_interval: Interval = "24h"
+    track_comments: bool = True
+    ignored_fields: List[str] = Field(default_factory=lambda: ["modified_at", "liked", "num_likes", "num_subtasks"])
+
 SourceConfig = Annotated[
     Union[
         GmailSourceConfig,
@@ -164,7 +173,8 @@ SourceConfig = Annotated[
         MockSourceConfig,
         HomeAssistantSourceConfig,
         NordigenSourceConfig,
-        JiraSourceConfig
+        JiraSourceConfig,
+        AsanaSourceConfig,
     ],
     Field(discriminator="type")
 ]

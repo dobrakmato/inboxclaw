@@ -1,5 +1,66 @@
 {
   "$defs": {
+    "AsanaSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "asana",
+          "default": "asana",
+          "title": "Type",
+          "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
+        "access_token": {
+          "title": "Access Token",
+          "type": "string"
+        },
+        "project_gids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Project Gids",
+          "type": "array"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "field_discovery_interval": {
+          "default": "24h",
+          "title": "Field Discovery Interval",
+          "type": "number"
+        },
+        "track_comments": {
+          "default": true,
+          "title": "Track Comments",
+          "type": "boolean"
+        },
+        "ignored_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignored Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "project_gids"
+      ],
+      "title": "AsanaSourceConfig",
+      "type": "object"
+    },
     "CalendarFilterItem": {
       "properties": {
         "in": {
@@ -1074,6 +1135,9 @@
           },
           {
             "$ref": "#/$defs/JiraSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/AsanaSourceConfig"
           }
         ]
       },

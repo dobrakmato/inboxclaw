@@ -1,5 +1,5 @@
 - [ ] Unified event model across providers (calendar, email, transaction, ...)
 - [ ] Significantly improve the onboarding experience
-- [ ] Add more CLI commands to simplify creation of config and usage
-- [ ] Implement: Asana source
+- [x] Add more CLI commands to simplify creation of config and usage
+- [x] Implement: Asana source
 - [ ] Rework event matching to be more flexible (source, event type, tags, priority)
