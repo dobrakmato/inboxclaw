@@ -13,6 +13,7 @@ from src.sources.nordigen import NordigenSource
 from src.sources.jira import JiraSource
 from src.sources.asana import AsanaSource
 from src.sources.google_health import GoogleHealthSource
+from src.sources.filesystem import FilesystemSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
 from src.sinks.http_pull import HttpPullSink
@@ -90,6 +91,11 @@ def init_sources(services: AppServices):
             elif s_type == "google_health":
                 logger.info(f"Initializing Google Health source: {name} (id={source_id})")
                 source_instance = GoogleHealthSource(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                services.add_task(source_instance.run())
+            elif s_type == "filesystem":
+                logger.info(f"Initializing Filesystem source: {name} (id={source_id})")
+                source_instance = FilesystemSource(name, s_config, services, source_id)
                 services.sources[name] = source_instance
                 services.add_task(source_instance.run())
             else:

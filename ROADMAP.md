@@ -5,8 +5,8 @@
 - [ ] Implement: Git source
 - [ ] Implement: GitHub source
 - [ ] Implement: GitLab source
+- [x] Implement: Filesystem watcher source (generic, supports Logseq/Obsidian/etc.)
 - [ ] Implement: Notion source
-- [ ] Implement: Obsidian source
 - [ ] Implement: Trello source
 - [x] Implement: Google Health (https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints)
 - [ ] Implement: Slack source

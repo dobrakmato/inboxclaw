@@ -14,7 +14,7 @@ from src.utils.google_drive_sync import (
     DriveFileSnapshot,
     DriveTransitionClassifier,
     GoogleDriveEventType,
-    DriveTextDiffCalculator,
+    DriveTextDiffCalculator,  # re-exported alias for TextDiffCalculator
 )
 
 logger = logging.getLogger(__name__)

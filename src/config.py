@@ -168,6 +168,19 @@ class GoogleHealthSourceConfig(GoogleSourceConfig):
     data_types: List[str] = Field(default_factory=lambda: ["steps", "sleep", "exercise", "weight", "heart-rate"])
     lookback_days: int = 7
 
+class FilesystemSourceConfig(BaseSourceConfig):
+    type: Literal["filesystem"] = "filesystem"
+    path: str
+    watch_mode: Literal["watch", "poll", "hybrid"] = "hybrid"
+    poll_interval: Interval = "5m"
+    extensions: Optional[List[str]] = None
+    ignore_patterns: List[str] = Field(default_factory=lambda: [".git/**", "*.tmp", ".trash/**"])
+    recursive: bool = True
+    include_content_preview: bool = False
+    content_preview_length: int = 200
+    max_changed_sections: int = 5
+    max_section_chars: int = 300
+
 SourceConfig = Annotated[
     Union[
         GmailSourceConfig,
@@ -181,6 +194,7 @@ SourceConfig = Annotated[
         JiraSourceConfig,
         AsanaSourceConfig,
         GoogleHealthSourceConfig,
+        FilesystemSourceConfig,
     ],
     Field(discriminator="type")
 ]

@@ -17,6 +17,7 @@ dependencies = [
     "sqlalchemy",
     "sse-starlette",
     "uvicorn",
+    "watchdog>=4.0.0",
     "websockets",
     "win11toast>=0.35; sys_platform == 'win32'"
 ]

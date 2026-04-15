@@ -1,7 +1,4 @@
 from __future__ import annotations
-import difflib
-import hashlib
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -249,81 +246,5 @@ class DriveDebounceManager:
         return (now_utc - last_change_seen).total_seconds() >= quiet_window_seconds or (now_utc - session_started).total_seconds() >= max_session_seconds
 
 
-class DriveTextDiffCalculator:
-    def __init__(self, max_section_chars: int = 300, max_changed_sections: int = 5):
-        self.max_section_chars = max_section_chars
-        self.max_changed_sections = max_changed_sections
-
-    def normalize(self, text: str) -> list[str]:
-        if not text:
-            return []
-        # decode to Unicode (already assumed)
-        # convert \r\n and \r to \n
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        # strip trailing whitespace at line ends
-        lines = [line.rstrip() for line in text.split("\n")]
-        
-        # split on blank-line boundaries (paragraphs)
-        content = "\n".join(lines)
-        paragraphs = re.split(r"\n\s*\n", content)
-        
-        # discard only empty trailing blocks
-        return [p.strip() for p in paragraphs if p.strip()]
-
-    def compute_diff(self, old_text: Optional[str], new_text: Optional[str]) -> dict[str, Any]:
-        old_blocks = self.normalize(old_text or "")
-        new_blocks = self.normalize(new_text or "")
-        
-        matcher = difflib.SequenceMatcher(None, old_blocks, new_blocks)
-        
-        changed_sections_count = 0
-        added_char_count = 0
-        removed_char_count = 0
-        
-        changes = []
-        
-        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == "equal":
-                continue
-            
-            # Count each changed block as a section
-            changed_sections_count += max(i2 - i1, j2 - j1)
-            
-            # Sum added/removed chars
-            old_part = "\n\n".join(old_blocks[i1:i2])
-            new_part = "\n\n".join(new_blocks[j1:j2])
-            
-            removed_char_count += len(old_part)
-            added_char_count += len(new_part)
-            
-            # Collect changed blocks
-            if len(changes) < self.max_changed_sections:
-                # Capture blocks from this change
-                # We can pair them up or just list them. The issue says "report array of found changes"
-                # Let's emit objects with before/after for each changed block
-                max_to_add = self.max_changed_sections - len(changes)
-                num_blocks = max(i2 - i1, j2 - j1)
-                for idx in range(min(num_blocks, max_to_add)):
-                    before = old_blocks[i1 + idx] if (i1 + idx) < i2 else None
-                    after = new_blocks[j1 + idx] if (j1 + idx) < j2 else None
-                    
-                    if before and len(before) > self.max_section_chars:
-                        before = before[:self.max_section_chars] + " (truncated)"
-                    if after and len(after) > self.max_section_chars:
-                        after = after[:self.max_section_chars] + " (truncated)"
-                    
-                    changes.append({
-                        "before": before,
-                        "after": after
-                    })
-
-        return {
-            "totalChangedSections": changed_sections_count,
-            "changes": changes,
-            "addedCharCount": added_char_count,
-            "removedCharCount": removed_char_count,
-        }
-
-    @staticmethod
-    def get_hash(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+# Backward-compatible alias – the implementation now lives in src.utils.text_diff
+from src.utils.text_diff import TextDiffCalculator as DriveTextDiffCalculator  # noqa: F401

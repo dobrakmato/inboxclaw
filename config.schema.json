@@ -325,6 +325,100 @@
       "title": "FakturyOnlineSourceConfig",
       "type": "object"
     },
+    "FilesystemSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "filesystem",
+          "default": "filesystem",
+          "title": "Type",
+          "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "watch_mode": {
+          "default": "hybrid",
+          "enum": [
+            "watch",
+            "poll",
+            "hybrid"
+          ],
+          "title": "Watch Mode",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "extensions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extensions"
+        },
+        "ignore_patterns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore Patterns",
+          "type": "array"
+        },
+        "recursive": {
+          "default": true,
+          "title": "Recursive",
+          "type": "boolean"
+        },
+        "include_content_preview": {
+          "default": false,
+          "title": "Include Content Preview",
+          "type": "boolean"
+        },
+        "content_preview_length": {
+          "default": 200,
+          "title": "Content Preview Length",
+          "type": "integer"
+        },
+        "max_changed_sections": {
+          "default": 5,
+          "title": "Max Changed Sections",
+          "type": "integer"
+        },
+        "max_section_chars": {
+          "default": 300,
+          "title": "Max Section Chars",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "FilesystemSourceConfig",
+      "type": "object"
+    },
     "FioSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1190,6 +1284,9 @@
           },
           {
             "$ref": "#/$defs/GoogleHealthSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/FilesystemSourceConfig"
           }
         ]
       },
