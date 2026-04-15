@@ -1,6 +1,6 @@
 # Google Authentication CLI
 
-Before the pipeline can access Google services (Gmail, Calendar, Drive), you need to grant it permission using OAuth 2.0. This CLI tool handles the authorization flow and saves a token file that the pipeline uses to authenticate.
+Before the pipeline can access Google services (Gmail, Calendar, Drive, Health), you need to grant it permission using OAuth 2.0. This CLI tool handles the authorization flow and saves a token file that the pipeline uses to authenticate.
 
 Your password is never shared with the pipeline. You can revoke access at any time through your [Google Account settings](https://myaccount.google.com/permissions). Once authorized, the pipeline runs in the background without asking for permission again until the token expires or is revoked.
 
@@ -58,4 +58,8 @@ Use these short names with the `--scopes` parameter (comma-separated):
 | `drive_metadata` | Read-only access to file metadata  | [Google Drive source](source-google-drive.md) (metadata only, no diffs)    |
 | `docs`           | Read-only access to files          | Google Docs content access                                                 |
 | `contacts`       | Read-only access to contacts       | Contact list access                                                        |
-| `all`            | Multiple permissions               | Grants `gmail`, `drive`, `calendar`, and `contacts` together               |
+| `health`         | Read-only access to health data    | [Google Health source](source-google-health.md) (composite: activity, sleep, metrics) |
+| `health_activity`| Activity & fitness data            | Steps, exercise, distance, floors                                          |
+| `health_sleep`   | Sleep data                         | Sleep sessions                                                             |
+| `health_metrics` | Health metrics & measurements      | Heart rate, weight, body fat, SpO2, respiratory rate                       |
+| `all`            | Multiple permissions               | Grants `gmail`, `drive`, `calendar`, `contacts`, and `health` together     |

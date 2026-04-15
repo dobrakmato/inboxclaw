@@ -71,5 +71,6 @@ See the dedicated [Event Coalescing](coalescing.md) page for detailed explanatio
 | :house: [Home Assistant](source-home-assistant.md)          | `home_assistant`  | Device tracker and sensor updates.         | [home-assistant.io](https://www.home-assistant.io)         |
 | :jira: [Jira](source-jira.md)                              | `jira`            | Assigned tasks updates and changes.        | [atlassian.com](https://www.atlassian.com/software/jira)   |
 | :clipboard: [Asana](source-asana.md)                       | `asana`           | Project task tracking and changes.         | [asana.com](https://asana.com)                             |
+| :heart: [Google Health](source-google-health.md)            | `google_health`   | Health & fitness data (steps, sleep, etc). | [developers.google.com/health](https://developers.google.com/health) |
 | :credit_card: [GoCardless / Nordigen](source-nordigen.md)   | `nordigen`        | Bank transactions (GoCardless).            | [gocardless.com](https://gocardless.com/bank-account-data) |
 | :test_tube: [Mock](source-mock.md)                          | `mock`            | Random test events for pipeline testing.   | -                                                          |

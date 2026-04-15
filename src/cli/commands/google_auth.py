@@ -17,7 +17,11 @@ SCOPE_MAPPING: Dict[str, str] = {
     "calendar": "https://www.googleapis.com/auth/calendar.readonly",
     "docs": "https://www.googleapis.com/auth/drive.readonly",
     "contacts": "https://www.googleapis.com/auth/contacts.readonly",
-    "all": "gmail,drive,calendar,contacts",
+    "health": "health_activity,health_sleep,health_metrics",
+    "health_activity": "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+    "health_sleep": "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+    "health_metrics": "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+    "all": "gmail,drive,calendar,contacts,health",
 }
 
 REDIRECT_URI = "http://127.0.0.1:8765/"

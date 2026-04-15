@@ -2,4 +2,13 @@
 - [ ] Significantly improve the onboarding experience
 - [x] Add more CLI commands to simplify creation of config and usage
 - [x] Implement: Asana source
+- [ ] Implement: Git source
+- [ ] Implement: GitHub source
+- [ ] Implement: GitLab source
+- [ ] Implement: Notion source
+- [ ] Implement: Obsidian source
+- [ ] Implement: Trello source
+- [x] Implement: Google Health (https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints)
+- [ ] Implement: Slack source
+- [ ] Implement: Discord source
 - [ ] Rework event matching to be more flexible (source, event type, tags, priority)

@@ -653,6 +653,55 @@
       "title": "GoogleDriveSourceConfig",
       "type": "object"
     },
+    "GoogleHealthSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "google_health",
+          "default": "google_health",
+          "title": "Type",
+          "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
+        "token_file": {
+          "title": "Token File",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "data_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Data Types",
+          "type": "array"
+        },
+        "lookback_days": {
+          "default": 7,
+          "title": "Lookback Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "token_file"
+      ],
+      "title": "GoogleHealthSourceConfig",
+      "type": "object"
+    },
     "HomeAssistantSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1138,6 +1187,9 @@
           },
           {
             "$ref": "#/$defs/AsanaSourceConfig"
+          },
+          {
+            "$ref": "#/$defs/GoogleHealthSourceConfig"
           }
         ]
       },

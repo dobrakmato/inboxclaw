@@ -59,6 +59,7 @@ export default defineConfig({
                     {text: 'Home Assistant', link: '/source-home-assistant'},
                     {text: 'Jira', link: '/source-jira'},
                     {text: 'Asana', link: '/source-asana'},
+                    {text: 'Google Health', link: '/source-google-health'},
                     {text: 'GoCardless / Nordigen', link: '/source-nordigen'},
                     {text: 'Mock', link: '/source-mock'},
                 ]

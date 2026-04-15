@@ -163,6 +163,11 @@ class AsanaSourceConfig(BaseSourceConfig):
     track_comments: bool = True
     ignored_fields: List[str] = Field(default_factory=lambda: ["modified_at", "liked", "num_likes", "num_subtasks"])
 
+class GoogleHealthSourceConfig(GoogleSourceConfig):
+    type: Literal["google_health"] = "google_health"
+    data_types: List[str] = Field(default_factory=lambda: ["steps", "sleep", "exercise", "weight", "heart-rate"])
+    lookback_days: int = 7
+
 SourceConfig = Annotated[
     Union[
         GmailSourceConfig,
@@ -175,6 +180,7 @@ SourceConfig = Annotated[
         NordigenSourceConfig,
         JiraSourceConfig,
         AsanaSourceConfig,
+        GoogleHealthSourceConfig,
     ],
     Field(discriminator="type")
 ]
