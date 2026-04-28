@@ -389,7 +389,7 @@ class GoogleCalendarSource:
             return []
 
         if self._should_filter(event_item):
-            logger.debug("Event %s filtered out", entity_id)
+            logger.info(f"Event {entity_id} filtered out because it matches a filter")
             return []
 
         previous_event = self.get_cached(calendar_id, entity_id)
@@ -489,6 +489,7 @@ class GoogleCalendarSource:
                     value_to_check = " ".join([a.get("email", "") for a in attendees if a.get("email")])
 
                 if matches_filter(value_to_check, f, name):
+                    logger.info(f"Filtering out event {event_item.get('id')} because it matched filter '{name}'")
                     return True
         return False
 
