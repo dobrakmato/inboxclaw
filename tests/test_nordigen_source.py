@@ -205,6 +205,46 @@ class TestGetAccessToken:
         assert mock_kv.get(1, _KV_ACCESS_TOKEN) == "stored_tok"
         assert mock_kv.get(1, _KV_ACCESS_EXPIRES_AT) is not None
 
+    @pytest.mark.asyncio
+    async def test_refresh_token_failure_emits_event(self, source, mock_kv):
+        """When token refresh fails with 401, an actionable error event is emitted."""
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 401
+        resp.json.return_value = {"summary": "Invalid Token", "detail": "failed to refresh access token"}
+        exc = httpx.HTTPStatusError("HTTP 401", request=MagicMock(), response=resp)
+        
+        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
+            mock_refresh.side_effect = exc
+            
+            await source._poll()
+
+        # Check if write_events was called with the error event
+        source.writer.write_events.assert_called_once()
+        events = source.writer.write_events.call_args.args[1]
+        assert len(events) == 1
+        assert events[0].event_type == "nordigen.error.access_expired"
+        assert "failed to refresh access token" in events[0].data["detail"]
+        assert "Reconnect" in events[0].data["action"]
+        assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_failure_403_emits_event(self, source, mock_kv):
+        """When token refresh fails with 403, an actionable error event is emitted."""
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 403
+        resp.json.return_value = {"summary": "Forbidden", "detail": "access forbidden"}
+        exc = httpx.HTTPStatusError("HTTP 403", request=MagicMock(), response=resp)
+        
+        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
+            mock_refresh.side_effect = exc
+            
+            await source._poll()
+
+        source.writer.write_events.assert_called_once()
+        events = source.writer.write_events.call_args.args[1]
+        assert events[0].event_type == "nordigen.error.access_forbidden"
+        assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
+
 
 # ---------------------------------------------------------------------------
 # Poll scheduling / backoff

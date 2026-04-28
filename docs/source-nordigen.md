@@ -210,7 +210,7 @@ Transactions do not have an `entity_id` because they are not tied to a persisten
 
 ### Error Event Example
 
-When access expires or is revoked, the source emits an actionable error event so your sinks can notify you:
+When access expires, is revoked, or the refresh token fails, the source emits an actionable error event so your sinks can notify you:
 
 ```json
 {

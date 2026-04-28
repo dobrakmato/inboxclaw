@@ -186,11 +186,7 @@ class NordigenSource:
         try:
             access_token = await self._get_access_token()
         except httpx.HTTPStatusError as exc:
-            logger.error(
-                "Nordigen source '%s': failed to refresh access token (%d)",
-                self.name, exc.response.status_code,
-            )
-            self._set_backoff(3600)
+            self._handle_http_error(exc)
             return
 
         account_id = self.config.account_id
@@ -314,8 +310,8 @@ class NordigenSource:
 
         if status == 429:
             logger.warning(
-                "Nordigen source '%s': rate limit hit for account '%s' — backing off 6h",
-                self.name, account_id,
+                "Nordigen source '%s': rate limit hit for account '%s' (%s: %s) — backing off 6h",
+                self.name, account_id, summary, detail,
             )
             self._set_backoff(6 * 3600)
 
@@ -365,8 +361,8 @@ class NordigenSource:
 
         elif status in (500, 503):
             logger.warning(
-                "Nordigen source '%s': institution/service error (%d) for account '%s' — backing off 1h",
-                self.name, status, account_id,
+                "Nordigen source '%s': institution/service error (%d) for account '%s' (%s: %s) — backing off 1h",
+                self.name, status, account_id, summary, detail,
             )
             self._set_backoff(3600)
 
