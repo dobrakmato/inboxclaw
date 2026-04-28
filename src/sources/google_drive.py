@@ -10,6 +10,7 @@ from src.config import GoogleDriveSourceConfig
 from src.schemas import NewEvent
 from src.services import AppServices
 from src.utils.google_auth import get_google_credentials
+from src.utils.filtering import matches_filter
 from src.utils.google_drive_sync import (
     DriveFileSnapshot,
     DriveTransitionClassifier,
@@ -54,6 +55,25 @@ class GoogleDriveSource:
 
     def _delete_cached_snapshot(self, file_id: str) -> None:
         self.services.kv.delete(self.source_id, self._snapshot_key(file_id))
+
+    def _should_filter(self, file_id: str, name: str) -> bool:
+        """Check if file matches any configured filters."""
+        if not self.config.filters:
+            return False
+
+        for filter_dict in self.config.filters:
+            for filter_name, f in filter_dict.items():
+                value_to_check = ""
+                if f.in_field == "file_id":
+                    value_to_check = file_id
+                elif f.in_field == "name":
+                    value_to_check = name
+
+                if matches_filter(value_to_check, f, filter_name):
+                    logger.info(f"Filtering out file {file_id} ('{name}') because it matched filter '{filter_name}'")
+                    return True
+
+        return False
 
     def _build_event(
         self,
@@ -218,6 +238,11 @@ class GoogleDriveSource:
         if not removed:
             file_resource = self._fetch_file(service, file_id)
             if file_resource:
+                name = file_resource.get("name", "")
+                if self._should_filter(file_id, name):
+                    if previous:
+                        self._delete_cached_snapshot(file_id)
+                    return []
                 current = DriveFileSnapshot.from_file_resource(file_resource)
 
         if current is not None:
@@ -297,6 +322,9 @@ class GoogleDriveSource:
 
             for file_resource in results.get("files", []):
                 file_id = file_resource.get("id")
+                name = file_resource.get("name", "")
+                if self._should_filter(file_id, name):
+                    continue
                 snapshot = DriveFileSnapshot.from_file_resource(file_resource)
                 
                 # Filter out non-intentionally shared files during bootstrap

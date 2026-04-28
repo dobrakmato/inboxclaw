@@ -63,6 +63,12 @@ class GmailFilterItem(BaseModel):
     contains: Optional[str] = None
     model_config = ConfigDict(populate_by_name=True)
 
+class DriveFilterItem(BaseModel):
+    in_field: Literal["file_id", "name"] = Field(alias="in")
+    regex: Optional[str] = None
+    contains: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
 class CalendarFilterItem(BaseModel):
     in_field: Literal["summary", "description", "location", "organizer", "attendees"] = Field(alias="in")
     regex: Optional[str] = None
@@ -92,6 +98,7 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
     max_diffable_file_bytes: int = 10 * 1024 * 1024  # 10MB
     max_changed_sections: int = 5
     max_section_chars: int = 300
+    filters: List[Dict[str, DriveFilterItem]] = Field(default_factory=list)
 
 class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"

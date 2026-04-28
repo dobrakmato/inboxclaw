@@ -282,6 +282,47 @@
       "title": "DatabaseConfig",
       "type": "object"
     },
+    "DriveFilterItem": {
+      "properties": {
+        "in": {
+          "enum": [
+            "file_id",
+            "name"
+          ],
+          "title": "In",
+          "type": "string"
+        },
+        "regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Regex"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        }
+      },
+      "required": [
+        "in"
+      ],
+      "title": "DriveFilterItem",
+      "type": "object"
+    },
     "FakturyOnlineSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -739,6 +780,16 @@
           "default": 300,
           "title": "Max Section Chars",
           "type": "integer"
+        },
+        "filters": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/DriveFilterItem"
+            },
+            "type": "object"
+          },
+          "title": "Filters",
+          "type": "array"
         }
       },
       "required": [

@@ -96,6 +96,13 @@ sources:
       - "text/markdown"
       - "text/html"
     max_diffable_file_bytes: 10485760
+    filters:
+      - ignore_temp:
+          in: name
+          regex: "^~.*"
+      - specific_file:
+          in: file_id
+          contains: "1AbCd..."
     coalesce:
       - match: ["google.drive.file_updated", "google.drive.file_moved"]
         strategy: "debounce"
@@ -114,6 +121,7 @@ sources:
 | `include_corpus_removals`            | `bool`   | `false`                          | Request corpus-removal details when available.                                                  |
 | `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/*` types      | MIME types eligible for paragraph-level text diffing.                                           |
 | `max_diffable_file_bytes`            | `int`    | `10485760` (10 MB)               | Size limit for content fetching and diffing.                                                    |
+| `filters`                           | `list`   | `[]`                             | List of filters to exclude files by `file_id` or `name`.                                        |
 | `coalesce`                           | `list`   | `[]`                             | List of [Coalescing Rules](coalescing.md) (e.g., for `google.drive.file_updated`).              |
 
 ## Event Definitions
