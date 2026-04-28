@@ -41,6 +41,7 @@ _KV_NEXT_POLL_AT = "next_poll_at"
 _KV_BACKOFF_UNTIL = "backoff_until"
 _KV_ACCESS_TOKEN = "access_token"
 _KV_ACCESS_EXPIRES_AT = "access_expires_at"
+_KV_REFRESH_TOKEN = "refresh_token"
 _KV_LAST_BOOKED_DATE = "last_booked_date"
 
 
@@ -90,11 +91,25 @@ class NordigenSource:
                 pass
 
         logger.debug("Refreshing Nordigen access token for source '%s'", self.name)
-        token_resp = await refresh_access_token(self.config.refresh_token)
+        
+        # 1. Use the best available refresh token: DB first, then .env config
+        refresh_token = self.kv.get(self.source_id, _KV_REFRESH_TOKEN) or self.config.refresh_token
+        
+        if not refresh_token:
+            raise ValueError(f"No refresh token available for Nordigen source '{self.name}'")
 
+        token_resp = await refresh_access_token(refresh_token)
+
+        # 2. If GoCardless gave us a NEW refresh token (rotation), save it!
+        if token_resp.refresh:
+            logger.info("Nordigen source '%s': refresh token rotated, saving to DB", self.name)
+            self.kv.set(self.source_id, _KV_REFRESH_TOKEN, token_resp.refresh)
+
+        # 3. Save the new access token
         expires_at = now + timedelta(seconds=token_resp.access_expires - 60)
         self.kv.set(self.source_id, _KV_ACCESS_TOKEN, token_resp.access)
         self.kv.set(self.source_id, _KV_ACCESS_EXPIRES_AT, expires_at.isoformat())
+        
         return token_resp.access
 
     # ------------------------------------------------------------------

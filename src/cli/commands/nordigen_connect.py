@@ -52,8 +52,9 @@ def auth(secret_id: str, secret_key: str):
     """
     Exchange your GoCardless API credentials for a long-lived refresh token.
 
-    Run this once to obtain the refresh token you need to put in your
-    NORDIGEN_REFRESH_TOKEN environment variable (or .env file).
+    Run this once to obtain the refresh token you need for bootstrapping.
+    The pipeline will automatically refresh and store it in the database
+    once it starts polling.
     """
     click.echo("\nContacting GoCardless to mint a refresh token…")
     try:
@@ -67,7 +68,7 @@ def auth(secret_id: str, secret_key: str):
     click.echo(f"\n✓ Refresh token obtained (valid for ~{refresh_days} days):\n")
     click.secho(f"  {refresh_token}", fg="green", bold=True)
     click.echo(
-        "\nAdd this to your .env file:\n"
+        "\nAdd this to your .env file (used for initial connection):\n"
         f"  NORDIGEN_REFRESH_TOKEN={refresh_token}\n"
     )
 

@@ -25,6 +25,7 @@ from src.sources.nordigen import (
     _KV_ACCESS_EXPIRES_AT,
     _KV_ACCESS_TOKEN,
     _KV_BACKOFF_UNTIL,
+    _KV_REFRESH_TOKEN,
     _KV_LAST_BOOKED_DATE,
     _KV_LAST_POLL_AT,
     _KV_NEXT_POLL_AT,
@@ -199,11 +200,30 @@ class TestGetAccessToken:
     @pytest.mark.asyncio
     async def test_stores_new_token_in_kv(self, source, mock_kv):
         with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
-            mock_refresh.return_value = MagicMock(access="stored_tok", access_expires=86400)
+            mock_refresh.return_value = MagicMock(access="stored_tok", access_expires=86400, refresh=None)
             await source._get_access_token()
 
         assert mock_kv.get(1, _KV_ACCESS_TOKEN) == "stored_tok"
         assert mock_kv.get(1, _KV_ACCESS_EXPIRES_AT) is not None
+
+    @pytest.mark.asyncio
+    async def test_prefers_refresh_token_from_kv(self, source, mock_kv):
+        mock_kv.set(1, _KV_REFRESH_TOKEN, "kv_refresh")
+        
+        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
+            mock_refresh.return_value = MagicMock(access="tok", access_expires=86400, refresh=None)
+            await source._get_access_token()
+            
+            # Check that the mock was called with the KV token, not the config token ("rtoken")
+            mock_refresh.assert_called_once_with("kv_refresh")
+
+    @pytest.mark.asyncio
+    async def test_stores_rotated_refresh_token_in_kv(self, source, mock_kv):
+        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
+            mock_refresh.return_value = MagicMock(access="tok", access_expires=86400, refresh="new_refresh_rotated")
+            await source._get_access_token()
+            
+        assert mock_kv.get(1, _KV_REFRESH_TOKEN) == "new_refresh_rotated"
 
     @pytest.mark.asyncio
     async def test_refresh_token_failure_emits_event(self, source, mock_kv):
