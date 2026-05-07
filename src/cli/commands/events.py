@@ -7,7 +7,7 @@ from sqlalchemy import select, desc
 
 from src.cli import cli
 from src.config import load_config
-from src.database import init_db, Event, PendingEvent, Source
+from src.database import init_db, Event, PendingEvent, Source, Sink, HttpWebhookDelivery
 from src.utils.paths import get_project_root
 
 def get_db_session(config_path: Optional[str]):
@@ -131,5 +131,79 @@ def pending_events(n: int, as_json: bool, source: Optional[str], event_type: Opt
                 source = session.get(Source, event.source_id)
                 source_name = source.name if source else f"ID:{event.source_id}"
                 click.echo(f"[{event.last_seen_at.strftime('%Y-%m-%d %H:%M:%S')}] {source_name} | {event.event_type} | {event.entity_id or 'N/A'} (Count: {event.count}, Flush at: {event.flush_at.strftime('%H:%M:%S')})")
+    finally:
+        session.close()
+
+
+@cli.command("webhook-deliveries")
+@click.option("-n", default=10, help="Number of latest webhook deliveries to display (default: 10).")
+@click.option("-j", "as_json", is_flag=True, default=False, help="Output webhook deliveries as JSON objects.")
+@click.option("--sink", help="Filter webhook deliveries by sink name.")
+@click.option("--source", help="Filter webhook deliveries by source name.")
+@click.option("--event-type", help="Filter webhook deliveries by event type.")
+@click.option("--delivered", type=click.Choice(["true", "false"]), help="Filter deliveries by success status.")
+@click.option("--config", "config_path", default=None, help="Path to the configuration file.")
+def webhook_deliveries(
+    n: int,
+    as_json: bool,
+    sink: Optional[str],
+    source: Optional[str],
+    event_type: Optional[str],
+    delivered: Optional[str],
+    config_path: Optional[str],
+):
+    """Display latest N webhook delivery attempts."""
+    session = get_db_session(config_path)
+    try:
+        stmt = (
+            select(HttpWebhookDelivery, Event, Source, Sink)
+            .join(Event, HttpWebhookDelivery.event_id == Event.id)
+            .join(Source, Event.source_id == Source.id)
+            .join(Sink, HttpWebhookDelivery.sink_id == Sink.id)
+            .order_by(desc(HttpWebhookDelivery.last_try), desc(HttpWebhookDelivery.created_at))
+            .limit(n)
+        )
+
+        if sink:
+            stmt = stmt.where(Sink.name == sink)
+        if source:
+            stmt = stmt.where(Source.name == source)
+        if event_type:
+            stmt = stmt.where(Event.event_type == event_type)
+        if delivered is not None:
+            stmt = stmt.where(HttpWebhookDelivery.delivered.is_(delivered == "true"))
+
+        results = session.execute(stmt).all()
+
+        if not results:
+            click.echo("No webhook deliveries found.")
+            return
+
+        if as_json:
+            items = []
+            for delivery, event, event_source, delivery_sink in results:
+                items.append({
+                    "id": delivery.id,
+                    "event_id": event.event_id,
+                    "source": event_source.name,
+                    "sink": delivery_sink.name,
+                    "event_type": event.event_type,
+                    "entity_id": event.entity_id,
+                    "tries": delivery.tries,
+                    "delivered": delivery.delivered,
+                    "created_at": delivery.created_at.isoformat() if delivery.created_at else None,
+                    "last_try": delivery.last_try.isoformat() if delivery.last_try else None,
+                })
+            click.echo(json.dumps(items, indent=2))
+        else:
+            click.secho(f"=== Latest {len(results)} Webhook Deliveries ===", bold=True)
+            for delivery, event, event_source, delivery_sink in results:
+                attempt_time = delivery.last_try or delivery.created_at
+                status = "delivered" if delivery.delivered else "pending"
+                timestamp = attempt_time.strftime('%Y-%m-%d %H:%M:%S') if attempt_time else "N/A"
+                click.echo(
+                    f"[{timestamp}] {event.event_id} | {event_source.name} -> {delivery_sink.name} | "
+                    f"{event.event_type} | {event.entity_id or 'N/A'} | tries={delivery.tries} | {status}"
+                )
     finally:
         session.close()

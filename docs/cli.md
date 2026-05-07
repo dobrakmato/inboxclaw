@@ -94,6 +94,35 @@ inboxclaw pending-events -n 5
 inboxclaw pending-events --source gmail
 ```
 
+### `webhook-deliveries`
+Displays the latest webhook delivery attempts, including which event was sent, which sink handled it, and whether delivery has succeeded.
+
+**Usage:**
+```bash
+inboxclaw webhook-deliveries [OPTIONS]
+```
+
+**Options:**
+- `-n INTEGER`: Number of latest webhook deliveries to display (default: 10).
+- `--sink TEXT`: Filter deliveries by webhook sink name.
+- `--source TEXT`: Filter deliveries by source name.
+- `--event-type TEXT`: Filter deliveries by event type.
+- `--delivered [true|false]`: Filter deliveries by success status.
+- `-j`: Output webhook deliveries as JSON objects.
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+
+**Example:**
+```bash
+# Show the last 10 webhook delivery attempts
+inboxclaw webhook-deliveries
+
+# Show only failed deliveries for a specific sink
+inboxclaw webhook-deliveries --sink my-webhook --delivered false
+
+# Export recent successful deliveries as JSON
+inboxclaw webhook-deliveries --delivered true -j
+```
+
 ### `logs`
 Displays the logs for the Inboxclaw service using `journalctl`. This is only available on Linux systems where Inboxclaw is installed as a systemd service.
 

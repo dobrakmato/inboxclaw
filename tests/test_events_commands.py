@@ -5,7 +5,7 @@ import yaml
 from click.testing import CliRunner
 from datetime import datetime, timezone, timedelta
 from src.cli import cli
-from src.database import init_db, Source, Event, PendingEvent
+from src.database import init_db, Source, Event, PendingEvent, Sink, HttpWebhookDelivery
 
 class TestEventsCommands(unittest.TestCase):
     def setUp(self):
@@ -28,6 +28,8 @@ class TestEventsCommands(unittest.TestCase):
         with self.session_maker() as session:
             source = Source(name="test_source", type="mock")
             session.add(source)
+            sink = Sink(name="test_webhook", type="webhook")
+            session.add(sink)
             session.commit()
             
             # Add published events
@@ -41,6 +43,19 @@ class TestEventsCommands(unittest.TestCase):
                     data={"i": i}
                 )
                 session.add(event)
+
+            session.flush()
+
+            for i in range(4):
+                delivery = HttpWebhookDelivery(
+                    event_id=i + 1,
+                    sink_id=sink.id,
+                    tries=i + 1,
+                    last_try=datetime.now(timezone.utc) - timedelta(minutes=i),
+                    created_at=datetime.now(timezone.utc) - timedelta(minutes=i + 5),
+                    delivered=(i % 2 == 0),
+                )
+                session.add(delivery)
             
             # Add pending events
             for i in range(5):
@@ -170,6 +185,42 @@ class TestEventsCommands(unittest.TestCase):
         result = self.runner.invoke(cli, ["pending-events", "--config", self.config_path, "--event-type", "pending_type"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("pending_0", result.output)
+
+    def test_webhook_deliveries_command(self):
+        result = self.runner.invoke(cli, ["webhook-deliveries", "--config", self.config_path, "-n", "2"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("=== Latest 2 Webhook Deliveries ===", result.output)
+        self.assertIn("evt_0", result.output)
+        self.assertIn("evt_1", result.output)
+        self.assertNotIn("evt_2", result.output)
+
+    def test_webhook_deliveries_json_and_filters(self):
+        result = self.runner.invoke(
+            cli,
+            [
+                "webhook-deliveries",
+                "--config",
+                self.config_path,
+                "-j",
+                "--sink",
+                "test_webhook",
+                "--event-type",
+                "test_event",
+                "--source",
+                "test_source",
+                "--delivered",
+                "true",
+            ],
+        )
+        self.assertEqual(result.exit_code, 0)
+        import json
+        data = json.loads(result.output)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["sink"], "test_webhook")
+        self.assertEqual(data[0]["source"], "test_source")
+        self.assertTrue(data[0]["delivered"])
+        self.assertIn("tries", data[0])
+        self.assertIn("last_try", data[0])
 
 if __name__ == "__main__":
     unittest.main()
