@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 
 from googleapiclient.discovery import build
@@ -136,6 +136,41 @@ class GmailSource:
             }
         )
 
+    def _recover_expired_history_id(self, service) -> None:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.config.recovery_backfill_window)
+        query = f"after:{int(cutoff.timestamp())}"
+        events: list[NewEvent] = []
+        page_token = None
+
+        while True:
+            result = service.users().messages().list(userId='me', q=query, pageToken=page_token).execute()
+            for msg_ref in result.get("messages", []):
+                msg_id = msg_ref.get("id")
+                if not msg_id:
+                    continue
+                try:
+                    msg = self._get_message_metadata(service, msg_id)
+                except HttpError as e:
+                    if e.resp.status == 404:
+                        continue
+                    raise
+                label_ids = msg.get('labelIds', [])
+                if any(l in self.config.exclude_label_ids for l in label_ids) or self._should_filter(msg):
+                    continue
+                events.append(self._create_message_event(msg_id, msg))
+
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+
+        if events:
+            self.services.writer.write_events(self.source_id, events)
+
+        profile = service.users().getProfile(userId='me').execute()
+        fresh_history_id = profile.get('historyId')
+        if fresh_history_id:
+            self.cursor.set_cursor(self.source_id, str(fresh_history_id))
+
     async def fetch_and_publish(self):
         try:
             service = self._get_service()
@@ -161,9 +196,8 @@ class GmailSource:
                     ).execute()
                 except HttpError as e:
                     if e.resp.status == 404:
-                        # historyId is too old, need to re-initialize
-                        logger.warning(f"historyId {current_history_id} is too old for {self.name}, re-initializing")
-                        self.cursor.set_cursor(self.source_id, "")
+                        logger.warning(f"historyId {current_history_id} is too old for {self.name}, backfilling recent messages")
+                        self._recover_expired_history_id(service)
                         return
                     raise
 

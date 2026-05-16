@@ -11,6 +11,10 @@ from src.config import GoogleCalendarSourceConfig
 def _kv_get_from(mapping):
     return lambda _sid, key: mapping.get(key)
 
+
+def _calendar_fingerprint() -> str:
+    return '{"single_events": true, "max_into_future": 31536000.0}'
+
 @pytest.fixture
 def mock_services():
     services = MagicMock()
@@ -497,7 +501,7 @@ async def test_google_calendar_cleanup_loop_does_not_delete_snapshots(mock_servi
 
 
 @pytest.mark.asyncio
-async def test_google_calendar_410_recovery_clears_stale_snapshots(mock_services, config):
+async def test_google_calendar_410_recovery_reconciles_stale_snapshots(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
 
     mock_resp = MagicMock()
@@ -514,8 +518,20 @@ async def test_google_calendar_410_recovery_clears_stale_snapshots(mock_services
     source._fetch_page = MagicMock(side_effect=fetch_page_side_effect)
     mock_services.kv.get.side_effect = _kv_get_from(
         {
-            "config_max_into_future:primary": 31536000.0,
             "sync_token:primary": "expired-sync",
+            "config_fingerprint:primary": _calendar_fingerprint(),
+            "snap:primary:stale-1": {
+                "id": "stale-1",
+                "summary": "Removed event",
+                "status": "confirmed",
+                "etag": "v1",
+            },
+            "snap:primary:stale-2": {
+                "id": "stale-2",
+                "summary": "Removed event 2",
+                "status": "confirmed",
+                "etag": "v1",
+            },
         }
     )
     mock_services.kv.list_keys_with_prefix.return_value = [
@@ -528,4 +544,8 @@ async def test_google_calendar_410_recovery_clears_stale_snapshots(mock_services
     mock_services.kv.list_keys_with_prefix.assert_any_call(1, "snap:primary:")
     mock_services.kv.delete.assert_any_call(1, "snap:primary:stale-1")
     mock_services.kv.delete.assert_any_call(1, "snap:primary:stale-2")
-    mock_services.kv.delete.assert_any_call(1, "sync_token:primary")
+    mock_services.kv.set.assert_any_call(1, "sync_token:primary", "new-sync")
+    mock_services.writer.write_events.assert_called_once()
+    _, events = mock_services.writer.write_events.call_args.args
+    assert len(events) == 2
+    assert all(event.event_type == CalendarEventType.DELETED for event in events)

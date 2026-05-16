@@ -1,8 +1,20 @@
-import os
 from pathlib import Path
+from threading import Lock
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from src.utils.paths import get_project_root
+
+
+_TOKEN_LOCKS: dict[Path, Lock] = {}
+
+
+def _token_lock(token_path: Path) -> Lock:
+    resolved = token_path.resolve()
+    lock = _TOKEN_LOCKS.get(resolved)
+    if lock is None:
+        lock = Lock()
+        _TOKEN_LOCKS[resolved] = lock
+    return lock
 
 def get_google_credentials(token_file: str, source_name: str) -> Credentials:
     """
@@ -24,12 +36,16 @@ def get_google_credentials(token_file: str, source_name: str) -> Credentials:
         if alt_path.exists():
             token_path = alt_path
     
-    token_file = str(token_path)
-    creds = Credentials.from_authorized_user_file(token_file)
-    
+    token_path = token_path.resolve()
+    creds = Credentials.from_authorized_user_file(str(token_path))
+
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_file, "w") as f:
-            f.write(creds.to_json())
-    
+        with _token_lock(token_path):
+            creds = Credentials.from_authorized_user_file(str(token_path))
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                tmp_path = token_path.with_name(f"{token_path.name}.tmp")
+                tmp_path.write_text(creds.to_json(), encoding="utf-8")
+                tmp_path.replace(token_path)
+
     return creds

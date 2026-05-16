@@ -455,11 +455,13 @@ class GoogleCalendarSource:
         if not isinstance(entity_id, str) or not entity_id:
             return []
 
+        previous_event = self.get_cached(calendar_id, entity_id)
         if self._should_filter(event_item):
             logger.info(f"Event {entity_id} filtered out because it matches a filter")
+            if previous_event is not None:
+                self.set_cache(calendar_id, entity_id, None)
             return []
 
-        previous_event = self.get_cached(calendar_id, entity_id)
         version = self._event_version(event_item)
         occurred_at = self._make_occurred_at(event_item, previous_event)
 
@@ -639,6 +641,70 @@ class GoogleCalendarSource:
 
         return False
 
+    def _reconcile_expired_sync_token(self, service, calendar_id: str, cursor_key: str) -> None:
+        prefix = f"snap:{calendar_id}:"
+        old_snapshots: dict[str, dict[str, Any]] = {}
+        for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
+            event_id = key.removeprefix(prefix)
+            cached_event = self.get_cached(calendar_id, event_id)
+            if cached_event is not None:
+                old_snapshots[event_id] = cached_event
+
+        current_snapshots: dict[str, dict[str, Any]] = {}
+        emitted_events: list[NewEvent] = []
+        page_token: Optional[str] = None
+        new_sync_token: Optional[str] = None
+        baseline_time_min = datetime.now(timezone.utc).isoformat()
+
+        while True:
+            result = self._fetch_page(
+                service,
+                calendar_id=calendar_id,
+                sync_token=None,
+                page_token=page_token,
+                time_min=baseline_time_min,
+            )
+            for event_item in result.get("items", []):
+                if not isinstance(event_item, dict):
+                    continue
+                event_id = event_item.get("id")
+                if isinstance(event_id, str) and event_id:
+                    current_snapshots[event_id] = event_item
+
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                new_sync_token = result.get("nextSyncToken")
+                break
+
+        for event_id, old_event in old_snapshots.items():
+            if event_id not in current_snapshots:
+                emitted_events.append(
+                    self._make_new_event(
+                        calendar_id=calendar_id,
+                        event_type=CalendarEventType.DELETED,
+                        entity_id=event_id,
+                        version=self._event_version(old_event),
+                        occurred_at=self._make_occurred_at(old_event),
+                        data=self._make_event_payload(
+                            calendar_id=calendar_id,
+                            event_type=CalendarEventType.DELETED,
+                            current_event=None,
+                            previous_event=old_event,
+                        ),
+                    )
+                )
+
+        self._clear_calendar_snapshots(calendar_id)
+        for event_id, event_item in current_snapshots.items():
+            self.set_cache(calendar_id, event_id, old_snapshots.get(event_id))
+            emitted_events.extend(self._classify_event_change(calendar_id, event_item))
+
+        if emitted_events:
+            self.services.writer.write_events(self.source_id, emitted_events)
+        if new_sync_token:
+            self.services.kv.set(self.source_id, cursor_key, new_sync_token)
+            self._store_sync_fingerprint(calendar_id)
+
     async def fetch_and_publish_calendar(self, service, calendar_id: str):
         try:
             current_fingerprint = self._sync_fingerprint_payload(calendar_id)
@@ -737,10 +803,7 @@ class GoogleCalendarSource:
                             self.name,
                             calendar_id
                         )
-                        self._clear_calendar_snapshots(calendar_id)
-                        self.services.kv.delete(self.source_id, cursor_key)
-                        if self._rebuild_sync_baseline(service, calendar_id):
-                            self._store_sync_fingerprint(calendar_id)
+                        self._reconcile_expired_sync_token(service, calendar_id, cursor_key)
                         return
                     raise
 

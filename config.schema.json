@@ -588,6 +588,16 @@
           "title": "Emit Label Events",
           "type": "boolean"
         },
+        "recovery_backfill_window": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
         "filters": {
           "items": {
             "additionalProperties": {
@@ -727,11 +737,6 @@
         "restrict_to_my_drive": {
           "default": false,
           "title": "Restrict To My Drive",
-          "type": "boolean"
-        },
-        "include_removed": {
-          "default": true,
-          "title": "Include Removed",
           "type": "boolean"
         },
         "include_corpus_removals": {

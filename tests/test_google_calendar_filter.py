@@ -36,6 +36,35 @@ def test_google_calendar_filter_summary(mock_services):
     # Should be filtered out
     assert len(events) == 0
 
+def test_google_calendar_filter_clears_existing_snapshot(mock_services):
+    config = GoogleCalendarSourceConfig(
+        type="google_calendar",
+        token_file="test_token.json",
+        filters=[
+            {"ignore_private": {"in": "summary", "contains": "Private"}}
+        ]
+    )
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    mock_services.kv.get.return_value = {
+        "id": "evt1",
+        "summary": "Team Meeting",
+        "status": "confirmed",
+        "etag": "v1",
+    }
+
+    events = source._classify_event_change(
+        "primary",
+        {
+            "id": "evt1",
+            "summary": "Private Appointment",
+            "status": "confirmed",
+            "etag": "v2",
+        },
+    )
+
+    assert events == []
+    mock_services.kv.delete.assert_called_once_with(1, "snap:primary:evt1")
+
 def test_google_calendar_filter_attendees(mock_services):
     config = GoogleCalendarSourceConfig(
         type="google_calendar",

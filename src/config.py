@@ -79,12 +79,12 @@ class GmailSourceConfig(GoogleSourceConfig):
     type: Literal["gmail"] = "gmail"
     exclude_label_ids: List[str] = Field(default_factory=lambda: ["SPAM"])
     emit_label_events: bool = False
+    recovery_backfill_window: Interval = "7d"
     filters: List[Dict[str, GmailFilterItem]] = Field(default_factory=list)
 
 class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"
     restrict_to_my_drive: bool = False
-    include_removed: bool = True
     include_corpus_removals: bool = False
     bootstrap_mode: Literal["baseline_only", "full_snapshot", "off"] = "baseline_only"
     eligible_mime_types_for_content_diff: List[str] = Field(

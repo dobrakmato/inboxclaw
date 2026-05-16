@@ -6,7 +6,7 @@ from googleapiclient.errors import HttpError
 
 from src.config import GoogleDriveSourceConfig
 from src.sources.google_drive import GoogleDriveSource
-from src.utils.google_drive_sync import GoogleDriveEventType
+from src.utils.google_drive_sync import DriveFileSnapshot, GoogleDriveEventType
 
 
 @pytest.fixture
@@ -382,13 +382,14 @@ async def test_occurred_at_uses_change_time_not_now(services):
 
 
 @pytest.mark.asyncio
-async def test_expired_page_token_reinitializes_cursor_and_bootstrap(services):
+async def test_expired_page_token_reconciles_and_advances_cursor(services):
     source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._bootstrap_repository = MagicMock()
+    source._current_repository_snapshots = MagicMock(return_value={})
 
     services.cursor.get_last_cursor.return_value = "expired-token"
+    services.kv.list_keys_with_prefix.return_value = []
     error_resp = MagicMock()
     error_resp.status = 410
     service.changes().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
@@ -396,7 +397,7 @@ async def test_expired_page_token_reinitializes_cursor_and_bootstrap(services):
 
     await source.fetch_and_publish()
 
-    source._bootstrap_repository.assert_called_once_with(service)
+    source._current_repository_snapshots.assert_called_once_with(service)
     services.cursor.set_cursor.assert_called_once_with(1, "fresh-token")
     service.changes().getStartPageToken.assert_called_once()
 
@@ -418,22 +419,31 @@ async def test_changes_list_requests_all_drives_items(services):
 
     _, kwargs = service.changes().list.call_args
     assert kwargs["pageToken"] == "start-token"
+    assert kwargs["includeRemoved"] is True
     assert kwargs["supportsAllDrives"] is True
     assert kwargs["includeItemsFromAllDrives"] is True
 
 
 @pytest.mark.asyncio
-async def test_expired_page_token_recovery_clears_stale_snapshots(services):
+async def test_expired_page_token_recovery_emits_removed_for_stale_snapshots(services):
     source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._bootstrap_repository = MagicMock()
+    source._current_repository_snapshots = MagicMock(return_value={})
 
     services.cursor.get_last_cursor.return_value = "expired-token"
     services.kv.list_keys_with_prefix.return_value = [
         "gdrive:file:stale-1",
-        "gdrive:file:stale-2",
     ]
+    services.kv.get.return_value = {
+        "file_id": "stale-1",
+        "name": "Gone",
+        "mime_type": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "owned_by_me": True,
+        "version": "old-v1",
+    }
 
     error_resp = MagicMock()
     error_resp.status = 410
@@ -442,7 +452,49 @@ async def test_expired_page_token_recovery_clears_stale_snapshots(services):
 
     await source.fetch_and_publish()
 
-    services.kv.list_keys_with_prefix.assert_called_once_with(1, "gdrive:file:")
+    services.writer.write_events.assert_called_once()
+    _, events = services.writer.write_events.call_args.args
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_REMOVED
     services.kv.delete.assert_any_call(1, "gdrive:file:stale-1")
-    services.kv.delete.assert_any_call(1, "gdrive:file:stale-2")
-    source._bootstrap_repository.assert_called_once_with(service)
+
+
+def test_filtered_tracked_file_emits_removed_event(services):
+    source = GoogleDriveSource(
+        "drive",
+        make_config(filters=[{"ignore_private": {"in": "name", "contains": "Private"}}]),
+        services,
+        source_id=1,
+    )
+    previous = DriveFileSnapshot(
+        file_id="f1",
+        name="Team Plan",
+        mime_type="text/plain",
+        parents=["root"],
+        trashed=False,
+        created_time=None,
+        modified_time=None,
+        owned_by_me=True,
+        version="v1",
+    )
+    source._get_cached_snapshot = MagicMock(return_value=previous)
+    source._delete_cached_snapshot = MagicMock()
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Private Plan",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "ownedByMe": True,
+        "version": "v2",
+    })
+
+    events = source._process_change(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-01T10:00:00Z"},
+        datetime.now(timezone.utc),
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_REMOVED
+    source._delete_cached_snapshot.assert_called_once_with(previous.file_id)

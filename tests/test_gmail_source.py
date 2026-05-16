@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from googleapiclient.errors import HttpError
 from src.sources.gmail import GmailSource
 from src.config import GmailSourceConfig
 import asyncio
@@ -256,3 +257,33 @@ async def test_gmail_source_default_filtering(mock_services):
     _, events = args
     assert len(events) == 1
     assert events[0].event_id == "msg1"
+
+
+@pytest.mark.asyncio
+async def test_gmail_expired_history_id_backfills_recent_messages(mock_services):
+    config = GmailSourceConfig(token_file="fake_token.json", recovery_backfill_window="1d")
+    source = GmailSource("test_gmail", config, mock_services, source_id=1)
+    mock_service = MagicMock()
+    source._get_service = MagicMock(return_value=mock_service)
+
+    source.cursor.get_last_cursor = MagicMock(return_value="old-history")
+    source.cursor.set_cursor = MagicMock()
+    error_resp = MagicMock()
+    error_resp.status = 404
+    mock_service.users().history().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
+    mock_service.users().messages().list.return_value.execute.return_value = {
+        "messages": [{"id": "msg1"}],
+    }
+    mock_service.users().messages().get.return_value.execute.return_value = {
+        "id": "msg1",
+        "labelIds": ["INBOX"],
+        "payload": {"headers": []},
+    }
+    mock_service.users().getProfile.return_value.execute.return_value = {"historyId": "fresh-history"}
+
+    await source.fetch_and_publish()
+
+    mock_services.writer.write_events.assert_called_once()
+    _, events = mock_services.writer.write_events.call_args.args
+    assert [event.event_id for event in events] == ["msg1"]
+    source.cursor.set_cursor.assert_called_once_with(1, "fresh-history")

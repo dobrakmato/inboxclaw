@@ -88,7 +88,6 @@ sources:
     poll_interval: "30s"
     bootstrap_mode: "baseline_only"
     restrict_to_my_drive: false
-    include_removed: true
     include_corpus_removals: false
     eligible_mime_types_for_content_diff:
       - "application/vnd.google-apps.document"
@@ -117,7 +116,6 @@ sources:
 | `poll_interval`                      | `string` | `"10m"`                          | How often to check for changes. Supports human-readable intervals (e.g. `"30s"`, `"5m"`).       |
 | `bootstrap_mode`                     | `string` | `"baseline_only"`                | Initial sync behavior: `baseline_only`, `full_snapshot`, or `off`.                              |
 | `restrict_to_my_drive`               | `bool`   | `false`                          | `true` limits scope to My Drive only. `false` allows wider visibility.                          |
-| `include_removed`                    | `bool`   | `true`                           | Include removal entries from the Drive changes feed.                                            |
 | `include_corpus_removals`            | `bool`   | `false`                          | Request corpus-removal details when available.                                                  |
 | `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/*` types      | MIME types eligible for paragraph-level text diffing.                                           |
 | `max_diffable_file_bytes`            | `int`    | `10485760` (10 MB)               | Size limit for content fetching and diffing.                                                    |

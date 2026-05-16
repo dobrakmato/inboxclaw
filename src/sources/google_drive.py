@@ -246,6 +246,7 @@ class GoogleDriveSource:
                 if self._should_filter(file_id, name):
                     if previous:
                         self._delete_cached_snapshot(file_id)
+                        return self._build_removed_events(file_id, previous, occurred_at, change_time)
                     return []
                 current = DriveFileSnapshot.from_file_resource(file_resource)
 
@@ -353,6 +354,111 @@ class GoogleDriveSource:
         
         logger.info(f"Finished bootstrapping {self.name}: cached {count} files")
 
+    def _build_removed_events(
+        self,
+        file_id: str,
+        previous: DriveFileSnapshot,
+        occurred_at: datetime,
+        change_time: Optional[str] = None,
+    ) -> list[NewEvent]:
+        events: list[NewEvent] = []
+        for event_type in self.classifier.classify(previous, None, removed=True):
+            events.append(
+                self._build_event(
+                    event_type=event_type,
+                    file_id=file_id,
+                    occurred_at=occurred_at,
+                    change_time=change_time,
+                    event_data=self._build_event_data(
+                        event_type=event_type,
+                        file_id=file_id,
+                        previous=previous,
+                        current=None,
+                    ),
+                    event_unique=change_time or previous.version,
+                )
+            )
+        return events
+
+    def _current_repository_snapshots(self, service) -> dict[str, DriveFileSnapshot]:
+        query = "trashed = false"
+        if self.config.restrict_to_my_drive:
+            query += " and 'me' in owners"
+
+        snapshots: dict[str, DriveFileSnapshot] = {}
+        next_page_token = None
+        while True:
+            results = service.files().list(
+                q=query,
+                pageSize=100,
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime, version, parents, owners(displayName, emailAddress), trashed, sharedWithMeTime, sharingUser(displayName, emailAddress), permissions(type,emailAddress,domain,allowFileDiscovery,permissionDetails))",
+                pageToken=next_page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
+            for file_resource in results.get("files", []):
+                file_id = file_resource.get("id")
+                name = file_resource.get("name", "")
+                if not file_id or self._should_filter(file_id, name):
+                    continue
+                snapshot = DriveFileSnapshot.from_file_resource(file_resource)
+                if self.classifier.is_intentionally_shared(snapshot):
+                    snapshots[file_id] = snapshot
+
+            next_page_token = results.get("nextPageToken")
+            if not next_page_token:
+                return snapshots
+
+    def _cached_repository_snapshots(self) -> dict[str, DriveFileSnapshot]:
+        prefix = self.FILE_SNAPSHOT_PREFIX
+        snapshots: dict[str, DriveFileSnapshot] = {}
+        for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
+            file_id = key.removeprefix(prefix)
+            snapshot = self._get_cached_snapshot(file_id)
+            if snapshot is not None:
+                snapshots[file_id] = snapshot
+        return snapshots
+
+    def _reconcile_expired_page_token(self, service) -> None:
+        previous_snapshots = self._cached_repository_snapshots()
+        current_snapshots = self._current_repository_snapshots(service)
+        now = datetime.now(timezone.utc)
+        events: list[NewEvent] = []
+
+        for file_id, previous in previous_snapshots.items():
+            if file_id not in current_snapshots:
+                events.extend(self._build_removed_events(file_id, previous, now))
+
+        for file_id, current in current_snapshots.items():
+            previous = previous_snapshots.get(file_id)
+            for event_type in self.classifier.classify(previous, current, removed=False):
+                events.append(
+                    self._build_event(
+                        event_type=event_type,
+                        file_id=file_id,
+                        occurred_at=now,
+                        event_data=self._build_event_data(
+                            event_type=event_type,
+                            file_id=file_id,
+                            previous=previous,
+                            current=current,
+                        ),
+                        event_unique=current.version,
+                    )
+                )
+
+        if events:
+            self.services.writer.write_events(self.source_id, events)
+
+        self._clear_all_cached_snapshots()
+        for snapshot in current_snapshots.values():
+            self._set_cached_snapshot(snapshot.file_id, snapshot)
+
+        response = service.changes().getStartPageToken().execute()
+        fresh_page_token = response.get("startPageToken")
+        if fresh_page_token:
+            self.services.cursor.set_cursor(self.source_id, fresh_page_token)
+
     async def fetch_and_publish(self):
         try:
             service = self._get_service()
@@ -376,7 +482,7 @@ class GoogleDriveSource:
                     response = service.changes().list(
                         pageToken=next_page_token,
                         spaces="drive",
-                        includeRemoved=self.config.include_removed,
+                        includeRemoved=True,
                         includeCorpusRemovals=self.config.include_corpus_removals,
                         restrictToMyDrive=self.config.restrict_to_my_drive,
                         supportsAllDrives=True,
@@ -388,13 +494,7 @@ class GoogleDriveSource:
                             "Google Drive page token expired for %s; reinitializing change tracking.",
                             self.name,
                         )
-                        self._clear_all_cached_snapshots()
-                        if self.config.bootstrap_mode != "off":
-                            self._bootstrap_repository(service)
-                        response = service.changes().getStartPageToken().execute()
-                        fresh_page_token = response.get("startPageToken")
-                        if fresh_page_token:
-                            self.services.cursor.set_cursor(self.source_id, fresh_page_token)
+                        self._reconcile_expired_page_token(service)
                         return
                     raise
 
