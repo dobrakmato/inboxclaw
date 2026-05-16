@@ -169,8 +169,9 @@ class GoogleCalendarSource:
 
     def _is_too_old(self, event_item: dict[str, Any]) -> bool:
         """
-        Check if the event is too old to be emitted based on max_event_age_days.
-        Checks both the system timestamps (updated/created) AND the actual event date (end/start).
+        Check if the event schedule is too far in the past to keep tracking.
+        Future or ongoing events must remain eligible even if their created/updated
+        metadata is old.
         """
         max_age_days = self.config.max_event_age_days
         if max_age_days is None:
@@ -179,16 +180,11 @@ class GoogleCalendarSource:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=max_age_days)
 
-        # 1. Check system timestamps (is the change too old?)
-        occurred_at = self._make_occurred_at(event_item)
-        if occurred_at is not None and occurred_at < cutoff:
-            return True
-
-        # 2. Check the actual calendar event schedule (is the event itself too far in the past?)
-        # Use end time if available, otherwise start time
+        # Check the actual calendar event schedule (is the event itself too far in the past?)
+        # Use end time if available, otherwise start time.
         end = event_item.get("end", {})
         start = event_item.get("start", {})
-        
+
         event_date_str = end.get("dateTime") or end.get("date") or start.get("dateTime") or start.get("date")
         if event_date_str:
             event_dt = self._parse_rfc3339(event_date_str)
@@ -301,6 +297,7 @@ class GoogleCalendarSource:
     def _make_event_payload(
         self,
         *,
+        calendar_id: str,
         event_type: str,
         current_event: Optional[dict[str, Any]] = None,
         previous_event: Optional[dict[str, Any]] = None,
@@ -320,6 +317,7 @@ class GoogleCalendarSource:
             start = previous_event.get("start")
 
         payload: dict[str, Any] = {
+            "calendar_id": calendar_id,
             "event_id": event_id,
             "summary": summary,
             "start": start,
@@ -368,6 +366,7 @@ class GoogleCalendarSource:
     def _make_new_event(
         self,
         *,
+        calendar_id: str,
         event_type: str,
         entity_id: str,
         version: str,
@@ -375,10 +374,11 @@ class GoogleCalendarSource:
         data: dict[str, Any],
     ) -> NewEvent:
         event_name = event_type.split(".")[-1]
+        scoped_entity_id = f"{calendar_id}:{entity_id}"
         return NewEvent(
-            event_id=f"gcal:{entity_id}:{version}:{event_name}",
+            event_id=f"gcal:{scoped_entity_id}:{version}:{event_name}",
             event_type=event_type,
-            entity_id=entity_id,
+            entity_id=scoped_entity_id,
             data=data,
             occurred_at=occurred_at,
         )
@@ -404,11 +404,13 @@ class GoogleCalendarSource:
             self.set_cache(calendar_id, entity_id, None)
             return [
                 self._make_new_event(
+                    calendar_id=calendar_id,
                     event_type=CalendarEventType.DELETED,
                     entity_id=entity_id,
                     version=version,
                     occurred_at=occurred_at,
                     data=self._make_event_payload(
+                        calendar_id=calendar_id,
                         event_type=CalendarEventType.DELETED,
                         current_event=event_item,
                         previous_event=previous_event,
@@ -420,11 +422,13 @@ class GoogleCalendarSource:
             self.set_cache(calendar_id, entity_id, event_item)
             return [
                 self._make_new_event(
+                    calendar_id=calendar_id,
                     event_type=CalendarEventType.CREATED,
                     entity_id=entity_id,
                     version=version,
                     occurred_at=self._make_occurred_at(event_item, prefer_created=True),
                     data=self._make_event_payload(
+                        calendar_id=calendar_id,
                         event_type=CalendarEventType.CREATED,
                         current_event=event_item,
                     ),
@@ -437,11 +441,13 @@ class GoogleCalendarSource:
         if rsvp_changes:
             emitted.append(
                 self._make_new_event(
+                    calendar_id=calendar_id,
                     event_type=CalendarEventType.RSVP_CHANGED,
                     entity_id=entity_id,
                     version=version,
                     occurred_at=occurred_at,
                     data=self._make_event_payload(
+                        calendar_id=calendar_id,
                         event_type=CalendarEventType.RSVP_CHANGED,
                         current_event=event_item,
                         previous_event=previous_event,
@@ -453,11 +459,13 @@ class GoogleCalendarSource:
         if self._has_non_rsvp_change(previous_event, event_item):
             emitted.append(
                 self._make_new_event(
+                    calendar_id=calendar_id,
                     event_type=CalendarEventType.UPDATED,
                     entity_id=entity_id,
                     version=version,
                     occurred_at=occurred_at,
                     data=self._make_event_payload(
+                        calendar_id=calendar_id,
                         event_type=CalendarEventType.UPDATED,
                         current_event=event_item,
                         previous_event=previous_event,
@@ -628,11 +636,13 @@ class GoogleCalendarSource:
                                     occurred_at = self._make_occurred_at(cached_event)
                                     cleanup_events.append(
                                         self._make_new_event(
+                                            calendar_id=calendar_id,
                                             event_type=CalendarEventType.DELETED,
                                             entity_id=event_id,
                                             version=version,
                                             occurred_at=occurred_at,
                                             data=self._make_event_payload(
+                                                calendar_id=calendar_id,
                                                 event_type=CalendarEventType.DELETED,
                                                 current_event=None,
                                                 previous_event=cached_event,
@@ -693,25 +703,6 @@ class GoogleCalendarSource:
                     new_sync_token = result.get("nextSyncToken", new_sync_token)
                     break
 
-            # Debouncing / collapsing of recurring events
-            collapse_enabled = overrides.get("collapse_recurring_events", self.config.collapse_recurring_events)
-            if collapse_enabled and emitted_events:
-                collapsed: list[NewEvent] = []
-                seen_recurring_ids: set[str] = set()
-                
-                for event in emitted_events:
-                    recurring_id = event.data.get("recurring_event_id")
-                    if recurring_id:
-                        if recurring_id not in seen_recurring_ids:
-                            collapsed.append(event)
-                            seen_recurring_ids.add(recurring_id)
-                        else:
-                            logger.debug("Collapsing recurring event instance %s (recurringEventId: %s)", event.entity_id, recurring_id)
-                    else:
-                        collapsed.append(event)
-                
-                emitted_events = collapsed
-
             if emitted_events:
                 self.services.writer.write_events(self.source_id, emitted_events)
 
@@ -754,13 +745,10 @@ class GoogleCalendarSource:
             await asyncio.sleep(self.config.poll_interval)
 
     async def _cleanup_loop(self):
-        """Periodically remove old events from the KV cache."""
+        """Keep the task alive without deleting active calendar snapshots by row age."""
         while True:
             try:
-                max_age = self.config.max_event_age_days
-                if max_age is not None:
-                    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age)
-                    self.services.kv.delete_expired_with_prefix(self.source_id, cutoff, prefix="snap:")
+                logger.debug("Calendar snapshot cleanup skipped for %s to preserve long-lived event history.", self.name)
             except Exception as e:
                 logger.error("Error in Calendar cache cleanup loop for %s: %s", self.name, e)
             

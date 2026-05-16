@@ -368,14 +368,29 @@ class GoogleDriveSource:
             next_page_token = page_token
             new_start_page_token = None
             while next_page_token:
-                response = service.changes().list(
-                    pageToken=next_page_token,
-                    spaces="drive",
-                    includeRemoved=self.config.include_removed,
-                    includeCorpusRemovals=self.config.include_corpus_removals,
-                    restrictToMyDrive=self.config.restrict_to_my_drive,
-                    supportsAllDrives=True,
-                ).execute()
+                try:
+                    response = service.changes().list(
+                        pageToken=next_page_token,
+                        spaces="drive",
+                        includeRemoved=self.config.include_removed,
+                        includeCorpusRemovals=self.config.include_corpus_removals,
+                        restrictToMyDrive=self.config.restrict_to_my_drive,
+                        supportsAllDrives=True,
+                    ).execute()
+                except HttpError as error:
+                    if error.resp.status == 410:
+                        logger.warning(
+                            "Google Drive page token expired for %s; reinitializing change tracking.",
+                            self.name,
+                        )
+                        if self.config.bootstrap_mode != "off":
+                            self._bootstrap_repository(service)
+                        response = service.changes().getStartPageToken().execute()
+                        fresh_page_token = response.get("startPageToken")
+                        if fresh_page_token:
+                            self.services.cursor.set_cursor(self.source_id, fresh_page_token)
+                        return
+                    raise
 
                 now = datetime.now(timezone.utc)
                 page_events: list[NewEvent] = []

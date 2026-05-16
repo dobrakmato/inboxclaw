@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import MagicMock
+from googleapiclient.errors import HttpError
 
 from src.config import GoogleDriveSourceConfig
 from src.sources.google_drive import GoogleDriveSource
@@ -378,3 +379,23 @@ async def test_occurred_at_uses_change_time_not_now(services):
     assert len(events) == 1
     # occurred_at should be the change time, not "now"
     assert events[0].occurred_at == datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_expired_page_token_reinitializes_cursor_and_bootstrap(services):
+    source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._bootstrap_repository = MagicMock()
+
+    services.cursor.get_last_cursor.return_value = "expired-token"
+    error_resp = MagicMock()
+    error_resp.status = 410
+    service.changes().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
+    service.changes().getStartPageToken.return_value.execute.return_value = {"startPageToken": "fresh-token"}
+
+    await source.fetch_and_publish()
+
+    source._bootstrap_repository.assert_called_once_with(service)
+    services.cursor.set_cursor.assert_called_once_with(1, "fresh-token")
+    service.changes().getStartPageToken.assert_called_once()

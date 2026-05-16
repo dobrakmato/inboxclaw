@@ -57,18 +57,13 @@ The source doesn't just report "something changed." It compares new event data a
 ### Time Filtering
 
 Events are filtered by age and future distance:
-- `max_event_age_days` (default: `1.0`) — events with `occurred_at` older than this are dropped. A background task cleans up the cache daily.
+- `max_event_age_days` (default: `1.0`) — events whose scheduled end/start time is already farther in the past than this are dropped. Future events are still tracked even if they were created or updated long ago.
 - `max_into_future` (default: `"365d"`) — events starting after this cutoff are ignored.
 
 ### Recurring Events (`single_events`)
 
 - **`true`** (default): Each occurrence of a recurring meeting is tracked individually. Moving one Monday's meeting to Tuesday emits an `updated` event for that specific instance.
 - **`false`**: Only the master recurring event is tracked. You get events when the entire series is created or its schedule changes, but not for individual occurrences.
-
-### Event Collapsing (`collapse_recurring_events`)
-
-- **`true`** (default): When multiple instances of the same recurring series change in a single sync batch (e.g., when you edit a series "from this event onwards"), the source emits only **one** event instead of one for every single occurrence. This prevents pipeline flooding.
-- **`false`**: Every changed occurrence is reported individually.
 
 ### Deleted Events (`show_deleted`)
 
@@ -150,13 +145,12 @@ sources:
 | `poll_interval`             | `string` | `"10m"`       | How often to check for changes. Supports human-readable intervals.                                                                                          |
 | `max_event_age_days`        | `float`  | `1.0`         | Drop events older than this many days. Set to `null` to disable.                                                                                            |
 | `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this time horizon.                                                                                                             |
-| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`, `show_deleted`, `single_events`, and `collapse_recurring_events`. Keyed by calendar ID.                       |
+| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`, `show_deleted`, and `single_events`. Keyed by calendar ID.                                                     |
 | `show_deleted`              | `bool`   | `true`        | Whether to emit events for cancelled/deleted calendar entries.                                                                                              |
 | `filters`                   | `list`   | `[]`          | List of filters to ignore specific events.                                                                                                                  |
 | `single_events`             | `bool`   | `true`        | Whether to expand recurring events into individual instances (this is useful for discovering new instances of the same event).                              |
-| `collapse_recurring_events` | `bool`   | `true`        | Whether to collapse multiple occurrences of the same recurring event in a single poll batch (this is to avoid getting one update for every event in a row). |
 
-#### Single Events vs. Collapse Recurring Events
+#### Single Events and Recurring Instances
 
 ##### single_events
 
@@ -166,13 +160,7 @@ When this is false, you will get a single event describing every future occurren
 
 Enabling this allows the source to discover each occurrence individually.
 
-##### collapse_recurring_events
-
-This controls whether the source collapses multiple occurrences of the same recurring event into a single event. 
-
-When this is false, the source emits an event for every occurrence of a recurring event. So you will one event update per occurrence.
-
-Setting this to true will collapse multiple occurrences of the same recurring event into a single update.
+When multiple recurring instances change in the same poll, the source preserves each instance-level change so moves, cancellations, and RSVP changes are not lost.
 
 ## Event Definitions
 

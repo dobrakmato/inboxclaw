@@ -682,11 +682,6 @@
           "title": "Single Events",
           "type": "boolean"
         },
-        "collapse_recurring_events": {
-          "default": true,
-          "title": "Collapse Recurring Events",
-          "type": "boolean"
-        },
         "filters": {
           "items": {
             "additionalProperties": {

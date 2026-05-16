@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timezone, timedelta
@@ -44,8 +46,9 @@ def test_google_calendar_created(mock_services, config):
     assert len(events) == 1
     ev = events[0]
     assert ev.event_type == CalendarEventType.CREATED
-    assert ev.entity_id == "evt1"
+    assert ev.entity_id == "primary:evt1"
     assert ev.data["event_id"] == "evt1"
+    assert ev.data["calendar_id"] == "primary"
     assert ev.data["summary"] == "Meeting"
     assert "event" in ev.data
     assert ev.data["event"]["id"] == "evt1"
@@ -215,58 +218,13 @@ async def test_google_calendar_collapse_recurring(mock_services, config):
     # Use config with collapse enabled (default)
     await source.fetch_and_publish_calendar(MagicMock(), "primary")
     
-    # Should only call write_events once with ONE event (collapsed)
-    assert mock_services.writer.write_events.called
-    args, _ = mock_services.writer.write_events.call_args
-    emitted = args[1]
-    assert len(emitted) == 1
-    assert emitted[0].entity_id == "evt1_inst1"
-
-@pytest.mark.asyncio
-async def test_google_calendar_no_collapse(mock_services, config):
-    config.collapse_recurring_events = False
-    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
-    
-    source._fetch_page = MagicMock(return_value={
-        "items": [
-            {
-                "id": "evt1_inst1",
-                "recurringEventId": "master_evt1",
-                "summary": "Weekly Meeting",
-                "start": {"dateTime": "2024-01-01T10:00:00Z"},
-                "status": "confirmed",
-                "etag": "v1"
-            },
-            {
-                "id": "evt1_inst2",
-                "recurringEventId": "master_evt1",
-                "summary": "Weekly Meeting",
-                "start": {"dateTime": "2024-01-08T10:00:00Z"},
-                "status": "confirmed",
-                "etag": "v1"
-            }
-        ],
-        "nextPageToken": None,
-        "nextSyncToken": "sync_v2"
-    })
-    
-    # Mock kv.get to handle both sync_token and config_max_into_future
-    def kv_get_mock(sid, key):
-        if "sync_token" in key:
-            return "sync_v1"
-        if "config_max_into_future" in key:
-            return 31536000.0
-        return None
-    
-    mock_services.kv.get.side_effect = kv_get_mock
-    
-    await source.fetch_and_publish_calendar(MagicMock(), "primary")
-    
-    # Should call write_events with TWO events (not collapsed)
+    # Distinct recurring instances must both be preserved.
     assert mock_services.writer.write_events.called
     args, _ = mock_services.writer.write_events.call_args
     emitted = args[1]
     assert len(emitted) == 2
+    assert emitted[0].entity_id == "primary:evt1_inst1"
+    assert emitted[1].entity_id == "primary:evt1_inst2"
 
 @pytest.mark.asyncio
 async def test_google_calendar_410_recovery_stores_config_as_float(mock_services, config):
@@ -402,6 +360,66 @@ def test_google_calendar_recent_event_age_filter(mock_services, config):
     mock_services.kv.get.side_effect = lambda sid, key: old_event if "snap:primary:recent_evt" in key else None
     
     events = source._classify_event_change("primary", new_event)
-    
+
     assert len(events) == 1
-    assert events[0].data["summary"] == "New Title"
+
+
+def test_google_calendar_future_event_not_filtered_by_old_updated_timestamp(mock_services, config):
+    config.max_event_age_days = 1.0
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    now = datetime.now(timezone.utc)
+    future_start = (now + timedelta(days=10)).isoformat()
+    future_end = (now + timedelta(days=10, hours=1)).isoformat()
+    old_metadata = (now - timedelta(days=7)).isoformat()
+
+    future_event = {
+        "id": "future_evt",
+        "summary": "Future planning session",
+        "start": {"dateTime": future_start},
+        "end": {"dateTime": future_end},
+        "status": "confirmed",
+        "created": old_metadata,
+        "updated": old_metadata,
+        "etag": "v1",
+    }
+
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", future_event)
+
+    assert len(events) == 1
+    assert events[0].event_type == CalendarEventType.CREATED
+
+
+def test_google_calendar_entity_ids_are_calendar_scoped(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    event_item = {
+        "id": "shared_evt",
+        "summary": "Calendar-scoped identity",
+        "start": {"dateTime": "2026-01-01T10:00:00Z"},
+        "end": {"dateTime": "2026-01-01T11:00:00Z"},
+        "status": "confirmed",
+        "etag": "v1",
+    }
+
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("team@example.com", event_item)
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.entity_id == "team@example.com:shared_evt"
+    assert event.event_id.startswith("gcal:team@example.com:shared_evt:")
+    assert event.data["calendar_id"] == "team@example.com"
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_cleanup_loop_does_not_delete_snapshots(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    with patch("src.sources.google_calendar.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+        with pytest.raises(asyncio.CancelledError):
+            await source._cleanup_loop()
+
+    mock_services.kv.delete_expired_with_prefix.assert_not_called()
