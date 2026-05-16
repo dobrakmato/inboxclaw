@@ -65,10 +65,9 @@ Events are filtered by age and future distance:
 - **`true`** (default): Each occurrence of a recurring meeting is tracked individually. Moving one Monday's meeting to Tuesday emits an `updated` event for that specific instance.
 - **`false`**: Only the master recurring event is tracked. You get events when the entire series is created or its schedule changes, but not for individual occurrences.
 
-### Deleted Events (`show_deleted`)
+### Deleted Events
 
-- **`true`** (default): When an event is cancelled or a meeting invitation is declined, a `deleted` event is emitted. Use this when your system needs to mirror the calendar state exactly.
-- **`false`**: Deleted events are silently ignored.
+Cancelled or deleted entries are always tracked. When an event is cancelled, a meeting invitation is declined, or Google emits a deletion tombstone for a recurring instance, the source emits a `deleted` event so downstream state stays aligned with the calendar.
 
 ## Configuration
 
@@ -113,7 +112,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 1.0`, `max_into_future: "365d"`, `show_deleted: true`, `single_events: true`.
+Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 1.0`, `max_into_future: "365d"`, `single_events: true`.
 
 ### Full Configuration
 
@@ -128,7 +127,6 @@ sources:
     poll_interval: "5m"
     max_event_age_days: 7.0
     max_into_future: "30d"
-    show_deleted: true
     single_events: true
     calendar_overrides:
       "team@group.calendar.google.com":
@@ -145,8 +143,7 @@ sources:
 | `poll_interval`             | `string` | `"10m"`       | How often to check for changes. Supports human-readable intervals.                                                                                          |
 | `max_event_age_days`        | `float`  | `1.0`         | Drop events older than this many days. Set to `null` to disable.                                                                                            |
 | `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this time horizon.                                                                                                             |
-| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`, `show_deleted`, and `single_events`. Keyed by calendar ID.                                                     |
-| `show_deleted`              | `bool`   | `true`        | Whether to emit events for cancelled/deleted calendar entries.                                                                                              |
+| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future` and `single_events`. Keyed by calendar ID.                                                                    |
 | `filters`                   | `list`   | `[]`          | List of filters to ignore specific events.                                                                                                                  |
 | `single_events`             | `bool`   | `true`        | Whether to expand recurring events into individual instances (this is useful for discovering new instances of the same event).                              |
 

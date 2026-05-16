@@ -672,11 +672,6 @@
           "title": "Calendar Overrides",
           "type": "object"
         },
-        "show_deleted": {
-          "default": true,
-          "title": "Show Deleted",
-          "type": "boolean"
-        },
         "single_events": {
           "default": true,
           "title": "Single Events",

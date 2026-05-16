@@ -56,6 +56,10 @@ class GoogleDriveSource:
     def _delete_cached_snapshot(self, file_id: str) -> None:
         self.services.kv.delete(self.source_id, self._snapshot_key(file_id))
 
+    def _clear_all_cached_snapshots(self) -> None:
+        for key in self.services.kv.list_keys_with_prefix(self.source_id, "gdrive:file:"):
+            self.services.kv.delete(self.source_id, key)
+
     def _should_filter(self, file_id: str, name: str) -> bool:
         """Check if file matches any configured filters."""
         if not self.config.filters:
@@ -376,6 +380,7 @@ class GoogleDriveSource:
                         includeCorpusRemovals=self.config.include_corpus_removals,
                         restrictToMyDrive=self.config.restrict_to_my_drive,
                         supportsAllDrives=True,
+                        includeItemsFromAllDrives=True,
                     ).execute()
                 except HttpError as error:
                     if error.resp.status == 410:
@@ -383,6 +388,7 @@ class GoogleDriveSource:
                             "Google Drive page token expired for %s; reinitializing change tracking.",
                             self.name,
                         )
+                        self._clear_all_cached_snapshots()
                         if self.config.bootstrap_mode != "off":
                             self._bootstrap_repository(service)
                         response = service.changes().getStartPageToken().execute()

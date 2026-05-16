@@ -399,3 +399,50 @@ async def test_expired_page_token_reinitializes_cursor_and_bootstrap(services):
     source._bootstrap_repository.assert_called_once_with(service)
     services.cursor.set_cursor.assert_called_once_with(1, "fresh-token")
     service.changes().getStartPageToken.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_changes_list_requests_all_drives_items(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._process_change = MagicMock(return_value=[])
+
+    services.cursor.get_last_cursor.return_value = "start-token"
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [],
+        "newStartPageToken": "new-start",
+    }
+
+    await source.fetch_and_publish()
+
+    _, kwargs = service.changes().list.call_args
+    assert kwargs["pageToken"] == "start-token"
+    assert kwargs["supportsAllDrives"] is True
+    assert kwargs["includeItemsFromAllDrives"] is True
+
+
+@pytest.mark.asyncio
+async def test_expired_page_token_recovery_clears_stale_snapshots(services):
+    source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._bootstrap_repository = MagicMock()
+
+    services.cursor.get_last_cursor.return_value = "expired-token"
+    services.kv.list_keys_with_prefix.return_value = [
+        "gdrive:file:stale-1",
+        "gdrive:file:stale-2",
+    ]
+
+    error_resp = MagicMock()
+    error_resp.status = 410
+    service.changes().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
+    service.changes().getStartPageToken.return_value.execute.return_value = {"startPageToken": "fresh-token"}
+
+    await source.fetch_and_publish()
+
+    services.kv.list_keys_with_prefix.assert_called_once_with(1, "gdrive:file:")
+    services.kv.delete.assert_any_call(1, "gdrive:file:stale-1")
+    services.kv.delete.assert_any_call(1, "gdrive:file:stale-2")
+    source._bootstrap_repository.assert_called_once_with(service)

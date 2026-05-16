@@ -7,6 +7,10 @@ from googleapiclient.errors import HttpError
 from src.sources.google_calendar import GoogleCalendarSource, CalendarEventType
 from src.config import GoogleCalendarSourceConfig
 
+
+def _kv_get_from(mapping):
+    return lambda _sid, key: mapping.get(key)
+
 @pytest.fixture
 def mock_services():
     services = MagicMock()
@@ -392,6 +396,73 @@ def test_google_calendar_future_event_not_filtered_by_old_updated_timestamp(mock
     assert events[0].event_type == CalendarEventType.CREATED
 
 
+def test_google_calendar_fetch_page_always_requests_deleted_entries(mock_services, config):
+    config.single_events = False
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    service = MagicMock()
+    execute = service.events.return_value.list.return_value.execute
+    execute.return_value = {"items": [], "nextSyncToken": "sync-2"}
+
+    source._fetch_page(service, "primary", sync_token="sync-1")
+
+    _, kwargs = service.events.return_value.list.call_args
+    assert kwargs["syncToken"] == "sync-1"
+    assert kwargs["showDeleted"] is True
+    assert kwargs["singleEvents"] is False
+    assert "timeMin" not in kwargs
+    assert "timeMax" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_single_events_change_resets_sync_token(mock_services, config):
+    config.calendar_overrides = {"primary": {"single_events": False}}
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    source._rebuild_sync_baseline = MagicMock(return_value=True)
+
+    mock_services.kv.get.side_effect = _kv_get_from(
+        {
+            "config_fingerprint:primary": '{"single_events": true, "max_into_future": 31536000.0}',
+            "sync_token:primary": "sync-1",
+        }
+    )
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    mock_services.kv.delete.assert_any_call(1, "sync_token:primary")
+    mock_services.kv.delete.assert_any_call(1, "config_fingerprint:primary")
+    source._rebuild_sync_baseline.assert_called_once()
+
+
+def test_google_calendar_cancelled_recurring_instance_keeps_tombstone(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    old_event = {
+        "id": "evt1_20260101",
+        "summary": "Standup",
+        "status": "confirmed",
+        "etag": "v1",
+        "recurringEventId": "evt1",
+        "originalStartTime": {"dateTime": "2026-01-01T09:00:00Z"},
+        "start": {"dateTime": "2026-01-01T09:00:00Z"},
+        "end": {"dateTime": "2026-01-01T09:30:00Z"},
+    }
+    cancelled_instance = {
+        "id": "evt1_20260101",
+        "status": "cancelled",
+        "etag": "v2",
+        "recurringEventId": "evt1",
+        "originalStartTime": {"dateTime": "2026-01-01T09:00:00Z"},
+        "updated": "2026-01-01T08:00:00Z",
+    }
+    mock_services.kv.get.side_effect = lambda sid, key: old_event if key == "snap:primary:evt1_20260101" else None
+
+    events = source._classify_event_change("primary", cancelled_instance)
+
+    assert len(events) == 1
+    assert events[0].event_type == CalendarEventType.DELETED
+    mock_services.kv.set.assert_called_once_with(1, "snap:primary:evt1_20260101", cancelled_instance)
+    mock_services.kv.delete.assert_not_called()
+
+
 def test_google_calendar_entity_ids_are_calendar_scoped(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
     event_item = {
@@ -423,3 +494,38 @@ async def test_google_calendar_cleanup_loop_does_not_delete_snapshots(mock_servi
             await source._cleanup_loop()
 
     mock_services.kv.delete_expired_with_prefix.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_410_recovery_clears_stale_snapshots(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    mock_resp = MagicMock()
+    mock_resp.status = 410
+    http_error = HttpError(resp=mock_resp, content=b"sync token expired")
+    call_count = {"n": 0}
+
+    def fetch_page_side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise http_error
+        return {"items": [], "nextSyncToken": "new-sync"}
+
+    source._fetch_page = MagicMock(side_effect=fetch_page_side_effect)
+    mock_services.kv.get.side_effect = _kv_get_from(
+        {
+            "config_max_into_future:primary": 31536000.0,
+            "sync_token:primary": "expired-sync",
+        }
+    )
+    mock_services.kv.list_keys_with_prefix.return_value = [
+        "snap:primary:stale-1",
+        "snap:primary:stale-2",
+    ]
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    mock_services.kv.list_keys_with_prefix.assert_any_call(1, "snap:primary:")
+    mock_services.kv.delete.assert_any_call(1, "snap:primary:stale-1")
+    mock_services.kv.delete.assert_any_call(1, "snap:primary:stale-2")
+    mock_services.kv.delete.assert_any_call(1, "sync_token:primary")

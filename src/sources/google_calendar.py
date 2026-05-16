@@ -108,12 +108,7 @@ class GoogleCalendarSource:
         page_token: Optional[str] = None,
         time_min: Optional[str] = None,
     ) -> dict[str, Any]:
-        # Get overrides for this calendar
-        overrides = self.config.calendar_overrides.get(calendar_id, {})
-
-        show_deleted = overrides.get("show_deleted", self.config.show_deleted)
-        single_events = overrides.get("single_events", self.config.single_events)
-        max_into_future = overrides.get("max_into_future", self.config.max_into_future)
+        single_events, max_into_future = self._effective_sync_settings(calendar_id)
 
         # If max_into_future is a string (e.g. from overrides), parse it
         if isinstance(max_into_future, str):
@@ -122,7 +117,7 @@ class GoogleCalendarSource:
 
         kwargs = {
             "calendarId": calendar_id,
-            "showDeleted": show_deleted,
+            "showDeleted": True,
             "singleEvents": single_events,
         }
 
@@ -142,6 +137,78 @@ class GoogleCalendarSource:
             kwargs["pageToken"] = page_token
 
         return service.events().list(**kwargs).execute()
+
+    def _effective_sync_settings(self, calendar_id: str) -> tuple[bool, Any]:
+        overrides = self.config.calendar_overrides.get(calendar_id, {})
+        single_events = bool(overrides.get("single_events", self.config.single_events))
+        max_into_future = overrides.get("max_into_future", self.config.max_into_future)
+        return single_events, max_into_future
+
+    def _sync_fingerprint_key(self, calendar_id: str) -> str:
+        return f"config_fingerprint:{calendar_id}"
+
+    def _legacy_sync_config_key(self, calendar_id: str) -> str:
+        return f"config_max_into_future:{calendar_id}"
+
+    def _sync_fingerprint_payload(self, calendar_id: str) -> dict[str, Any]:
+        single_events, max_into_future = self._effective_sync_settings(calendar_id)
+        if isinstance(max_into_future, str):
+            from src.config import parse_interval
+            max_into_future = parse_interval(max_into_future)
+
+        normalized_max = None if max_into_future is None else float(max_into_future)
+        return {
+            "single_events": single_events,
+            "max_into_future": normalized_max,
+        }
+
+    def _load_sync_fingerprint(self, calendar_id: str) -> Optional[dict[str, Any]]:
+        fingerprint_key = self._sync_fingerprint_key(calendar_id)
+        raw = self.services.kv.get(self.source_id, fingerprint_key)
+        if raw is not None:
+            try:
+                if isinstance(raw, str):
+                    parsed = json.loads(raw)
+                elif isinstance(raw, dict):
+                    parsed = raw
+                else:
+                    return None
+                if isinstance(parsed, dict):
+                    return parsed
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return None
+
+        legacy_key = self._legacy_sync_config_key(calendar_id)
+        legacy_raw = self.services.kv.get(self.source_id, legacy_key)
+        if legacy_raw is None:
+            return None
+        try:
+            legacy_max = float(legacy_raw)
+        except (TypeError, ValueError):
+            return None
+
+        single_events, _ = self._effective_sync_settings(calendar_id)
+        return {
+            "single_events": single_events,
+            "max_into_future": legacy_max,
+        }
+
+    def _store_sync_fingerprint(self, calendar_id: str) -> None:
+        payload = self._sync_fingerprint_payload(calendar_id)
+        self.services.kv.set(self.source_id, self._sync_fingerprint_key(calendar_id), json.dumps(payload, sort_keys=True))
+        if payload["max_into_future"] is not None:
+            self.services.kv.set(self.source_id, self._legacy_sync_config_key(calendar_id), payload["max_into_future"])
+
+    def _clear_calendar_snapshots(self, calendar_id: str) -> None:
+        prefix = f"snap:{calendar_id}:"
+        for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
+            self.services.kv.delete(self.source_id, key)
+
+    @staticmethod
+    def _is_cancelled_recurring_instance(event_item: dict[str, Any]) -> bool:
+        return event_item.get("status") == "cancelled" and (
+            event_item.get("recurringEventId") is not None or event_item.get("originalStartTime") is not None
+        )
 
     def _make_occurred_at(
         self,
@@ -401,7 +468,10 @@ class GoogleCalendarSource:
 
         status = event_item.get("status")
         if status == "cancelled":
-            self.set_cache(calendar_id, entity_id, None)
+            if self._is_cancelled_recurring_instance(event_item):
+                self.set_cache(calendar_id, entity_id, event_item)
+            else:
+                self.set_cache(calendar_id, entity_id, None)
             return [
                 self._make_new_event(
                     calendar_id=calendar_id,
@@ -528,13 +598,6 @@ class GoogleCalendarSource:
         """
         logger.info("Rebuilding calendar sync baseline for %s (calendar: %s)", self.name, calendar_id)
 
-        # Get current configuration for saving
-        overrides = self.config.calendar_overrides.get(calendar_id, {})
-        max_into_future = overrides.get("max_into_future", self.config.max_into_future)
-        if isinstance(max_into_future, str):
-            from src.config import parse_interval
-            max_into_future = parse_interval(max_into_future)
-
         baseline_time_min = datetime.now(timezone.utc).isoformat()
         page_token: Optional[str] = None
         new_sync_token: Optional[str] = None
@@ -569,10 +632,7 @@ class GoogleCalendarSource:
         if new_sync_token:
             cursor_key = f"sync_token:{calendar_id}"
             self.services.kv.set(self.source_id, cursor_key, new_sync_token)
-            
-            # Save the config used for this baseline
-            config_key = f"config_max_into_future:{calendar_id}"
-            self.services.kv.set(self.source_id, config_key, float(max_into_future))
+            self._store_sync_fingerprint(calendar_id)
             
             logger.info("Calendar sync baseline initialized for %s (calendar: %s)", self.name, calendar_id)
             return True
@@ -581,32 +641,17 @@ class GoogleCalendarSource:
 
     async def fetch_and_publish_calendar(self, service, calendar_id: str):
         try:
-            # Get current configuration for comparison
-            overrides = self.config.calendar_overrides.get(calendar_id, {})
-            max_into_future = overrides.get("max_into_future", self.config.max_into_future)
-            if isinstance(max_into_future, str):
-                from src.config import parse_interval
-                max_into_future = parse_interval(max_into_future)
-
-            # Check if configuration changed since last sync
-            config_key = f"config_max_into_future:{calendar_id}"
-            last_max_into_future_str = self.services.kv.get(self.source_id, config_key)
-            
+            current_fingerprint = self._sync_fingerprint_payload(calendar_id)
+            config_key = self._legacy_sync_config_key(calendar_id)
+            fingerprint_key = self._sync_fingerprint_key(calendar_id)
+            last_fingerprint = self._load_sync_fingerprint(calendar_id)
             cursor_key = f"sync_token:{calendar_id}"
             current_sync_token = self.services.kv.get(self.source_id, cursor_key)
 
             config_changed = False
-            if last_max_into_future_str is not None:
-                try:
-                    last_max_into_future = float(last_max_into_future_str)
-                    if last_max_into_future != float(max_into_future):
-                        config_changed = True
-                except (ValueError, TypeError):
-                    config_changed = True
+            if last_fingerprint is not None:
+                config_changed = last_fingerprint != current_fingerprint
             elif current_sync_token:
-                # If we have a sync token but no stored config, we should probably 
-                # store the current config and keep the token, OR reset to be safe.
-                # Let's reset to ensure the sync token matches the current config.
                 config_changed = True
 
             if config_changed:
@@ -616,10 +661,14 @@ class GoogleCalendarSource:
                 )
 
                 # Identify and emit deletions for events that are now out of range
-                if last_max_into_future_str is not None:
+                if last_fingerprint is not None:
                     try:
-                        old_max = float(last_max_into_future_str)
-                        new_max = float(max_into_future)
+                        old_max = last_fingerprint.get("max_into_future")
+                        new_max = current_fingerprint.get("max_into_future")
+                        if old_max is None or new_max is None:
+                            raise ValueError("Missing max_into_future fingerprint value")
+                        old_max = float(old_max)
+                        new_max = float(new_max)
                         if new_max < old_max:
                             # We decreased the future range, need to cleanup
                             prefix = f"snap:{calendar_id}:"
@@ -659,8 +708,8 @@ class GoogleCalendarSource:
                         logger.error("Error during max_into_future cleanup: %s", e)
 
                 self.services.kv.delete(self.source_id, cursor_key)
-                # Also delete the saved config to ensure it's re-saved after a successful baseline
                 self.services.kv.delete(self.source_id, config_key)
+                self.services.kv.delete(self.source_id, fingerprint_key)
                 current_sync_token = None
 
             if not current_sync_token:
@@ -688,8 +737,10 @@ class GoogleCalendarSource:
                             self.name,
                             calendar_id
                         )
+                        self._clear_calendar_snapshots(calendar_id)
+                        self.services.kv.delete(self.source_id, cursor_key)
                         if self._rebuild_sync_baseline(service, calendar_id):
-                            self.services.kv.set(self.source_id, config_key, float(max_into_future))
+                            self._store_sync_fingerprint(calendar_id)
                         return
                     raise
 
@@ -708,8 +759,7 @@ class GoogleCalendarSource:
 
             if str(new_sync_token) != str(current_sync_token):
                 self.services.kv.set(self.source_id, cursor_key, new_sync_token)
-                # Also ensure config is saved if it wasn't before
-                self.services.kv.set(self.source_id, config_key, float(max_into_future))
+                self._store_sync_fingerprint(calendar_id)
 
         except HttpError as error:
             logger.error(
