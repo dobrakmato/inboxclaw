@@ -287,7 +287,8 @@
         "in": {
           "enum": [
             "file_id",
-            "name"
+            "name",
+            "parent_id"
           ],
           "title": "In",
           "type": "string"

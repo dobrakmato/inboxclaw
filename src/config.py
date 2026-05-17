@@ -64,7 +64,7 @@ class GmailFilterItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 class DriveFilterItem(BaseModel):
-    in_field: Literal["file_id", "name"] = Field(alias="in")
+    in_field: Literal["file_id", "name", "parent_id"] = Field(alias="in")
     regex: Optional[str] = None
     contains: Optional[str] = None
     model_config = ConfigDict(populate_by_name=True)

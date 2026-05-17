@@ -60,24 +60,38 @@ class GoogleDriveSource:
         for key in self.services.kv.list_keys_with_prefix(self.source_id, "gdrive:file:"):
             self.services.kv.delete(self.source_id, key)
 
-    def _should_filter(self, file_id: str, name: str) -> bool:
+    def _should_filter(self, file_id: str, name: str, parents: Optional[list[str]] = None) -> bool:
         """Check if file matches any configured filters."""
         if not self.config.filters:
             return False
 
         for filter_dict in self.config.filters:
             for filter_name, f in filter_dict.items():
-                value_to_check = ""
-                if f.in_field == "file_id":
-                    value_to_check = file_id
-                elif f.in_field == "name":
-                    value_to_check = name
+                if f.in_field == "parent_id":
+                    for parent in (parents or []):
+                        if matches_filter(parent, f, filter_name):
+                            logger.info(f"Filtering out file {file_id} ('{name}') because it matched filter '{filter_name}'")
+                            return True
+                else:
+                    value_to_check = ""
+                    if f.in_field == "file_id":
+                        value_to_check = file_id
+                    elif f.in_field == "name":
+                        value_to_check = name
 
-                if matches_filter(value_to_check, f, filter_name):
-                    logger.info(f"Filtering out file {file_id} ('{name}') because it matched filter '{filter_name}'")
-                    return True
+                    if matches_filter(value_to_check, f, filter_name):
+                        logger.info(f"Filtering out file {file_id} ('{name}') because it matched filter '{filter_name}'")
+                        return True
 
         return False
+
+    def _is_diffable_mime(self, mime_type: str) -> bool:
+        """Check if mime type is eligible for content diffing based on config."""
+        eligible = self.config.eligible_mime_types_for_content_diff
+        return any(
+            mime_type == t or (t.endswith("*") and mime_type.startswith(t.rstrip("*")))
+            for t in eligible
+        )
 
     def _build_event(
         self,
@@ -143,8 +157,11 @@ class GoogleDriveSource:
                 **common,
             }
             if previous and previous.content_snapshot and current.content_snapshot and previous.content_hash != current.content_hash:
-                diff = self.diff_calc.compute_diff(previous.content_snapshot, current.content_snapshot)
-                data["contentDiff"] = diff
+                try:
+                    diff = self.diff_calc.compute_diff(previous.content_snapshot, current.content_snapshot)
+                    data["contentDiff"] = diff
+                except Exception as e:
+                    logger.warning(f"Failed to compute diff for {file_id}, emitting update without diff: {e}")
             return data
 
         if event_type == GoogleDriveEventType.FILE_MOVED and previous is not None and current is not None:
@@ -243,12 +260,17 @@ class GoogleDriveSource:
             file_resource = self._fetch_file(service, file_id)
             if file_resource:
                 name = file_resource.get("name", "")
-                if self._should_filter(file_id, name):
+                parents = file_resource.get("parents") or []
+                if self._should_filter(file_id, name, parents):
                     if previous:
                         self._delete_cached_snapshot(file_id)
                         return self._build_removed_events(file_id, previous, occurred_at, change_time)
                     return []
                 current = DriveFileSnapshot.from_file_resource(file_resource)
+            elif previous:
+                # File no longer accessible (404) but was previously tracked — treat as removal
+                self._delete_cached_snapshot(file_id)
+                return self._build_removed_events(file_id, previous, occurred_at, change_time)
 
         if current is not None:
             # Filter out non-intentionally shared files
@@ -258,18 +280,24 @@ class GoogleDriveSource:
                     self._delete_cached_snapshot(file_id)
                 return []
 
-            # If it's a text file and we have an update signal or it's new, we might want to fetch content
-            is_text = current.mime_type.startswith("text/") or "document" in current.mime_type
-            if is_text and (previous is None or self.classifier.has_update_signal(previous, current)):
-                content = self._fetch_text_content(service, file_id, current.mime_type)
-                if content is not None:
-                    current.content_snapshot = content
-                    current.content_hash = self.diff_calc.get_hash(content)
-                elif previous:
-                    # Preserve old content if fetch failed
-                    current.content_snapshot = previous.content_snapshot
-                    current.content_hash = previous.content_hash
-            elif is_text and previous:
+            # Fetch content for diffable mime types when there's an update signal or it's new
+            is_diffable = self._is_diffable_mime(current.mime_type)
+            if is_diffable and (previous is None or self.classifier.has_update_signal(previous, current)):
+                try:
+                    content = self._fetch_text_content(service, file_id, current.mime_type)
+                    if content is not None:
+                        current.content_snapshot = content
+                        current.content_hash = self.diff_calc.get_hash(content)
+                    elif previous:
+                        # Preserve old content if fetch failed
+                        current.content_snapshot = previous.content_snapshot
+                        current.content_hash = previous.content_hash
+                except Exception as e:
+                    logger.warning(f"Failed to fetch/hash content for {file_id}, skipping diff: {e}")
+                    if previous:
+                        current.content_snapshot = previous.content_snapshot
+                        current.content_hash = previous.content_hash
+            elif is_diffable and previous:
                 # Non-content change (e.g. move, permission change): preserve existing content
                 current.content_snapshot = previous.content_snapshot
                 current.content_hash = previous.content_hash
@@ -308,6 +336,7 @@ class GoogleDriveSource:
     def _bootstrap_repository(self, service):
         """Populates the local cache with the current state of files without emitting events."""
         logger.info(f"Bootstrapping Google Drive source: {self.name} (mode: {self.config.bootstrap_mode})")
+        self._clear_all_cached_snapshots()
         
         query = "trashed = false"
         if self.config.restrict_to_my_drive:
@@ -328,7 +357,8 @@ class GoogleDriveSource:
             for file_resource in results.get("files", []):
                 file_id = file_resource.get("id")
                 name = file_resource.get("name", "")
-                if self._should_filter(file_id, name):
+                parents = file_resource.get("parents") or []
+                if self._should_filter(file_id, name, parents):
                     continue
                 snapshot = DriveFileSnapshot.from_file_resource(file_resource)
                 
@@ -338,8 +368,7 @@ class GoogleDriveSource:
 
                 # In full_snapshot mode, we also fetch text content
                 if self.config.bootstrap_mode == "full_snapshot":
-                    is_text = snapshot.mime_type.startswith("text/") or "document" in snapshot.mime_type
-                    if is_text:
+                    if self._is_diffable_mime(snapshot.mime_type):
                         content = self._fetch_text_content(service, file_id, snapshot.mime_type)
                         if content is not None:
                             snapshot.content_snapshot = content
@@ -399,7 +428,8 @@ class GoogleDriveSource:
             for file_resource in results.get("files", []):
                 file_id = file_resource.get("id")
                 name = file_resource.get("name", "")
-                if not file_id or self._should_filter(file_id, name):
+                parents = file_resource.get("parents") or []
+                if not file_id or self._should_filter(file_id, name, parents):
                     continue
                 snapshot = DriveFileSnapshot.from_file_resource(file_resource)
                 if self.classifier.is_intentionally_shared(snapshot):
@@ -431,6 +461,9 @@ class GoogleDriveSource:
 
         for file_id, current in current_snapshots.items():
             previous = previous_snapshots.get(file_id)
+            if previous is None:
+                # Silently cache new files — do not emit file_created during reconciliation
+                continue
             for event_type in self.classifier.classify(previous, current, removed=False):
                 events.append(
                     self._build_event(
@@ -501,7 +534,17 @@ class GoogleDriveSource:
                 now = datetime.now(timezone.utc)
                 page_events: list[NewEvent] = []
                 for change in response.get("changes", []):
-                    page_events.extend(self._process_change(service, change, now))
+                    try:
+                        page_events.extend(self._process_change(service, change, now))
+                    except Exception as e:
+                        file_id = change.get("fileId", "unknown")
+                        logger.error(
+                            "Failed to process change for file %s in source %s: %s",
+                            file_id,
+                            self.name,
+                            e,
+                            exc_info=True,
+                        )
                 if page_events:
                     self.services.writer.write_events(self.source_id, page_events)
 
