@@ -245,6 +245,15 @@ class GmailSource:
                         label_ids = msg_ref.get('labelIds', [])
                         if any(l in self.config.exclude_label_ids for l in label_ids):
                             continue
+
+                        try:
+                            msg = self._get_message_metadata(service, msg_id)
+                            if self._should_filter(msg):
+                                logger.info(f"Filtering out deleted message {msg_id} based on content filters")
+                                continue
+                        except HttpError:
+                            pass
+
                         events.append(self._create_message_deleted_event(msg_id, msg_ref.get('threadId'), history_id))
 
                     # 3. Labels Added
