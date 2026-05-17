@@ -72,6 +72,7 @@ export default defineConfig({
                     {text: 'SSE', link: '/sink-sse'},
                     {text: 'HTTP Pull', link: '/sink-http-pull'},
                     {text: 'Bash Command', link: '/sink-command'},
+                    {text: 'Folder', link: '/sink-folder'},
                     {text: 'Win11 Toast', link: '/sink-win11toast'},
                 ]
             },

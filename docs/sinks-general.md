@@ -25,6 +25,7 @@ sink:
 | [Command](sink-command.md)              | `command`    | Executes a CLI command for each event. Supports sequential processing.       |
 | [HTTP Pull](sink-http-pull.md)          | `http_pull`  | Your app polls for batches of events and confirms receipt.                   |
 | [SSE](sink-sse.md)                      | `sse`        | Streams events in real-time over a persistent HTTP connection.               |
+| [Folder](sink-folder.md)                | `folder`     | Appends events as JSONL to daily files in a local directory.                 |
 | [Win11 Toast](sink-win11toast.md)       | `win11toast` | Shows a Windows 11 desktop notification per event. For debugging only.       |
 
 ## Event Matching

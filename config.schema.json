@@ -505,6 +505,41 @@
       "title": "FioSourceConfig",
       "type": "object"
     },
+    "FolderSinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "folder",
+          "default": "folder",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "FolderSinkConfig",
+      "type": "object"
+    },
     "GmailFilterItem": {
       "properties": {
         "in": {
@@ -1383,6 +1418,9 @@
           },
           {
             "$ref": "#/$defs/CommandSinkConfig"
+          },
+          {
+            "$ref": "#/$defs/FolderSinkConfig"
           }
         ]
       },

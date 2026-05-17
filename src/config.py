@@ -245,6 +245,10 @@ class CommandSinkConfig(BaseSinkConfig, TTLConfig):
     max_retries: int = 3
     retry_interval: Interval = 10.0
 
+class FolderSinkConfig(BaseSinkConfig):
+    type: Literal["folder"] = "folder"
+    path: str
+
 SinkConfig = Annotated[
     Union[
         WebhookSinkConfig,
@@ -252,6 +256,7 @@ SinkConfig = Annotated[
         SSESinkConfig,
         Win11ToastSinkConfig,
         CommandSinkConfig,
+        FolderSinkConfig,
     ],
     Field(discriminator="type")
 ]
