@@ -549,3 +549,104 @@ async def test_google_calendar_410_recovery_reconciles_stale_snapshots(mock_serv
     _, events = mock_services.writer.write_events.call_args.args
     assert len(events) == 2
     assert all(event.event_type == CalendarEventType.DELETED for event in events)
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_410_recovery_skips_past_events(mock_services, config):
+    """Bug 3: Past events missing from fresh listing should not emit DELETED."""
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    mock_resp = MagicMock()
+    mock_resp.status = 410
+    http_error = HttpError(resp=mock_resp, content=b"sync token expired")
+    call_count = {"n": 0}
+
+    def fetch_page_side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise http_error
+        return {"items": [], "nextSyncToken": "new-sync"}
+
+    source._fetch_page = MagicMock(side_effect=fetch_page_side_effect)
+
+    past_end = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    mock_services.kv.get.side_effect = _kv_get_from(
+        {
+            "sync_token:primary": "expired-sync",
+            "config_fingerprint:primary": _calendar_fingerprint(),
+            "snap:primary:past-1": {
+                "id": "past-1",
+                "summary": "Old meeting",
+                "status": "confirmed",
+                "end": {"dateTime": past_end},
+                "etag": "v1",
+            },
+        }
+    )
+    mock_services.kv.list_keys_with_prefix.return_value = [
+        "snap:primary:past-1",
+    ]
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    # No DELETED should be emitted for a past event
+    mock_services.writer.write_events.assert_not_called()
+
+
+def test_google_calendar_sequence_only_change_not_emitted(mock_services, config):
+    """Bug 1: A change to only 'sequence' should not emit an UPDATED event."""
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": "2025-06-01T10:00:00Z"},
+        "end": {"dateTime": "2025-06-01T11:00:00Z"},
+        "status": "confirmed",
+        "etag": "v1",
+        "sequence": 0,
+    }
+
+    new_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": "2025-06-01T10:00:00Z"},
+        "end": {"dateTime": "2025-06-01T11:00:00Z"},
+        "status": "confirmed",
+        "etag": "v2",
+        "sequence": 1,
+    }
+
+    mock_services.kv.get.return_value = old_event
+
+    events = source._classify_event_change("primary", new_event)
+    assert len(events) == 0
+
+
+def test_google_calendar_too_old_clears_cache(mock_services):
+    """Bug 4b: When _is_too_old filters an event, existing cache should be cleaned."""
+    config_with_age = GoogleCalendarSourceConfig(
+        type="google_calendar",
+        token_file="test_token.json",
+        calendar_ids=["primary"],
+        poll_interval="1m",
+        max_event_age_days=2,
+    )
+    source = GoogleCalendarSource("test_gcal", config_with_age, mock_services, 1)
+
+    past_end = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    old_cached = {
+        "id": "evt-old",
+        "summary": "Ancient meeting",
+        "start": {"dateTime": past_end},
+        "end": {"dateTime": past_end},
+        "status": "confirmed",
+        "etag": "v1",
+    }
+
+    mock_services.kv.get.return_value = old_cached
+
+    events = source._classify_event_change("primary", old_cached)
+    assert events == []
+    # Should have deleted the stale cache entry
+    mock_services.kv.delete.assert_called_with(1, "snap:primary:evt-old")

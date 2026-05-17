@@ -332,6 +332,8 @@ class GoogleCalendarSource:
         normalized = deepcopy(event_item)
         normalized.pop("etag", None)
         normalized.pop("updated", None)
+        normalized.pop("sequence", None)
+        normalized.pop("kind", None)
 
         attendees = normalized.get("attendees")
         if isinstance(attendees, list):
@@ -466,6 +468,8 @@ class GoogleCalendarSource:
         occurred_at = self._make_occurred_at(event_item, previous_event)
 
         if self._is_too_old(event_item):
+            if previous_event is not None:
+                self.set_cache(calendar_id, entity_id, None)
             return []
 
         status = event_item.get("status")
@@ -599,6 +603,7 @@ class GoogleCalendarSource:
         and persist a fresh sync token.
         """
         logger.info("Rebuilding calendar sync baseline for %s (calendar: %s)", self.name, calendar_id)
+        self._clear_calendar_snapshots(calendar_id)
 
         baseline_time_min = datetime.now(timezone.utc).isoformat()
         page_token: Optional[str] = None
@@ -678,6 +683,15 @@ class GoogleCalendarSource:
 
         for event_id, old_event in old_snapshots.items():
             if event_id not in current_snapshots:
+                # Skip events that already ended — they are absent from the
+                # fresh listing because timeMin filters by end time, not
+                # because they were deleted.
+                end = old_event.get("end", {})
+                end_str = end.get("dateTime") or end.get("date")
+                if end_str:
+                    end_dt = self._parse_rfc3339(end_str)
+                    if end_dt and end_dt < datetime.now(timezone.utc):
+                        continue
                 emitted_events.append(
                     self._make_new_event(
                         calendar_id=calendar_id,
@@ -858,12 +872,30 @@ class GoogleCalendarSource:
             await asyncio.sleep(self.config.poll_interval)
 
     async def _cleanup_loop(self):
-        """Keep the task alive without deleting active calendar snapshots by row age."""
+        """Periodically remove stale snapshots for events too far in the past or future."""
         while True:
             try:
-                logger.debug("Calendar snapshot cleanup skipped for %s to preserve long-lived event history.", self.name)
+                for calendar_id in self.config.calendar_ids:
+                    prefix = f"snap:{calendar_id}:"
+                    _, max_into_future = self._effective_sync_settings(calendar_id)
+                    max_future_secs: Optional[float] = None
+                    if max_into_future is not None:
+                        if isinstance(max_into_future, str):
+                            from src.config import parse_interval
+                            max_future_secs = float(parse_interval(max_into_future))
+                        else:
+                            max_future_secs = float(max_into_future)
+
+                    for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
+                        event_id = key.removeprefix(prefix)
+                        cached = self.get_cached(calendar_id, event_id)
+                        if not cached:
+                            continue
+                        if self._is_too_old(cached):
+                            self.services.kv.delete(self.source_id, key)
+                            continue
+                        if max_future_secs and self._is_too_far_future(cached, max_future_secs):
+                            self.services.kv.delete(self.source_id, key)
             except Exception as e:
-                logger.error("Error in Calendar cache cleanup loop for %s: %s", self.name, e)
-            
-            # Run cleanup once a day or every 12 hours
+                logger.error("Error in cleanup loop for %s: %s", self.name, e)
             await asyncio.sleep(12 * 3600)
