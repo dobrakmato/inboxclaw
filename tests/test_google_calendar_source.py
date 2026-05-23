@@ -15,6 +15,11 @@ def _kv_get_from(mapping):
 def _calendar_fingerprint() -> str:
     return '{"single_events": true, "max_into_future": 31536000.0}'
 
+
+def _snapshot_state(count: int) -> dict:
+    return {"complete": True, "count": count}
+
+
 @pytest.fixture
 def mock_services():
     services = MagicMock()
@@ -216,12 +221,15 @@ async def test_google_calendar_collapse_recurring(mock_services, config):
     def kv_get_mock(sid, key):
         if "sync_token" in key:
             return "sync_v1"
+        if key == "snapshot_state:primary":
+            return _snapshot_state(0)
         if "config_max_into_future" in key:
             # Match the default from config (365d = 31536000.0)
             return 31536000.0
         return None
     
     mock_services.kv.get.side_effect = kv_get_mock
+    mock_services.kv.list_keys_with_prefix.return_value = []
     
     # Use config with collapse enabled (default)
     await source.fetch_and_publish_calendar(MagicMock(), "primary")
@@ -266,11 +274,14 @@ async def test_google_calendar_410_recovery_stores_config_as_float(mock_services
     def kv_get_mock(sid, key):
         if "sync_token" in key:
             return "old_sync_token"
+        if key == "snapshot_state:primary":
+            return _snapshot_state(0)
         if "config_max_into_future" in key:
             return 31536000.0
         return None
 
     mock_services.kv.get.side_effect = kv_get_mock
+    mock_services.kv.list_keys_with_prefix.return_value = []
 
     await source.fetch_and_publish_calendar(MagicMock(), "primary")
 
@@ -459,11 +470,17 @@ def test_google_calendar_cancelled_recurring_instance_keeps_tombstone(mock_servi
     }
     mock_services.kv.get.side_effect = lambda sid, key: old_event if key == "snap:primary:evt1_20260101" else None
 
-    events = source._classify_event_change("primary", cancelled_instance)
+    result = source._classify_event_change_result("primary", cancelled_instance)
+    events = result.events
 
     assert len(events) == 1
     assert events[0].event_type == CalendarEventType.DELETED
-    mock_services.kv.set.assert_called_once_with(1, "snap:primary:evt1_20260101", cancelled_instance)
+    assert len(result.cache_mutations) == 1
+    mutation = result.cache_mutations[0]
+    assert mutation.calendar_id == "primary"
+    assert mutation.event_id == "evt1_20260101"
+    assert mutation.event_payload == cancelled_instance
+    mock_services.kv.set.assert_not_called()
     mock_services.kv.delete.assert_not_called()
 
 
@@ -624,7 +641,7 @@ def test_google_calendar_sequence_only_change_not_emitted(mock_services, config)
 
 
 def test_google_calendar_too_old_clears_cache(mock_services):
-    """Bug 4b: When _is_too_old filters an event, existing cache should be cleaned."""
+    """Bug 4b: When _is_too_old filters an event, existing cache cleanup should be queued."""
     config_with_age = GoogleCalendarSourceConfig(
         type="google_calendar",
         token_file="test_token.json",
@@ -646,7 +663,123 @@ def test_google_calendar_too_old_clears_cache(mock_services):
 
     mock_services.kv.get.return_value = old_cached
 
-    events = source._classify_event_change("primary", old_cached)
-    assert events == []
-    # Should have deleted the stale cache entry
-    mock_services.kv.delete.assert_called_with(1, "snap:primary:evt-old")
+    result = source._classify_event_change_result("primary", old_cached)
+    assert result.events == []
+    assert len(result.cache_mutations) == 1
+    mutation = result.cache_mutations[0]
+    assert mutation.calendar_id == "primary"
+    assert mutation.event_id == "evt-old"
+    assert mutation.event_payload is None
+    mock_services.kv.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_write_failure_does_not_advance_cache_or_cursor(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "Old title",
+        "start": {"dateTime": "2026-06-01T10:00:00Z"},
+        "end": {"dateTime": "2026-06-01T11:00:00Z"},
+        "status": "confirmed",
+        "etag": "v1",
+    }
+    new_event = {
+        "id": "evt1",
+        "summary": "New title",
+        "start": {"dateTime": "2026-06-01T10:00:00Z"},
+        "end": {"dateTime": "2026-06-01T11:00:00Z"},
+        "status": "confirmed",
+        "etag": "v2",
+    }
+    source._fetch_page = MagicMock(return_value={
+        "items": [new_event],
+        "nextSyncToken": "sync-2",
+    })
+    mock_services.kv.get.side_effect = _kv_get_from(
+        {
+            "sync_token:primary": "sync-1",
+            "config_fingerprint:primary": _calendar_fingerprint(),
+            "snapshot_state:primary": _snapshot_state(1),
+            "snap:primary:evt1": old_event,
+        }
+    )
+    mock_services.kv.list_keys_with_prefix.return_value = ["snap:primary:evt1"]
+    mock_services.writer.write_events.side_effect = RuntimeError("database unavailable")
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    forbidden_keys = {"snap:primary:evt1", "sync_token:primary"}
+    for call in mock_services.kv.set.call_args_list:
+        assert call.args[1] not in forbidden_keys
+    mock_services.kv.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_google_calendar_missing_snapshots_rebuilds_without_created_cascade(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    source._rebuild_sync_baseline = MagicMock(return_value=True)
+    mock_services.kv.get.side_effect = _kv_get_from(
+        {
+            "sync_token:primary": "sync-1",
+            "config_fingerprint:primary": _calendar_fingerprint(),
+        }
+    )
+    mock_services.kv.list_keys_with_prefix.return_value = []
+
+    await source.fetch_and_publish_calendar(MagicMock(), "primary")
+
+    source._rebuild_sync_baseline.assert_called_once()
+    mock_services.writer.write_events.assert_not_called()
+
+
+def test_google_calendar_future_cancelled_recurring_instance_ignored_when_never_seen(mock_services, config):
+    config.max_into_future = "14d"
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    future_start = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    cancelled_instance = {
+        "id": "evt1_future",
+        "status": "cancelled",
+        "etag": "v2",
+        "recurringEventId": "evt1",
+        "originalStartTime": {"dateTime": future_start},
+        "updated": datetime.now(timezone.utc).isoformat(),
+    }
+    mock_services.kv.get.return_value = None
+
+    result = source._classify_event_change_result("primary", cancelled_instance)
+
+    assert result.events == []
+    assert result.cache_mutations == []
+
+
+def test_google_calendar_past_cancelled_recurring_instance_queues_cache_delete_without_event(mock_services, config):
+    config.max_event_age_days = 1.0
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    past_start = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    old_event = {
+        "id": "evt1_past",
+        "summary": "Old standup",
+        "status": "confirmed",
+        "etag": "v1",
+        "recurringEventId": "evt1",
+        "originalStartTime": {"dateTime": past_start},
+        "start": {"dateTime": past_start},
+        "end": {"dateTime": past_start},
+    }
+    cancelled_instance = {
+        "id": "evt1_past",
+        "status": "cancelled",
+        "etag": "v2",
+        "recurringEventId": "evt1",
+        "originalStartTime": {"dateTime": past_start},
+        "updated": datetime.now(timezone.utc).isoformat(),
+    }
+    mock_services.kv.get.return_value = old_event
+
+    result = source._classify_event_change_result("primary", cancelled_instance)
+
+    assert result.events == []
+    assert len(result.cache_mutations) == 1
+    assert result.cache_mutations[0].event_payload is None

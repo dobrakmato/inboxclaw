@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -32,6 +33,22 @@ class RsvpChangeDTO(BaseModel):
     after: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class CalendarCacheMutation:
+    calendar_id: str
+    event_id: str
+    event_payload: Optional[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class CalendarChangeResult:
+    events: list[NewEvent]
+    cache_mutations: list[CalendarCacheMutation]
+
+
+_PREVIOUS_EVENT_UNSET = object()
+
+
 class GoogleCalendarSource:
     def __init__(
         self,
@@ -54,6 +71,8 @@ class GoogleCalendarSource:
         if not value:
             return None
         try:
+            if len(value) == 10 and value[4] == "-" and value[7] == "-":
+                return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 return dt.replace(tzinfo=timezone.utc)
@@ -203,6 +222,54 @@ class GoogleCalendarSource:
         prefix = f"snap:{calendar_id}:"
         for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
             self.services.kv.delete(self.source_id, key)
+        self.services.kv.delete(self.source_id, self._snapshot_state_key(calendar_id))
+
+    def _snapshot_state_key(self, calendar_id: str) -> str:
+        return f"snapshot_state:{calendar_id}"
+
+    def _load_snapshot_state(self, calendar_id: str) -> Optional[dict[str, Any]]:
+        raw = self.services.kv.get(self.source_id, self._snapshot_state_key(calendar_id))
+        if raw is None:
+            return None
+        try:
+            if isinstance(raw, str):
+                parsed = json.loads(raw)
+            elif isinstance(raw, dict):
+                parsed = raw
+            else:
+                return None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _snapshot_keys(self, calendar_id: str) -> list[str]:
+        return self.services.kv.list_keys_with_prefix(self.source_id, f"snap:{calendar_id}:")
+
+    def _store_snapshot_state(self, calendar_id: str) -> None:
+        self.services.kv.set(
+            self.source_id,
+            self._snapshot_state_key(calendar_id),
+            {
+                "complete": True,
+                "count": len(self._snapshot_keys(calendar_id)),
+            },
+        )
+
+    def _snapshot_cache_is_trusted(self, calendar_id: str) -> bool:
+        keys = self._snapshot_keys(calendar_id)
+        state = self._load_snapshot_state(calendar_id)
+
+        if state and state.get("complete") is True:
+            expected_count = state.get("count")
+            return not isinstance(expected_count, int) or expected_count == len(keys)
+
+        if keys:
+            # Existing installations predate the marker. Non-empty snapshots are
+            # trusted once and marked so future cache wipes can be detected.
+            self._store_snapshot_state(calendar_id)
+            return True
+
+        return False
 
     @staticmethod
     def _is_cancelled_recurring_instance(event_item: dict[str, Any]) -> bool:
@@ -234,7 +301,43 @@ class GoogleCalendarSource:
 
         return None
 
-    def _is_too_old(self, event_item: dict[str, Any]) -> bool:
+    @staticmethod
+    def _calendar_time_value(event_item: Optional[dict[str, Any]], field: str) -> Optional[str]:
+        if not event_item:
+            return None
+        value = event_item.get(field)
+        if not isinstance(value, dict):
+            return None
+        calendar_time = value.get("dateTime") or value.get("date")
+        return calendar_time if isinstance(calendar_time, str) else None
+
+    def _event_start_time(self, event_item: Optional[dict[str, Any]]) -> Optional[datetime]:
+        start_value = self._calendar_time_value(event_item, "start")
+        if start_value:
+            return self._parse_rfc3339(start_value)
+
+        original_start = self._calendar_time_value(event_item, "originalStartTime")
+        if original_start:
+            return self._parse_rfc3339(original_start)
+
+        return None
+
+    def _event_end_time(self, event_item: Optional[dict[str, Any]]) -> Optional[datetime]:
+        end_value = self._calendar_time_value(event_item, "end")
+        if end_value:
+            return self._parse_rfc3339(end_value)
+
+        return self._event_start_time(event_item)
+
+    def _event_has_ended(self, event_item: dict[str, Any]) -> bool:
+        event_end = self._event_end_time(event_item)
+        return event_end is not None and event_end < datetime.now(timezone.utc)
+
+    def _is_too_old(
+        self,
+        event_item: dict[str, Any],
+        fallback_event: Optional[dict[str, Any]] = None,
+    ) -> bool:
         """
         Check if the event schedule is too far in the past to keep tracking.
         Future or ongoing events must remain eligible even if their created/updated
@@ -247,35 +350,28 @@ class GoogleCalendarSource:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=max_age_days)
 
-        # Check the actual calendar event schedule (is the event itself too far in the past?)
-        # Use end time if available, otherwise start time.
-        end = event_item.get("end", {})
-        start = event_item.get("start", {})
-
-        event_date_str = end.get("dateTime") or end.get("date") or start.get("dateTime") or start.get("date")
-        if event_date_str:
-            event_dt = self._parse_rfc3339(event_date_str)
-            if event_dt and event_dt < cutoff:
-                logger.debug(
-                    "Event %s ignored because it ended at %s, which is older than %s days.",
-                    event_item.get("id"),
-                    event_dt,
-                    max_age_days
-                )
-                return True
+        event_dt = self._event_end_time(event_item) or self._event_end_time(fallback_event)
+        if event_dt and event_dt < cutoff:
+            logger.debug(
+                "Event %s ignored because it ended at %s, which is older than %s days.",
+                event_item.get("id"),
+                event_dt,
+                max_age_days
+            )
+            return True
 
         return False
 
-    def _is_too_far_future(self, event_item: dict[str, Any], max_into_future: float) -> bool:
+    def _is_too_far_future(
+        self,
+        event_item: dict[str, Any],
+        max_into_future: float,
+        fallback_event: Optional[dict[str, Any]] = None,
+    ) -> bool:
         """
         Check if the event is too far in the future based on max_into_future.
         """
-        start = event_item.get("start", {})
-        start_date_str = start.get("dateTime") or start.get("date")
-        if not start_date_str:
-            return False
-
-        start_dt = self._parse_rfc3339(start_date_str)
+        start_dt = self._event_start_time(event_item) or self._event_start_time(fallback_event)
         if not start_dt:
             return False
 
@@ -452,36 +548,59 @@ class GoogleCalendarSource:
             occurred_at=occurred_at,
         )
 
-    def _classify_event_change(self, calendar_id: str, event_item: dict[str, Any]) -> list[NewEvent]:
+    def _cache_mutation(
+        self,
+        calendar_id: str,
+        event_id: str,
+        event_payload: Optional[dict[str, Any]],
+    ) -> CalendarCacheMutation:
+        return CalendarCacheMutation(calendar_id, event_id, event_payload)
+
+    def _apply_cache_mutations(self, calendar_id: str, mutations: list[CalendarCacheMutation]) -> None:
+        for mutation in mutations:
+            self.set_cache(mutation.calendar_id, mutation.event_id, mutation.event_payload)
+        if mutations:
+            self._store_snapshot_state(calendar_id)
+
+    def _classify_event_change_result(
+        self,
+        calendar_id: str,
+        event_item: dict[str, Any],
+        previous_event: Any = _PREVIOUS_EVENT_UNSET,
+    ) -> CalendarChangeResult:
         entity_id = event_item.get("id")
         if not isinstance(entity_id, str) or not entity_id:
-            return []
+            return CalendarChangeResult([], [])
 
-        previous_event = self.get_cached(calendar_id, entity_id)
+        if previous_event is _PREVIOUS_EVENT_UNSET:
+            previous_event = self.get_cached(calendar_id, entity_id)
+
+        cache_mutations: list[CalendarCacheMutation] = []
         if self._should_filter(event_item):
             logger.info(f"Event {entity_id} filtered out because it matches a filter")
             if previous_event is not None:
-                self.set_cache(calendar_id, entity_id, None)
-            return []
+                cache_mutations.append(self._cache_mutation(calendar_id, entity_id, None))
+            return CalendarChangeResult([], cache_mutations)
 
         version = self._event_version(event_item)
         occurred_at = self._make_occurred_at(event_item, previous_event)
 
-        if self._is_too_old(event_item):
+        if self._is_too_old(event_item, previous_event):
             if previous_event is not None:
-                self.set_cache(calendar_id, entity_id, None)
-            return []
+                cache_mutations.append(self._cache_mutation(calendar_id, entity_id, None))
+            return CalendarChangeResult([], cache_mutations)
 
         _, max_into_future = self._effective_sync_settings(calendar_id)
         if max_into_future is not None:
             if isinstance(max_into_future, str):
                 from src.config import parse_interval
                 max_into_future = parse_interval(max_into_future)
-            if self._is_too_far_future(event_item, float(max_into_future)):
+            if self._is_too_far_future(event_item, float(max_into_future), previous_event):
                 if previous_event is not None:
-                    # Event was previously in range but moved out — emit deletion
-                    self.set_cache(calendar_id, entity_id, None)
-                    return [
+                    # Event was previously in range but moved out - emit deletion
+                    cache_mutations.append(self._cache_mutation(calendar_id, entity_id, None))
+                    return CalendarChangeResult(
+                        [
                         self._make_new_event(
                             calendar_id=calendar_id,
                             event_type=CalendarEventType.DELETED,
@@ -495,47 +614,55 @@ class GoogleCalendarSource:
                                 previous_event=previous_event,
                             ),
                         )
-                    ]
-                return []
+                        ],
+                        cache_mutations,
+                    )
+                return CalendarChangeResult([], [])
 
         status = event_item.get("status")
         if status == "cancelled":
             if self._is_cancelled_recurring_instance(event_item):
-                self.set_cache(calendar_id, entity_id, event_item)
+                cache_mutations.append(self._cache_mutation(calendar_id, entity_id, event_item))
             else:
-                self.set_cache(calendar_id, entity_id, None)
-            return [
-                self._make_new_event(
-                    calendar_id=calendar_id,
-                    event_type=CalendarEventType.DELETED,
-                    entity_id=entity_id,
-                    version=version,
-                    occurred_at=occurred_at,
-                    data=self._make_event_payload(
+                cache_mutations.append(self._cache_mutation(calendar_id, entity_id, None))
+            return CalendarChangeResult(
+                [
+                    self._make_new_event(
                         calendar_id=calendar_id,
                         event_type=CalendarEventType.DELETED,
-                        current_event=event_item,
-                        previous_event=previous_event,
+                        entity_id=entity_id,
+                        version=version,
+                        occurred_at=occurred_at,
+                        data=self._make_event_payload(
+                            calendar_id=calendar_id,
+                            event_type=CalendarEventType.DELETED,
+                            current_event=event_item,
+                            previous_event=previous_event,
+                        ),
                     ),
-                )
-            ]
+                ],
+                cache_mutations,
+            )
 
         if previous_event is None:
-            self.set_cache(calendar_id, entity_id, event_item)
-            return [
-                self._make_new_event(
-                    calendar_id=calendar_id,
-                    event_type=CalendarEventType.CREATED,
-                    entity_id=entity_id,
-                    version=version,
-                    occurred_at=self._make_occurred_at(event_item, prefer_created=True),
-                    data=self._make_event_payload(
+            cache_mutations.append(self._cache_mutation(calendar_id, entity_id, event_item))
+            return CalendarChangeResult(
+                [
+                    self._make_new_event(
                         calendar_id=calendar_id,
                         event_type=CalendarEventType.CREATED,
-                        current_event=event_item,
+                        entity_id=entity_id,
+                        version=version,
+                        occurred_at=self._make_occurred_at(event_item, prefer_created=True),
+                        data=self._make_event_payload(
+                            calendar_id=calendar_id,
+                            event_type=CalendarEventType.CREATED,
+                            current_event=event_item,
+                        ),
                     ),
-                )
-            ]
+                ],
+                cache_mutations,
+            )
 
         emitted: list[NewEvent] = []
 
@@ -575,8 +702,11 @@ class GoogleCalendarSource:
                 )
             )
 
-        self.set_cache(calendar_id, entity_id, event_item)
-        return emitted
+        cache_mutations.append(self._cache_mutation(calendar_id, entity_id, event_item))
+        return CalendarChangeResult(emitted, cache_mutations)
+
+    def _classify_event_change(self, calendar_id: str, event_item: dict[str, Any]) -> list[NewEvent]:
+        return self._classify_event_change_result(calendar_id, event_item).events
 
     def _should_filter(self, event_item: dict[str, Any]) -> bool:
         if not self.config.filters:
@@ -623,17 +753,25 @@ class GoogleCalendarSource:
         else:
             self.services.kv.set(self.source_id, key, event_payload)
 
+    def _replace_calendar_snapshots(self, calendar_id: str, snapshots: dict[str, dict[str, Any]]) -> None:
+        self._clear_calendar_snapshots(calendar_id)
+        for event_id, event_item in snapshots.items():
+            if event_item.get("status") == "cancelled":
+                continue
+            self.set_cache(calendar_id, event_id, event_item)
+        self._store_snapshot_state(calendar_id)
+
     def _rebuild_sync_baseline(self, service, calendar_id: str) -> bool:
         """
         Rebuild the local baseline from current Calendar state, emit nothing,
         and persist a fresh sync token.
         """
         logger.info("Rebuilding calendar sync baseline for %s (calendar: %s)", self.name, calendar_id)
-        self._clear_calendar_snapshots(calendar_id)
 
         baseline_time_min = datetime.now(timezone.utc).isoformat()
         page_token: Optional[str] = None
         new_sync_token: Optional[str] = None
+        snapshots: dict[str, dict[str, Any]] = {}
 
         while True:
             result = self._fetch_page(
@@ -655,7 +793,7 @@ class GoogleCalendarSource:
                 if event_item.get("status") == "cancelled":
                     continue
 
-                self.set_cache(calendar_id, event_id, event_item)
+                snapshots[event_id] = event_item
 
             page_token = result.get("nextPageToken")
             if not page_token:
@@ -663,6 +801,7 @@ class GoogleCalendarSource:
                 break
 
         if new_sync_token:
+            self._replace_calendar_snapshots(calendar_id, snapshots)
             cursor_key = f"sync_token:{calendar_id}"
             self.services.kv.set(self.source_id, cursor_key, new_sync_token)
             self._store_sync_fingerprint(calendar_id)
@@ -673,9 +812,10 @@ class GoogleCalendarSource:
         return False
 
     def _reconcile_expired_sync_token(self, service, calendar_id: str, cursor_key: str) -> None:
+        snapshot_trusted = self._snapshot_cache_is_trusted(calendar_id)
         prefix = f"snap:{calendar_id}:"
         old_snapshots: dict[str, dict[str, Any]] = {}
-        for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
+        for key in self._snapshot_keys(calendar_id):
             event_id = key.removeprefix(prefix)
             cached_event = self.get_cached(calendar_id, event_id)
             if cached_event is not None:
@@ -707,17 +847,27 @@ class GoogleCalendarSource:
                 new_sync_token = result.get("nextSyncToken")
                 break
 
+        if not snapshot_trusted:
+            logger.warning(
+                "Snapshot cache for %s (calendar: %s) is missing or incomplete; rebuilding baseline without emitted events.",
+                self.name,
+                calendar_id,
+            )
+            self._replace_calendar_snapshots(calendar_id, current_snapshots)
+            if new_sync_token:
+                self.services.kv.set(self.source_id, cursor_key, new_sync_token)
+                self._store_sync_fingerprint(calendar_id)
+            return
+
+        cache_mutations: list[CalendarCacheMutation] = []
         for event_id, old_event in old_snapshots.items():
             if event_id not in current_snapshots:
-                # Skip events that already ended — they are absent from the
+                # Skip events that already ended - they are absent from the
                 # fresh listing because timeMin filters by end time, not
                 # because they were deleted.
-                end = old_event.get("end", {})
-                end_str = end.get("dateTime") or end.get("date")
-                if end_str:
-                    end_dt = self._parse_rfc3339(end_str)
-                    if end_dt and end_dt < datetime.now(timezone.utc):
-                        continue
+                if self._event_has_ended(old_event):
+                    cache_mutations.append(self._cache_mutation(calendar_id, event_id, None))
+                    continue
                 emitted_events.append(
                     self._make_new_event(
                         calendar_id=calendar_id,
@@ -733,14 +883,20 @@ class GoogleCalendarSource:
                         ),
                     )
                 )
+                cache_mutations.append(self._cache_mutation(calendar_id, event_id, None))
 
-        self._clear_calendar_snapshots(calendar_id)
         for event_id, event_item in current_snapshots.items():
-            self.set_cache(calendar_id, event_id, old_snapshots.get(event_id))
-            emitted_events.extend(self._classify_event_change(calendar_id, event_item))
+            result = self._classify_event_change_result(
+                calendar_id,
+                event_item,
+                previous_event=old_snapshots.get(event_id),
+            )
+            emitted_events.extend(result.events)
+            cache_mutations.extend(result.cache_mutations)
 
         if emitted_events:
             self.services.writer.write_events(self.source_id, emitted_events)
+        self._apply_cache_mutations(calendar_id, cache_mutations)
         if new_sync_token:
             self.services.kv.set(self.source_id, cursor_key, new_sync_token)
             self._store_sync_fingerprint(calendar_id)
@@ -780,6 +936,7 @@ class GoogleCalendarSource:
                             prefix = f"snap:{calendar_id}:"
                             keys = self.services.kv.list_keys_with_prefix(self.source_id, prefix)
                             cleanup_events: list[NewEvent] = []
+                            cleanup_mutations: list[CalendarCacheMutation] = []
                             for key in keys:
                                 event_id = key.removeprefix(prefix)
                                 cached_event = self.get_cached(calendar_id, event_id)
@@ -804,14 +961,16 @@ class GoogleCalendarSource:
                                             ),
                                         )
                                     )
-                                    self.set_cache(calendar_id, event_id, None)
+                                    cleanup_mutations.append(self._cache_mutation(calendar_id, event_id, None))
                             
                             if cleanup_events:
                                 logger.info("Emitting %d deletion events due to max_into_future change.", len(cleanup_events))
                                 self.services.writer.write_events(self.source_id, cleanup_events)
+                            self._apply_cache_mutations(calendar_id, cleanup_mutations)
 
                     except Exception as e:
                         logger.error("Error during max_into_future cleanup: %s", e)
+                        raise
 
                 self.services.kv.delete(self.source_id, cursor_key)
                 self.services.kv.delete(self.source_id, config_key)
@@ -822,7 +981,17 @@ class GoogleCalendarSource:
                 self._rebuild_sync_baseline(service, calendar_id)
                 return
 
+            if not self._snapshot_cache_is_trusted(calendar_id):
+                logger.warning(
+                    "Snapshot cache for %s (calendar: %s) is missing or incomplete; rebuilding baseline without emitted events.",
+                    self.name,
+                    calendar_id,
+                )
+                self._rebuild_sync_baseline(service, calendar_id)
+                return
+
             emitted_events: list[NewEvent] = []
+            cache_mutations: list[CalendarCacheMutation] = []
             page_token: Optional[str] = None
             new_sync_token = current_sync_token
 
@@ -850,7 +1019,9 @@ class GoogleCalendarSource:
                 for event_item in result.get("items", []):
                     if not isinstance(event_item, dict):
                         continue
-                    emitted_events.extend(self._classify_event_change(calendar_id, event_item))
+                    change_result = self._classify_event_change_result(calendar_id, event_item)
+                    emitted_events.extend(change_result.events)
+                    cache_mutations.extend(change_result.cache_mutations)
 
                 page_token = result.get("nextPageToken")
                 if not page_token:
@@ -859,6 +1030,8 @@ class GoogleCalendarSource:
 
             if emitted_events:
                 self.services.writer.write_events(self.source_id, emitted_events)
+
+            self._apply_cache_mutations(calendar_id, cache_mutations)
 
             if str(new_sync_token) != str(current_sync_token):
                 self.services.kv.set(self.source_id, cursor_key, new_sync_token)
@@ -912,6 +1085,7 @@ class GoogleCalendarSource:
                         else:
                             max_future_secs = float(max_into_future)
 
+                    deleted_any = False
                     for key in self.services.kv.list_keys_with_prefix(self.source_id, prefix):
                         event_id = key.removeprefix(prefix)
                         cached = self.get_cached(calendar_id, event_id)
@@ -919,9 +1093,13 @@ class GoogleCalendarSource:
                             continue
                         if self._is_too_old(cached):
                             self.services.kv.delete(self.source_id, key)
+                            deleted_any = True
                             continue
                         if max_future_secs and self._is_too_far_future(cached, max_future_secs):
                             self.services.kv.delete(self.source_id, key)
+                            deleted_any = True
+                    if deleted_any:
+                        self._store_snapshot_state(calendar_id)
             except Exception as e:
                 logger.error("Error in cleanup loop for %s: %s", self.name, e)
             await asyncio.sleep(12 * 3600)

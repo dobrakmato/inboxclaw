@@ -52,7 +52,7 @@ def test_google_calendar_filter_clears_existing_snapshot(mock_services):
         "etag": "v1",
     }
 
-    events = source._classify_event_change(
+    result = source._classify_event_change_result(
         "primary",
         {
             "id": "evt1",
@@ -62,8 +62,13 @@ def test_google_calendar_filter_clears_existing_snapshot(mock_services):
         },
     )
 
-    assert events == []
-    mock_services.kv.delete.assert_called_once_with(1, "snap:primary:evt1")
+    assert result.events == []
+    assert len(result.cache_mutations) == 1
+    mutation = result.cache_mutations[0]
+    assert mutation.calendar_id == "primary"
+    assert mutation.event_id == "evt1"
+    assert mutation.event_payload is None
+    mock_services.kv.delete.assert_not_called()
 
 def test_google_calendar_filter_attendees(mock_services):
     config = GoogleCalendarSourceConfig(
