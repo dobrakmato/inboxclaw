@@ -472,6 +472,32 @@ class GoogleCalendarSource:
                 self.set_cache(calendar_id, entity_id, None)
             return []
 
+        _, max_into_future = self._effective_sync_settings(calendar_id)
+        if max_into_future is not None:
+            if isinstance(max_into_future, str):
+                from src.config import parse_interval
+                max_into_future = parse_interval(max_into_future)
+            if self._is_too_far_future(event_item, float(max_into_future)):
+                if previous_event is not None:
+                    # Event was previously in range but moved out — emit deletion
+                    self.set_cache(calendar_id, entity_id, None)
+                    return [
+                        self._make_new_event(
+                            calendar_id=calendar_id,
+                            event_type=CalendarEventType.DELETED,
+                            entity_id=entity_id,
+                            version=version,
+                            occurred_at=occurred_at,
+                            data=self._make_event_payload(
+                                calendar_id=calendar_id,
+                                event_type=CalendarEventType.DELETED,
+                                current_event=event_item,
+                                previous_event=previous_event,
+                            ),
+                        )
+                    ]
+                return []
+
         status = event_item.get("status")
         if status == "cancelled":
             if self._is_cancelled_recurring_instance(event_item):
