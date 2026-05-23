@@ -100,13 +100,17 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
     max_section_chars: int = 300
     filters: List[Dict[str, DriveFilterItem]] = Field(default_factory=list)
 
+class GoogleCalendarOverrideConfig(BaseModel):
+    max_into_future: Interval
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+
 class GoogleCalendarSourceConfig(GoogleSourceConfig):
     type: Literal["google_calendar"] = "google_calendar"
     calendar_ids: List[str] = Field(default_factory=lambda: ["primary"])
-    max_event_age_days: Optional[float] = 1.0
+    max_event_age_days: Optional[float] = 2.0
     max_into_future: Interval = "365d"
-    calendar_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    single_events: bool = True
+    calendar_overrides: Dict[str, GoogleCalendarOverrideConfig] = Field(default_factory=dict)
     filters: List[Dict[str, CalendarFilterItem]] = Field(default_factory=list)
 
 class FakturyOnlineSourceConfig(BaseSourceConfig):

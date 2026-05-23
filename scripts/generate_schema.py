@@ -25,14 +25,14 @@ INTERVAL_SCHEMA = {"oneOf": [{"type": "number"}, {"type": "string"}]}
 def _collect_interval_field_names() -> set[str]:
     from src.config import (
         GoogleSourceConfig, GmailSourceConfig, GoogleDriveSourceConfig,
-        GoogleCalendarSourceConfig, FakturyOnlineSourceConfig, FioSourceConfig,
+        GoogleCalendarSourceConfig, GoogleCalendarOverrideConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
         HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
     )
     names: set[str] = set()
     for model in [
         GoogleSourceConfig, GmailSourceConfig, GoogleDriveSourceConfig,
-        GoogleCalendarSourceConfig, FakturyOnlineSourceConfig, FioSourceConfig,
+        GoogleCalendarSourceConfig, GoogleCalendarOverrideConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
         HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
     ]:

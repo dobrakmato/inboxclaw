@@ -651,6 +651,26 @@
       "title": "GmailSourceConfig",
       "type": "object"
     },
+    "GoogleCalendarOverrideConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_into_future": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "max_into_future"
+      ],
+      "title": "GoogleCalendarOverrideConfig",
+      "type": "object"
+    },
     "GoogleCalendarSourceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -697,7 +717,7 @@
               "type": "null"
             }
           ],
-          "default": 1.0,
+          "default": 2.0,
           "title": "Max Event Age Days"
         },
         "max_into_future": {
@@ -712,16 +732,10 @@
         },
         "calendar_overrides": {
           "additionalProperties": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/$defs/GoogleCalendarOverrideConfig"
           },
           "title": "Calendar Overrides",
           "type": "object"
-        },
-        "single_events": {
-          "default": true,
-          "title": "Single Events",
-          "type": "boolean"
         },
         "filters": {
           "items": {

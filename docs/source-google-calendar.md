@@ -26,7 +26,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-On the first run, the source performs a baseline sync — it fetches all current events from "now" onwards to build its internal cache, but does **not** emit them as new events. This prevents flooding your pipeline with historical data. After the baseline, only actual changes produce events.
+On the first run, the source performs a baseline sync — it fetches current events inside the configured future window to build its internal cache, but does **not** emit them as new events. This prevents flooding your pipeline with historical data. After the baseline, actual changes and events that newly enter the future window can produce events.
 
 ### 3. (Optional) Find your Calendar IDs
 
@@ -54,20 +54,28 @@ sources:
 
 The source doesn't just report "something changed." It compares new event data against its local cache to classify changes into specific types: created, updated, deleted, or RSVP changed. For updates, it computes exactly which fields changed (title, time, etc.) and includes before/after values.
 
+### Sync Model and Rolling Lookahead
+
+The source uses Google Calendar incremental sync (`syncToken`) for ordinary changes. Google does not allow `timeMin` or `timeMax` on `syncToken` requests, so the source also keeps a per-calendar rolling lookahead cursor. After a successful incremental poll, it scans only the newly added slice between the previous horizon and the current `now + max_into_future` horizon.
+
+That rolling scan is discovery-only:
+- Events that were created far beyond `max_into_future` are ignored at first, then emitted as `created` if they later enter the configured window.
+- Missing events from the rolling scan are **not** treated as deleted.
+- If the rolling cursor is missing on an existing installation, it is initialized silently instead of scanning the whole window and creating a fake `created` cascade.
+- The rolling cursor is advanced only after event writes and cache updates succeed.
+- Recurring events are always expanded into individual instances so downstream consumers receive useful per-occurrence changes.
+
 ### Time Filtering
 
 Events are filtered by age and future distance:
-- `max_event_age_days` (default: `1.0`) — events whose scheduled end/start time is already farther in the past than this are dropped. Future events are still tracked even if they were created or updated long ago.
-- `max_into_future` (default: `"365d"`) — events starting after this cutoff are ignored.
-
-### Recurring Events (`single_events`)
-
-- **`true`** (default): Each occurrence of a recurring meeting is tracked individually. Moving one Monday's meeting to Tuesday emits an `updated` event for that specific instance.
-- **`false`**: Only the master recurring event is tracked. You get events when the entire series is created or its schedule changes, but not for individual occurrences.
+- Non-recurring events and expanded recurring instances whose scheduled end/start time has already passed are not emitted as updates or deletions.
+- `max_event_age_days` (default: `2.0`) — cached snapshots older than this many days are dropped. Future events are still tracked even if they were created or updated long ago.
+- `max_into_future` (default: `"365d"`) — events starting after this rolling cutoff are ignored until they enter the window.
+- Changing `max_into_future` rebuilds the baseline without emitting a created/deleted cascade for the configuration change itself.
 
 ### Deleted Events
 
-Cancelled or deleted entries are always tracked. When an event is cancelled, a meeting invitation is declined, or Google emits a deletion tombstone for a recurring instance, the source emits a `deleted` event so downstream state stays aligned with the calendar.
+Cancelled or deleted entries are tracked for current and future events. When an event is cancelled, a meeting invitation is declined, or Google emits a deletion tombstone for a recurring instance within the configured window, the source emits a `deleted` event so downstream state stays aligned with the useful calendar stream. Events that already ended in the past are removed from the local cache without emitting deletion noise.
 
 ## Configuration
 
@@ -82,7 +90,7 @@ You can filter out events based on their properties using regular expressions or
 | `summary`     | The title of the event.                                                     |
 | `description` | The event description/notes.                                                |
 | `location`    | The physical or virtual location.                                           |
-| `organizer`   | The email or display name of the person who organized the event.            |
+| `organizer`   | The email and display name of the person or calendar that organized the event. |
 | `attendees`   | A space-separated list of all attendee email addresses.                     |
 
 #### Example: Ignore All-Hands and Focus Time
@@ -112,7 +120,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 1.0`, `max_into_future: "365d"`, `single_events: true`.
+Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 2.0`, `max_into_future: "365d"`.
 
 ### Full Configuration
 
@@ -127,11 +135,9 @@ sources:
     poll_interval: "5m"
     max_event_age_days: 7.0
     max_into_future: "30d"
-    single_events: true
     calendar_overrides:
       "team@group.calendar.google.com":
         max_into_future: "365d"
-        single_events: false
 ```
 
 ### Configuration Reference
@@ -141,23 +147,10 @@ sources:
 | `token_file`                | `string` | Required      | Path to the Google OAuth2 token file.                                                                                                                       |
 | `calendar_ids`              | `list`   | `["primary"]` | Google Calendar IDs to monitor.                                                                                                                             |
 | `poll_interval`             | `string` | `"10m"`       | How often to check for changes. Supports human-readable intervals.                                                                                          |
-| `max_event_age_days`        | `float`  | `1.0`         | Drop events older than this many days. Set to `null` to disable.                                                                                            |
-| `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this time horizon.                                                                                                             |
-| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future` and `single_events`. Keyed by calendar ID.                                                                    |
+| `max_event_age_days`        | `float`  | `2.0`         | Drop cached snapshots older than this many days. Set to `null` to disable cache-age cleanup.                                                                |
+| `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this rolling time horizon until they enter the window.                                                                         |
+| `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`. Keyed by calendar ID.                                                                                        |
 | `filters`                   | `list`   | `[]`          | List of filters to ignore specific events.                                                                                                                  |
-| `single_events`             | `bool`   | `true`        | Whether to expand recurring events into individual instances (this is useful for discovering new instances of the same event).                              |
-
-#### Single Events and Recurring Instances
-
-##### single_events
-
-This controls whether the source receives individual events for each occurrence of a recurring event.
-
-When this is false, you will get a single event describing every future occurrence. You must expand the event to see individual occurrences yourself. 
-
-Enabling this allows the source to discover each occurrence individually.
-
-When multiple recurring instances change in the same poll, the source preserves each instance-level change so moves, cancellations, and RSVP changes are not lost.
 
 ## Event Definitions
 

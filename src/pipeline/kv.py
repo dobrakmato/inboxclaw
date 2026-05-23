@@ -16,6 +16,15 @@ class SourceKVService:
     def __init__(self, services: "AppServices"):
         self.services = services
 
+    @staticmethod
+    def _escape_like_prefix(prefix: str) -> str:
+        return (
+            prefix
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+
     def get(self, source_id: int, key: str) -> Optional[Any]:
         """
         Get the value for the given key and source_id.
@@ -97,11 +106,12 @@ class SourceKVService:
         """
         Delete values for the given source_id and key prefix that were created before the cutoff.
         """
+        escaped_prefix = self._escape_like_prefix(prefix)
         with self.services.db_session_maker() as session:
             session.execute(
                 sqa_delete(SourceKV).where(
                     SourceKV.source_id == source_id,
-                    SourceKV.key.like(f"{prefix}%"),
+                    SourceKV.key.like(f"{escaped_prefix}%", escape="\\"),
                     SourceKV.created_at < cutoff
                 )
             )
@@ -112,11 +122,12 @@ class SourceKVService:
         """
         Delete values for the given source_id and key prefix that were updated before the cutoff.
         """
+        escaped_prefix = self._escape_like_prefix(prefix)
         with self.services.db_session_maker() as session:
             session.execute(
                 sqa_delete(SourceKV).where(
                     SourceKV.source_id == source_id,
-                    SourceKV.key.like(f"{prefix}%"),
+                    SourceKV.key.like(f"{escaped_prefix}%", escape="\\"),
                     SourceKV.updated_at < cutoff
                 )
             )
@@ -127,11 +138,12 @@ class SourceKVService:
         """
         List all keys for the given source_id that start with the prefix.
         """
+        escaped_prefix = self._escape_like_prefix(prefix)
         with self.services.db_session_maker() as session:
             kv_list = session.scalars(
                 select(SourceKV.key).where(
                     SourceKV.source_id == source_id,
-                    SourceKV.key.like(f"{prefix}%")
+                    SourceKV.key.like(f"{escaped_prefix}%", escape="\\")
                 )
             ).all()
             return list(kv_list)
