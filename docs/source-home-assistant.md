@@ -38,7 +38,7 @@ sources:
       - "device_tracker.my_phone"
       - "sensor.my_phone_geocoded_location"
       - "sensor.my_phone_next_alarm"
-    location_threshold_meters: 10 # Only emit updates if moved at least 10 meters
+    location_threshold_meters: 10 # Filter geocoded location updates below 10 meters
 ```
 
 ### 4. (Recommended) Enable precise location
@@ -64,8 +64,8 @@ The source uses Home Assistant's `subscribe_trigger` API with a `state` platform
 
 Updates are automatically classified based on the entity type:
 
-- **Zone updates** (`device_tracker.*`): Triggered when the zone state changes (e.g. `home` → `not_home`) or when coordinates change significantly (if `location_threshold_meters` is set). Coordinate-only changes within the same zone are ignored by default.
-- **Geocoded location** (`sensor.*_geocoded_location`): Triggered when the human-readable address changes or when the coordinate location changes significantly (if `location_threshold_meters` is set).
+- **Zone updates** (`device_tracker.*`): Triggered when the zone state changes (e.g. `home` → `not_home`). Coordinate-only changes within the same zone are ignored.
+- **Geocoded location** (`sensor.*_geocoded_location`): Triggered when the human-readable address changes. If `location_threshold_meters` is set and both old/new coordinates are available, movements below that threshold are ignored.
 - **Alarm changes** (`sensor.*_next_alarm`): Triggered when the next scheduled alarm changes.
 - **Generic sensors** (any other `sensor.*`): Triggered when the sensor state changes.
 
@@ -105,7 +105,7 @@ sources:
 | `url`                       | `string` | Required | Home Assistant WebSocket URL (e.g. `wss://ha.example.com/api/websocket`).            |
 | `access_token`              | `string` | Env var  | Long-Lived Access Token. Defaults to `HOME_ASSISTANT_TOKEN` environment variable.    |
 | `entity_ids`                | `list`   | Required | List of entity IDs to track (e.g. `device_tracker.my_phone`).                        |
-| `location_threshold_meters` | `float`  | `0.0`    | Minimum distance in meters to move before emitting a coordinate-only update.        |
+| `location_threshold_meters` | `float`  | `0.0`    | Minimum geocoded-location movement in meters before emitting an address update when coordinates are available. |
 
 ## Event Definitions
 
@@ -123,47 +123,56 @@ sources:
 ```json
 {
   "id": 1,
-  "event_id": "ha-zone-device_tracker.my_phone-1710500000",
+  "event_id": "device_tracker.my_phone-2024-03-15T14:00:00.000000+00:00",
   "event_type": "home_assistant.zone_update",
   "entity_id": "device_tracker.my_phone",
   "created_at": "2024-03-15T14:00:00+00:00",
   "data": {
+    "kind": "zone_update",
     "entity_id": "device_tracker.my_phone",
-    "state_changed": true,
-    "coords_changed": false,
-    "gps_accuracy_changed": false,
-    "old_state": "not_home",
-    "new_state": "home",
-    "latitude": 51.5074,
-    "longitude": -0.1278,
-    "gps_accuracy": 15,
-    "source": "gps",
-    "last_updated": "2024-03-15T14:00:00.000000+00:00"
+    "zone_change": true,
+    "gps_change": false,
+    "gps_acc_change": false,
+    "zone": {
+      "old": "not_home",
+      "new": "home"
+    },
+    "gps": {
+      "lat": 51.5074,
+      "lon": -0.1278,
+      "acc": 15
+    },
+    "updated_at": "2024-03-15T14:00:00.000000+00:00"
   },
   "meta": {}
 }
 ```
 
-- `state_changed`: Always `true` for zone updates (coordinate-only changes are filtered out).
-- `coords_changed` / `gps_accuracy_changed`: Whether coordinates or GPS accuracy also changed alongside the zone.
+- `zone_change`: Always `true` for emitted zone updates.
+- `gps_change` / `gps_acc_change`: Whether coordinates or GPS accuracy also changed alongside the zone.
 
 #### `home_assistant.geocoded_location_update`
 
 ```json
 {
   "id": 2,
-  "event_id": "ha-geo-sensor.my_phone_geocoded_location-1710500000",
+  "event_id": "sensor.my_phone_geocoded_location-2024-03-15T14:00:00.000000+00:00",
   "event_type": "home_assistant.geocoded_location_update",
   "entity_id": "sensor.my_phone_geocoded_location",
   "created_at": "2024-03-15T14:00:00+00:00",
   "data": {
     "kind": "geocoded_location_update",
     "entity_id": "sensor.my_phone_geocoded_location",
-    "label_changed": true,
-    "state": "123 Main St, New York, NY",
-    "location": [40.7128, -74.0060],
-    "country": "United States",
-    "last_updated": "2024-03-15T14:00:00.000000+00:00"
+    "addr": {
+      "old": "Home",
+      "new": "123 Main St, New York, NY"
+    },
+    "gps": {
+      "old": [40.7127, -74.0059],
+      "new": [40.7128, -74.0060],
+      "acc": 15
+    },
+    "updated_at": "2024-03-15T14:00:00.000000+00:00"
   },
   "meta": {}
 }
@@ -174,19 +183,18 @@ sources:
 ```json
 {
   "id": 3,
-  "event_id": "ha-alarm-sensor.my_phone_next_alarm-1710500000",
+  "event_id": "sensor.my_phone_next_alarm-2024-03-15T14:00:00.000000+00:00",
   "event_type": "home_assistant.next_alarm_changed",
   "entity_id": "sensor.my_phone_next_alarm",
   "created_at": "2024-03-15T14:00:00+00:00",
   "data": {
     "kind": "next_alarm_changed",
     "entity_id": "sensor.my_phone_next_alarm",
-    "changed": true,
-    "old_alarm_utc": "2024-03-16T06:00:00.000000+00:00",
-    "new_alarm_utc": "2024-03-16T07:00:00.000000+00:00",
-    "local_time": "08:00:00",
-    "package": "com.android.deskclock",
-    "last_updated": "2024-03-15T14:00:00.000000+00:00"
+    "alarm_utc": {
+      "old": "2024-03-16T06:00:00.000000+00:00",
+      "new": "2024-03-16T07:00:00.000000+00:00"
+    },
+    "updated_at": "2024-03-15T14:00:00.000000+00:00"
   },
   "meta": {}
 }
@@ -197,16 +205,18 @@ sources:
 ```json
 {
   "id": 4,
-  "event_id": "ha-sensor-sensor.my_phone_battery_level-1710500000",
+  "event_id": "sensor.my_phone_battery_level-2024-03-15T14:00:00.000000+00:00",
   "event_type": "home_assistant.generic_sensor_update",
   "entity_id": "sensor.my_phone_battery_level",
   "created_at": "2024-03-15T14:00:00+00:00",
   "data": {
     "kind": "generic_sensor_update",
     "entity_id": "sensor.my_phone_battery_level",
-    "old_state": "85",
-    "new_state": "84",
-    "last_updated": "2024-03-15T14:00:00.000000+00:00"
+    "state": {
+      "old": "85",
+      "new": "84"
+    },
+    "updated_at": "2024-03-15T14:00:00.000000+00:00"
   },
   "meta": {}
 }

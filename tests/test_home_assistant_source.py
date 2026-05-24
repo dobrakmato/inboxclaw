@@ -41,11 +41,11 @@ def test_summarize_location_update(ha_config, mock_services):
     
     summary = source._summarize_location_update(trigger)
     assert summary["kind"] == "zone_update"
-    assert summary["coords_changed"] is True
-    assert summary["state_changed"] is False
-    assert summary["gps_accuracy_changed"] is True
-    assert summary["latitude"] == 50.1
-    assert summary["longitude"] == 14.1
+    assert summary["gps_change"] is True
+    assert summary["zone_change"] is False
+    assert summary["gps_acc_change"] is True
+    assert summary["gps"]["lat"] == 50.1
+    assert summary["gps"]["lon"] == 14.1
 
     # Test case 2: State change (zone)
     trigger_zone = {
@@ -61,8 +61,8 @@ def test_summarize_location_update(ha_config, mock_services):
         }
     }
     summary_zone = source._summarize_location_update(trigger_zone)
-    assert summary_zone["state_changed"] is True
-    assert summary_zone["coords_changed"] is False
+    assert summary_zone["zone_change"] is True
+    assert summary_zone["gps_change"] is False
 
 def test_device_tracker_ignoring_coordinates_within_zone(ha_config, mock_services):
     source = HomeAssistantSource("ha_test", ha_config, mock_services, 1)
@@ -84,8 +84,8 @@ def test_device_tracker_ignoring_coordinates_within_zone(ha_config, mock_service
     
     # We'll use the _listen-like logic here to check if it would be skipped
     update = source._summarize_location_update(trigger)
-    # The current code would NOT skip this because coords_changed is True
-    # We WANT it to skip because state_changed is False
+    # The listener skips this because zone_change is False.
+    assert update["zone_change"] is False
     
     # 2. Zone change
     trigger_zone = {
@@ -102,7 +102,7 @@ def test_device_tracker_ignoring_coordinates_within_zone(ha_config, mock_service
         }
     }
     update_zone = source._summarize_location_update(trigger_zone)
-    assert update_zone["state_changed"] is True
+    assert update_zone["zone_change"] is True
 
 @pytest.mark.asyncio
 async def test_device_tracker_filtering_logic(mock_services):
@@ -161,7 +161,7 @@ async def test_device_tracker_filtering_logic(mock_services):
     assert mock_services.writer.write_events.call_count == 1
     args = mock_services.writer.write_events.call_args_list[0][0]
     assert args[1][0].event_type == "home_assistant.zone_update"
-    assert args[1][0].data["new_state"] == "work"
+    assert args[1][0].data["zone"]["new"] == "work"
 
 def test_summarize_geocoded_location_update(ha_config, mock_services):
     source = HomeAssistantSource("ha_test", ha_config, mock_services, 1)
@@ -180,9 +180,9 @@ def test_summarize_geocoded_location_update(ha_config, mock_services):
     }
     summary = source._summarize_geocoded_location_update(trigger)
     assert summary["kind"] == "geocoded_location_update"
-    assert summary["label_changed"] is True
-    assert summary["state"] == "New Address"
-    assert summary["country"] == "Czechia"
+    assert summary["addr"] == {"old": "Old Address", "new": "New Address"}
+    assert summary["gps"]["new"] == [50.1, 14.1]
+    assert summary["updated_at"] == "2024-03-15T14:10:00Z"
 
 def test_summarize_next_alarm_changed(ha_config, mock_services):
     source = HomeAssistantSource("ha_test", ha_config, mock_services, 1)
@@ -200,8 +200,11 @@ def test_summarize_next_alarm_changed(ha_config, mock_services):
     }
     summary = source._summarize_next_alarm_changed(trigger)
     assert summary["kind"] == "next_alarm_changed"
-    assert summary["changed"] is True
-    assert summary["new_alarm_utc"] == "2024-03-16T07:00:00Z"
+    assert summary["alarm_utc"] == {
+        "old": "2024-03-16T06:00:00Z",
+        "new": "2024-03-16T07:00:00Z",
+    }
+    assert summary["updated_at"] == "2024-03-15T14:20:00Z"
 
 def test_summarize_generic_sensor_update(ha_config, mock_services):
     source = HomeAssistantSource("ha_test", ha_config, mock_services, 1)
@@ -215,7 +218,8 @@ def test_summarize_generic_sensor_update(ha_config, mock_services):
     }
     summary = source._summarize_generic_sensor_update(trigger)
     assert summary["kind"] == "generic_sensor_update"
-    assert summary["new_state"] == "79"
+    assert summary["state"]["new"] == "79"
+    assert summary["updated_at"] == "2024-03-15T14:30:00Z"
 
 @pytest.mark.asyncio
 async def test_listen_and_publish_various_events(mock_services):
@@ -304,17 +308,61 @@ async def test_listen_and_publish_various_events(mock_services):
     # Check geocoded location event
     args1 = mock_services.writer.write_events.call_args_list[0][0]
     assert args1[1][0].event_type == "home_assistant.geocoded_location_update"
-    assert args1[1][0].data["state"] == "Work"
+    assert args1[1][0].data["addr"]["new"] == "Work"
 
     # Check next alarm event
     args2 = mock_services.writer.write_events.call_args_list[1][0]
     assert args2[1][0].event_type == "home_assistant.next_alarm_changed"
-    assert args2[1][0].data["new_alarm_utc"] == "2024-03-16T07:00:00Z"
+    assert args2[1][0].data["alarm_utc"]["new"] == "2024-03-16T07:00:00Z"
 
     # Check generic sensor event
     args3 = mock_services.writer.write_events.call_args_list[2][0]
     assert args3[1][0].event_type == "home_assistant.generic_sensor_update"
-    assert args3[1][0].data["new_state"] == "99"
+    assert args3[1][0].data["state"]["new"] == "99"
+
+
+@pytest.mark.asyncio
+async def test_listen_ignores_nested_junk_state(mock_services):
+    config = HomeAssistantSourceConfig(
+        type="home_assistant",
+        url="ws://localhost:8123/api/websocket",
+        access_token="fake_token",
+        entity_ids=["sensor.phone_1_battery_level"]
+    )
+    source = HomeAssistantSource("ha_test", config, mock_services, 1)
+
+    from websockets.exceptions import ConnectionClosed
+
+    mock_ws = AsyncMock()
+    mock_ws.recv.side_effect = [
+        json.dumps({"type": "auth_required"}),
+        json.dumps({"type": "auth_ok"}),
+        json.dumps({"id": 1, "type": "result", "success": True}),
+        json.dumps({
+            "type": "event",
+            "event": {
+                "variables": {
+                    "trigger": {
+                        "entity_id": "sensor.phone_1_battery_level",
+                        "from_state": {"state": "99"},
+                        "to_state": {
+                            "state": "unknown",
+                            "last_updated": "2024-03-15T14:10:00Z"
+                        }
+                    }
+                }
+            }
+        }),
+        ConnectionClosed(None, None),
+    ]
+
+    with patch("websockets.connect", return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_ws))):
+        try:
+            await source._listen()
+        except ConnectionClosed:
+            pass
+
+    assert mock_services.writer.write_events.call_count == 0
 
 
 @pytest.mark.asyncio

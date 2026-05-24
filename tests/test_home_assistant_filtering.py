@@ -101,8 +101,8 @@ async def test_location_threshold_filtering(mock_services):
             pass
             
     # Should have only 1 call (the significant geocoded move)
-    # Call 1 (small move device_tracker): filtered by not state_changed (both 'home')
-    # Call 2 (significant move device_tracker): filtered by not state_changed (both 'home')
+    # Call 1 (small move device_tracker): filtered by not zone_change (both 'home')
+    # Call 2 (significant move device_tracker): filtered by not zone_change (both 'home')
     # Call 3 (small move geocoded): filtered by location_threshold_meters
     # Call 4 (significant move geocoded): emitted
     assert mock_services.writer.write_events.call_count == 1
@@ -110,7 +110,7 @@ async def test_location_threshold_filtering(mock_services):
     call_args = mock_services.writer.write_events.call_args_list
     # First call: geocoded_location significant move
     assert call_args[0][0][1][0].event_type == "home_assistant.geocoded_location_update"
-    assert call_args[0][0][1][0].data["location"] == [50.086, 14.411]
+    assert call_args[0][0][1][0].data["gps"]["new"] == [50.086, 14.411]
 
 @pytest.mark.asyncio
 async def test_zone_change_filtering(mock_services):
@@ -170,11 +170,11 @@ async def test_zone_change_filtering(mock_services):
             
     # Should only have 1 call (the state change)
     assert mock_services.writer.write_events.call_count == 1
-    assert mock_services.writer.write_events.call_args[0][1][0].data["new_state"] == "not_home"
+    assert mock_services.writer.write_events.call_args[0][1][0].data["zone"]["new"] == "not_home"
 
 @pytest.mark.asyncio
 async def test_location_threshold_filtering_on_device_tracker(mock_services):
-    # Threshold 10 meters, but device_tracker is ONLY filtered by state_changed now
+    # Threshold 10 meters, but device_tracker is ONLY filtered by zone_change now
     # Wait, if I want distance filtering on lat/lon updates, I should allow it on device_tracker too if threshold is > 0
     # The user said "not emit updates if the location didn't change in defined meters (for lat/lon updates)"
     # BUT they ALSO said "switch to not emit zone changes, if there is no change in the actual zone"

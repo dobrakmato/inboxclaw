@@ -94,54 +94,54 @@ class HomeAssistantSource:
         return {
             "kind": "zone_update",
             "entity_id": trigger.get("entity_id"),
-            "state_changed": state_changed,
-            "coords_changed": lat_changed or lon_changed,
-            "gps_accuracy_changed": acc_changed,
-            "old_state": old_state.get("state"),
-            "new_state": new_state.get("state"),
-            "latitude": new_attr.get("latitude"),
-            "longitude": new_attr.get("longitude"),
-            "gps_accuracy": new_attr.get("gps_accuracy"),
-            "source": new_attr.get("source"),
-            "last_updated": new_state.get("last_updated"),
+            "zone_change": state_changed,
+            "gps_change": lat_changed or lon_changed,
+            "gps_acc_change": acc_changed,
+            "zone": {
+                "old": old_state.get("state"),
+                "new": new_state.get("state"),
+            },
+            "gps": {
+                "lat": new_attr.get("latitude"),
+                "lon": new_attr.get("longitude"),
+                "acc": new_attr.get("gps_accuracy"),
+            },
+            "updated_at": new_state.get("last_updated"),
         }
 
     def _summarize_geocoded_location_update(self, trigger: dict) -> dict:
         old_state = trigger.get("from_state") or {}
+        old_attr = old_state.get("attributes") or {}
         new_state = trigger.get("to_state") or {}
         new_attr = new_state.get("attributes") or {}
 
         return {
             "kind": "geocoded_location_update",
             "entity_id": trigger.get("entity_id"),
-            "label_changed": self._changed(old_state, new_state),
-            "state": new_state.get("state"),
-            "location": new_attr.get("location"),
-            "name": new_attr.get("name"),
-            "country": new_attr.get("country"),
-            "administrative_area": new_attr.get("administrative_area"),
-            "locality": new_attr.get("locality"),
-            "sub_locality": new_attr.get("sub_locality"),
-            "thoroughfare": new_attr.get("thoroughfare"),
-            "postal_code": new_attr.get("postal_code"),
-            "last_updated": new_state.get("last_updated"),
+            "addr": {
+                "old": old_state.get("state"),
+                "new": new_state.get("state"),
+            },
+            "gps": {
+                "old": old_attr.get("location"),
+                "new": new_attr.get("location"),
+                "acc": new_attr.get("gps_accuracy"),
+            },
+            "updated_at": new_state.get("last_updated"),
         }
 
     def _summarize_next_alarm_changed(self, trigger: dict) -> dict:
         old_state = trigger.get("from_state") or {}
         new_state = trigger.get("to_state") or {}
-        new_attr = new_state.get("attributes") or {}
 
         return {
             "kind": "next_alarm_changed",
             "entity_id": trigger.get("entity_id"),
-            "changed": self._changed(old_state, new_state),
-            "old_alarm_utc": old_state.get("state"),
-            "new_alarm_utc": new_state.get("state"),
-            "local_time": new_attr.get("local_time"),
-            "package": new_attr.get("package"),
-            "time_in_milliseconds": new_attr.get("time_in_milliseconds"),
-            "last_updated": new_state.get("last_updated"),
+            "alarm_utc": {
+                "old": old_state.get("state"),
+                "new": new_state.get("state"),
+            },
+            "updated_at": new_state.get("last_updated"),
         }
 
     def _summarize_generic_sensor_update(self, trigger: dict) -> dict:
@@ -151,10 +151,19 @@ class HomeAssistantSource:
         return {
             "kind": "generic_sensor_update",
             "entity_id": trigger.get("entity_id"),
-            "old_state": old_state.get("state"),
-            "new_state": new_state.get("state"),
-            "last_updated": new_state.get("last_updated"),
+            "state": {
+                "old": old_state.get("state"),
+                "new": new_state.get("state"),
+            },
+            "updated_at": new_state.get("last_updated"),
         }
+
+    def _new_state_value(self, update: dict):
+        for key in ("zone", "addr", "alarm_utc", "state"):
+            value = update.get(key)
+            if isinstance(value, dict):
+                return value.get("new")
+        return None
 
     async def run(self):
         """Main loop with reconnection logic."""
@@ -224,13 +233,14 @@ class HomeAssistantSource:
 
                 if entity_id.startswith("device_tracker."):
                     update = self._summarize_location_update(trigger)
-                    if not update["state_changed"]:
+                    if not update["zone_change"]:
                         # If zone hasn't changed, we don't emit zone update events
                         continue
                     event_type = "home_assistant.zone_update"
                 elif entity_id.endswith("_geocoded_location"):
                     update = self._summarize_geocoded_location_update(trigger)
-                    if not update["label_changed"]:
+                    addr = update.get("addr") or {}
+                    if addr.get("old") == addr.get("new"):
                         continue
                     if self._should_filter_location(trigger.get("from_state") or {}, trigger.get("to_state") or {}):
                         logger.debug(f"Filtering geocoded location update for {entity_id} - below threshold")
@@ -238,7 +248,8 @@ class HomeAssistantSource:
                     event_type = "home_assistant.geocoded_location_update"
                 elif entity_id.endswith("_next_alarm"):
                     update = self._summarize_next_alarm_changed(trigger)
-                    if not update["changed"]:
+                    alarm_utc = update.get("alarm_utc") or {}
+                    if alarm_utc.get("old") == alarm_utc.get("new"):
                         continue
                     event_type = "home_assistant.next_alarm_changed"
                 elif entity_id.startswith("sensor."):
@@ -252,24 +263,25 @@ class HomeAssistantSource:
                     if not self._changed(trigger.get("from_state"), trigger.get("to_state")):
                         continue
                     event_type = "home_assistant.entity_update"
-                
+
                 # Check for junk states
-                if update.get("new_state") in ("unknown", "unavailable"):
-                    logger.debug(f"Ignoring junk state '{update['new_state']}' for {entity_id}")
+                new_state_value = self._new_state_value(update)
+                if new_state_value in ("unknown", "unavailable"):
+                    logger.debug(f"Ignoring junk state '{new_state_value}' for {entity_id}")
                     continue
 
-                last_updated = update.get("last_updated")
-                if not last_updated:
+                updated_at = update.get("updated_at")
+                if not updated_at:
                     continue
-                
-                event_id = f"{entity_id}-{last_updated}"
-                
+
+                event_id = f"{entity_id}-{updated_at}"
+
                 new_event = NewEvent(
                     event_id=event_id,
                     event_type=event_type,
                     entity_id=entity_id,
                     data=update,
-                    occurred_at=datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+                    occurred_at=datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
                 )
 
                 self.services.writer.write_events(self.source_id, [new_event])
