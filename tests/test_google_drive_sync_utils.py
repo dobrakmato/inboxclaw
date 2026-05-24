@@ -166,8 +166,7 @@ def test_classifier_filters_non_intentional_share():
     # Publicly shared file (only anyone permission)
     public_file = make_snapshot(
         owned_by_me=False,
-        permissions=[{"type": "anyone", "allowFileDiscovery": False}],
-        shared_with_me_time="2026-03-14T11:00:00Z"
+        permissions=[{"type": "anyone", "allowFileDiscovery": False}]
     )
     
     events = classifier.classify(None, public_file, removed=False)

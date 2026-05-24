@@ -20,7 +20,6 @@ sources:
   google_drive:
     token_file: "data/google_token.json"
     poll_interval: "1m"
-    bootstrap_mode: "baseline_only"
     coalesce:
       - match: [ "google.drive.file_updated", "google.drive.file_moved" ]
         strategy: "debounce"

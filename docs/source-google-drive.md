@@ -33,13 +33,9 @@ sources:
         window: "60s"
 ```
 
-### 3. Initial sync (bootstrapping)
+### 3. Initial baseline
 
-On the first run, the source needs to learn about your existing files so it doesn't report them all as "newly created" when they're next modified. The `bootstrap_mode` setting controls this:
-
-- **`baseline_only`** (default): Quick crawl of your Drive to record current file state. No events emitted. Future changes are compared against this baseline.
-- **`full_snapshot`**: Like `baseline_only`, but also fetches and caches text content of documents. This allows the very first `file_updated` event to include a text diff. Slower and uses more API quota.
-- **`off`**: No initial crawl. All existing files will emit a `file_created` event the first time they are modified after the source starts.
+On the first run, the source establishes a Drive changes cursor with `getStartPageToken()` and does not crawl or cache your existing Drive files. Existing files are initialized if they later appear in the changes feed, and they are not reported as newly created unless Drive metadata shows they were created or shared after the trusted baseline.
 
 ## Core Concepts
 
@@ -48,7 +44,19 @@ On the first run, the source needs to learn about your existing files so it does
 When a file change is detected, the source compares the new metadata against its cached snapshot and classifies the change:
 
 - **Immediate events**: `file_created`, `file_moved`, `file_trashed`, `file_untrashed`, `file_shared_with_you`, `file_removed` — emitted right away.
-- **`file_updated`**: This event represents metadata or content changes. Because files are often edited in bursts, it is highly recommended to use [Coalescing](coalescing.md) (Debounce) for this event type to avoid noise.
+- **`file_created`**: Only emitted for owned files whose Drive `createdTime` is newer than the trusted baseline. First-seen cache misses before the baseline are cached silently.
+- **`file_shared_with_you`**: Emitted for non-owned files newly visible after the trusted baseline. Drive normally provides `sharedWithMeTime` and `sharingUser`; for files visible through group/user permissions where Drive does not provide a share timestamp, `createdTime` is used as the trusted signal and `sharingUser` may be absent.
+- **`file_updated`**: Emitted only for meaningful metadata or content changes. Parent changes are reported as `file_moved`, trash state changes as trash/untrash events, and provider-only or empty updates are suppressed. Structural-only changes do not also emit a low-value update containing only `modificationDate`. Because files are often edited in bursts, it is highly recommended to use [Coalescing](coalescing.md) (Debounce) for this event type to avoid noise.
+
+### Recovery, filters, and My Drive scope
+
+If the Drive changes cursor expires, the source resets to a fresh cursor with `getStartPageToken()` and establishes a new trusted baseline without crawling Drive. Events that happened during the gap are not inferred; future changes continue normally. Cached snapshots are kept so later updates can still compare against the last known state.
+
+Filters apply to every event type, including removals. For removed files, `file_id` filters always work; `name` and `parent_id` filters use the last cached snapshot when available.
+
+When `restrict_to_my_drive: true`, incremental polling uses Drive's `restrictToMyDrive` changes option. This is not the same as filtering to files owned by you.
+
+If content fetching for a diffable file hits an API error such as auth failure or rate limiting, the source does not advance the cursor for that page. This allows the change to be retried instead of emitting a misleading update with only timestamp metadata.
 
 ### Coalescing (Debounce)
 
@@ -64,7 +72,7 @@ sources:
         window: "60s"
 ```
 
-This configuration ensures that if you save a file multiple times within 60 seconds, you only receive one final event after 60 seconds of silence.
+This configuration ensures that if you save a file multiple times within 60 seconds, you only receive one final event after 60 seconds of silence. Coalescing intentionally keeps the latest event data; disable coalescing if every raw update event is needed.
 
 ## Configuration
 
@@ -86,7 +94,6 @@ sources:
     type: google_drive
     token_file: "data/google_token.json"
     poll_interval: "30s"
-    bootstrap_mode: "baseline_only"
     restrict_to_my_drive: false
     include_corpus_removals: false
     eligible_mime_types_for_content_diff:
@@ -95,6 +102,8 @@ sources:
       - "text/markdown"
       - "text/html"
     max_diffable_file_bytes: 10485760
+    max_changed_sections: 5
+    max_section_chars: 300
     filters:
       - ignore_temp:
           in: name
@@ -102,6 +111,9 @@ sources:
       - specific_file:
           in: file_id
           contains: "1AbCd..."
+      - ignored_folder:
+          in: parent_id
+          contains: "0AFolder..."
     coalesce:
       - match: ["google.drive.file_updated", "google.drive.file_moved"]
         strategy: "debounce"
@@ -114,27 +126,28 @@ sources:
 |:-------------------------------------|:---------|:---------------------------------|:------------------------------------------------------------------------------------------------|
 | `token_file`                         | `string` | Required                         | Path to the Google OAuth2 token file.                                                           |
 | `poll_interval`                      | `string` | `"10m"`                          | How often to check for changes. Supports human-readable intervals (e.g. `"30s"`, `"5m"`).       |
-| `bootstrap_mode`                     | `string` | `"baseline_only"`                | Initial sync behavior: `baseline_only`, `full_snapshot`, or `off`.                              |
-| `restrict_to_my_drive`               | `bool`   | `false`                          | `true` limits scope to My Drive only. `false` allows wider visibility.                          |
+| `restrict_to_my_drive`               | `bool`   | `false`                          | `true` limits incremental changes to My Drive. It is not an "owned by me" filter. |
 | `include_corpus_removals`            | `bool`   | `false`                          | Request corpus-removal details when available.                                                  |
-| `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/*` types      | MIME types eligible for paragraph-level text diffing.                                           |
+| `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/plain`, `text/markdown`, `text/html` | MIME types eligible for paragraph-level text diffing.                         |
 | `max_diffable_file_bytes`            | `int`    | `10485760` (10 MB)               | Size limit for content fetching and diffing.                                                    |
-| `filters`                           | `list`   | `[]`                             | List of filters to exclude files by `file_id` or `name`.                                        |
+| `max_changed_sections`               | `int`    | `5`                              | Maximum number of changed text sections included in a diff payload.                             |
+| `max_section_chars`                  | `int`    | `300`                            | Maximum characters per changed text section before adding a `(truncated)` marker.                |
+| `filters`                           | `list`   | `[]`                             | List of filters to exclude files by `file_id`, `name`, or `parent_id` using `contains` or `regex`. |
 | `coalesce`                           | `list`   | `[]`                             | List of [Coalescing Rules](coalescing.md) (e.g., for `google.drive.file_updated`).              |
 
 ## Event Definitions
 
 | Type                                  | Entity ID     | Description                                                    |
 |:--------------------------------------|:--------------|:---------------------------------------------------------------|
-| `google.drive.file_created`           | Drive file ID | File first seen in local snapshot cache.                       |
+| `google.drive.file_created`           | Drive file ID | Owned file created after the trusted baseline.                  |
 | `google.drive.file_moved`             | Drive file ID | Parent folder changed.                                         |
 | `google.drive.file_trashed`           | Drive file ID | File was moved to trash.                                       |
 | `google.drive.file_untrashed`         | Drive file ID | File was restored from trash.                                  |
-| `google.drive.file_shared_with_you`   | Drive file ID | A file was shared with you (non-owned file).                   |
-| `google.drive.file_removed`           | Drive file ID | File was removed from the changes feed (`change.removed=true`).|
-| `google.drive.file_updated`           | Drive file ID | Debounced update after content or metadata change.            |
+| `google.drive.file_shared_with_you`   | Drive file ID | A non-owned file became visible to you after the trusted baseline. |
+| `google.drive.file_removed`           | Drive file ID | File was removed in the changes feed or became inaccessible when processing a change. |
+| `google.drive.file_updated`           | Drive file ID | Meaningful content or metadata update.                         |
 
-> `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in the current version.
+> `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in the current version. Deletions/removals are represented as `google.drive.file_removed`.
 
 ### Event Examples
 
@@ -143,7 +156,7 @@ sources:
 ```json
 {
   "id": 1,
-  "event_id": "drive-1AbCd-file_created-1741999501",
+  "event_id": "drive-1AbCd-google.drive.file_created-2026-03-15T00:40:10Z",
   "event_type": "google.drive.file_created",
   "entity_id": "1AbCd",
   "created_at": "2026-03-15T00:45:01+00:00",
@@ -184,14 +197,19 @@ sources:
     "fileId": "1AbCd",
     "name": "Q1 plan",
     "mimeType": "application/vnd.google-apps.document",
-    "parentIds": {
-      "before": ["0AExampleFolder"],
-      "after": ["0AExampleFolder"]
+    "parentIds": ["0AExampleFolder"],
+    "modificationDate": "2026-03-15T00:47:56Z",
+    "changes": {
+      "modificationDate": {
+        "before": "2026-03-15T00:46:12Z",
+        "after": "2026-03-15T00:47:56Z"
+      },
+      "description": {
+        "before": "Draft roadmap",
+        "after": "Approved roadmap"
+      }
     },
-    "session": {
-      "sessionStartedAt": "2026-03-15T00:46:12Z",
-      "lastChangeSeenAt": "2026-03-15T00:47:56Z",
-      "rawChangeCount": 4,
+    "contentDiff": {
       "changes": [
         {
           "before": "Old paragraph content...",
@@ -213,7 +231,7 @@ sources:
 }
 ```
 
-For text files with eligible MIME types, `file_updated` includes diff fields under the `session` object: `changes` (array of change objects), `totalChangedSections`, `addedCharCount`, `removedCharCount`.
+For text files with eligible MIME types, `file_updated` includes a `contentDiff` object with `changes` (array of changed text sections), `totalChangedSections`, `addedCharCount`, and `removedCharCount`. Metadata changes are reported in the top-level `changes` object as `{ before, after }` pairs.
 
 #### `google.drive.file_moved`
 
@@ -303,10 +321,10 @@ Common fields across all event types: `fileId`, `name`, `mimeType`, `owners`.
 
 | Event type            | Additional fields                                                                                          |
 |:----------------------|:-----------------------------------------------------------------------------------------------------------|
-| `file_created`        | `parentIds`, `createdTime`, `description`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_created`        | `parentIds`, `createdTime`, `modificationDate`, `description`, `indexableText`, `lastModifyingUser`, `webViewLink`, `size` |
 | `file_moved`          | `parentIds: { before, after }`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
 | `file_trashed`        | `trashedBefore`, `trashedAfter`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
 | `file_untrashed`      | `trashedBefore`, `trashedAfter`, `owners`, `lastModifyingUser`, `webViewLink`, `size` |
-| `file_shared_with_you`| `sharedWithMeTime`, `sharingUser`, `owners` |
-| `file_removed`        | `lastKnownName`, `lastKnownMimeType`, `lastKnownParentIds` |
-| `file_updated`        | `description`, `lastModifyingUser`, `webViewLink`, `size`, `session: { ... }` |
+| `file_shared_with_you`| `sharedWithMeTime`, optional `sharingUser`, `owners`, `modificationDate`, `lastModifyingUser`, `webViewLink`, `size` |
+| `file_removed`        | `lastKnownName`, `lastKnownMimeType`, `lastKnownParentIds`; these may be empty for untracked removals |
+| `file_updated`        | `modificationDate`, `description`, `lastModifyingUser`, `webViewLink`, `size`, `changes: { ... }`, optional `contentDiff: { ... }` |

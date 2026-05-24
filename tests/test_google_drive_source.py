@@ -33,7 +33,7 @@ async def test_cursor_is_only_advanced_after_feed_drain(services):
     source = GoogleDriveSource("drive", make_config(), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._process_change = MagicMock(return_value=[])
+    source._process_change_result = MagicMock(return_value=([], []))
     source._flush_debounced_updates = MagicMock(return_value=[])
 
     services.cursor.get_last_cursor.return_value = "start-token"
@@ -45,7 +45,7 @@ async def test_cursor_is_only_advanced_after_feed_drain(services):
     await source.fetch_and_publish()
 
     services.cursor.set_cursor.assert_called_once_with(1, "new-start")
-    assert source._process_change.call_count == 2
+    assert source._process_change_result.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -120,12 +120,10 @@ async def test_created_event_contains_delta_fields_only(services):
 
 
 @pytest.mark.asyncio
-async def test_initial_fetch_calls_bootstrap(services):
-    config = make_config(bootstrap_mode="baseline_only")
-    source = GoogleDriveSource("drive", config, services, source_id=1)
+async def test_initial_fetch_establishes_cursor_without_file_scan(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._bootstrap_repository = MagicMock()
     source._flush_debounced_updates = MagicMock(return_value=[])
 
     services.cursor.get_last_cursor.return_value = None
@@ -133,57 +131,8 @@ async def test_initial_fetch_calls_bootstrap(services):
 
     await source.fetch_and_publish()
 
-    source._bootstrap_repository.assert_called_once_with(service)
     services.cursor.set_cursor.assert_called_once_with(1, "start-token")
-
-
-@pytest.mark.asyncio
-async def test_bootstrap_repository_populates_kv(services):
-    config = make_config(bootstrap_mode="baseline_only")
-    source = GoogleDriveSource("drive", config, services, source_id=1)
-    service = MagicMock()
-
-    service.files().list().execute.side_effect = [
-        {
-            "files": [
-                {
-                    "id": "f1",
-                    "name": "File 1",
-                    "mimeType": "text/plain",
-                    "version": "1",
-                    "ownedByMe": True,
-                },
-                {
-                    "id": "f2",
-                    "name": "File 2",
-                    "mimeType": "application/pdf",
-                    "version": "5",
-                    "ownedByMe": True,
-                },
-            ],
-            "nextPageToken": None,
-        }
-    ]
-
-    source._bootstrap_repository(service)
-
-    assert services.kv.set.call_count == 2
-    # Check if correct keys and snapshots were set
-    call_args_list = services.kv.set.call_args_list
-    
-    # f1
-    assert call_args_list[0][0][0] == 1  # source_id
-    assert "gdrive:file:f1" in call_args_list[0][0][1] # key
-    snapshot1 = call_args_list[0][0][2]
-    assert snapshot1["file_id"] == "f1"
-    assert snapshot1["name"] == "File 1"
-
-    # f2
-    assert call_args_list[1][0][0] == 1
-    assert "gdrive:file:f2" in call_args_list[1][0][1]
-    snapshot2 = call_args_list[1][0][2]
-    assert snapshot2["file_id"] == "f2"
-    assert snapshot2["name"] == "File 2"
+    service.files().list.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -240,16 +189,16 @@ async def test_content_snapshot_preserved_on_non_content_change(services):
 
 
 @pytest.mark.asyncio
-async def test_diff_produced_after_baseline_only_bootstrap(services):
-    """After baseline_only bootstrap (no content), the first content update stores
-    content, and the second content update produces a diff."""
+async def test_diff_produced_after_metadata_only_cached_snapshot(services):
+    """After a metadata-only cached snapshot, the first content update stores
+    content and the second content update produces a diff."""
     from src.utils.google_drive_sync import DriveFileSnapshot, DriveTextDiffCalculator
 
-    config = make_config(bootstrap_mode="baseline_only")
+    config = make_config()
     source = GoogleDriveSource("drive", config, services, source_id=1)
 
-    # --- First update: previous from bootstrap has no content ---
-    prev_bootstrap = DriveFileSnapshot(
+    # --- First update: previous cached metadata has no content ---
+    prev_cached = DriveFileSnapshot(
         file_id="f1",
         name="Doc",
         mime_type="application/vnd.google-apps.document",
@@ -261,7 +210,7 @@ async def test_diff_produced_after_baseline_only_bootstrap(services):
         content_snapshot=None,
         content_hash=None,
     )
-    source._get_cached_snapshot = MagicMock(return_value=prev_bootstrap)
+    source._get_cached_snapshot = MagicMock(return_value=prev_cached)
     set_mock = MagicMock()
     source._set_cached_snapshot = set_mock
 
@@ -382,14 +331,12 @@ async def test_occurred_at_uses_change_time_not_now(services):
 
 
 @pytest.mark.asyncio
-async def test_expired_page_token_reconciles_and_advances_cursor(services):
-    source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
+async def test_expired_page_token_resets_cursor_without_file_scan(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._current_repository_snapshots = MagicMock(return_value={})
 
     services.cursor.get_last_cursor.return_value = "expired-token"
-    services.kv.list_keys_with_prefix.return_value = []
     error_resp = MagicMock()
     error_resp.status = 410
     service.changes().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
@@ -397,9 +344,11 @@ async def test_expired_page_token_reconciles_and_advances_cursor(services):
 
     await source.fetch_and_publish()
 
-    source._current_repository_snapshots.assert_called_once_with(service)
     services.cursor.set_cursor.assert_called_once_with(1, "fresh-token")
     service.changes().getStartPageToken.assert_called_once()
+    service.files().list.assert_not_called()
+    services.writer.write_events.assert_not_called()
+    services.kv.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -407,7 +356,7 @@ async def test_changes_list_requests_all_drives_items(services):
     source = GoogleDriveSource("drive", make_config(), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._process_change = MagicMock(return_value=[])
+    source._process_change_result = MagicMock(return_value=([], []))
 
     services.cursor.get_last_cursor.return_value = "start-token"
     service.changes().list.return_value.execute.return_value = {
@@ -425,41 +374,26 @@ async def test_changes_list_requests_all_drives_items(services):
 
 
 @pytest.mark.asyncio
-async def test_expired_page_token_recovery_emits_removed_for_stale_snapshots(services):
-    source = GoogleDriveSource("drive", make_config(bootstrap_mode="baseline_only"), services, source_id=1)
+async def test_changes_list_can_restrict_to_my_drive(services):
+    source = GoogleDriveSource("drive", make_config(restrict_to_my_drive=True), services, source_id=1)
     service = MagicMock()
     source._get_service = MagicMock(return_value=service)
-    source._current_repository_snapshots = MagicMock(return_value={})
+    source._process_change_result = MagicMock(return_value=([], []))
 
-    services.cursor.get_last_cursor.return_value = "expired-token"
-    services.kv.list_keys_with_prefix.return_value = [
-        "gdrive:file:stale-1",
-    ]
-    services.kv.get.return_value = {
-        "file_id": "stale-1",
-        "name": "Gone",
-        "mime_type": "text/plain",
-        "parents": ["root"],
-        "trashed": False,
-        "owned_by_me": True,
-        "version": "old-v1",
+    services.cursor.get_last_cursor.return_value = "start-token"
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [],
+        "newStartPageToken": "new-start",
     }
-
-    error_resp = MagicMock()
-    error_resp.status = 410
-    service.changes().list.return_value.execute.side_effect = HttpError(error_resp, b"expired")
-    service.changes().getStartPageToken.return_value.execute.return_value = {"startPageToken": "fresh-token"}
 
     await source.fetch_and_publish()
 
-    services.writer.write_events.assert_called_once()
-    _, events = services.writer.write_events.call_args.args
-    assert len(events) == 1
-    assert events[0].event_type == GoogleDriveEventType.FILE_REMOVED
-    services.kv.delete.assert_any_call(1, "gdrive:file:stale-1")
+    _, kwargs = service.changes().list.call_args
+    assert kwargs["restrictToMyDrive"] is True
+    service.files().list.assert_not_called()
 
 
-def test_filtered_tracked_file_emits_removed_event(services):
+def test_filtered_tracked_file_suppresses_events_and_drops_cache(services):
     source = GoogleDriveSource(
         "drive",
         make_config(filters=[{"ignore_private": {"in": "name", "contains": "Private"}}]),
@@ -495,6 +429,389 @@ def test_filtered_tracked_file_emits_removed_event(services):
         datetime.now(timezone.utc),
     )
 
-    assert len(events) == 1
-    assert events[0].event_type == GoogleDriveEventType.FILE_REMOVED
+    assert events == []
     source._delete_cached_snapshot.assert_called_once_with(previous.file_id)
+
+
+def test_first_seen_file_before_trusted_baseline_is_cached_without_created(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    source._set_cached_snapshot = MagicMock()
+    services.kv.get.side_effect = lambda source_id, key: {
+        "trusted": True,
+        "established_at": "2026-04-01T00:00:00+00:00",
+        "config_fingerprint": source._config_fingerprint(),
+    } if key == source.BASELINE_KEY else None
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Existing",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-03-01T00:00:00Z",
+        "modifiedTime": "2026-04-02T00:00:00Z",
+        "ownedByMe": True,
+        "version": "2",
+    })
+
+    events, mutations = source._process_change_result(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-02T00:00:00Z"},
+        datetime.now(timezone.utc),
+        allow_created=None,
+        allow_first_seen_shared=None,
+    )
+
+    assert events == []
+    assert len(mutations) == 1
+    assert mutations[0].action == "set"
+
+
+def test_first_seen_file_after_trusted_baseline_emits_created(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    services.kv.get.side_effect = lambda source_id, key: {
+        "trusted": True,
+        "established_at": "2026-04-01T00:00:00+00:00",
+        "config_fingerprint": source._config_fingerprint(),
+    } if key == source.BASELINE_KEY else None
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "New",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-02T00:00:00Z",
+        "modifiedTime": "2026-04-02T00:00:00Z",
+        "ownedByMe": True,
+        "version": "1",
+    })
+
+    events, _ = source._process_change_result(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-02T00:00:00Z"},
+        datetime.now(timezone.utc),
+        allow_created=None,
+        allow_first_seen_shared=None,
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_CREATED
+
+
+def test_first_seen_shared_file_emits_shared_not_created(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    services.kv.get.side_effect = lambda source_id, key: {
+        "trusted": True,
+        "established_at": "2026-04-01T00:00:00+00:00",
+        "config_fingerprint": source._config_fingerprint(),
+    } if key == source.BASELINE_KEY else None
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Shared",
+        "mimeType": "application/pdf",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-03-01T00:00:00Z",
+        "modifiedTime": "2026-04-02T00:00:00Z",
+        "ownedByMe": False,
+        "sharedWithMeTime": "2026-04-02T00:00:00Z",
+        "sharingUser": {"displayName": "Alice"},
+        "version": "2",
+    })
+
+    events, _ = source._process_change_result(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-02T00:00:00Z"},
+        datetime.now(timezone.utc),
+        allow_created=None,
+        allow_first_seen_shared=None,
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_SHARED_WITH_YOU
+
+
+def test_text_update_with_unchanged_content_is_suppressed(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    content_hash = source.diff_calc.get_hash("same content")
+    previous = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc",
+        mime_type="text/plain",
+        parents=["root"],
+        trashed=False,
+        created_time="2026-04-01T00:00:00Z",
+        modified_time="2026-04-01T00:00:00Z",
+        owned_by_me=True,
+        content_snapshot="same content",
+        content_hash=content_hash,
+    )
+    source._get_cached_snapshot = MagicMock(return_value=previous)
+    source._set_cached_snapshot = MagicMock()
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-01T00:00:00Z",
+        "modifiedTime": "2026-04-01T01:00:00Z",
+        "ownedByMe": True,
+        "version": "2",
+    })
+    source._fetch_text_content = MagicMock(return_value="same content")
+
+    events = source._process_change(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-01T01:00:00Z"},
+        datetime.now(timezone.utc),
+    )
+
+    assert events == []
+    source._set_cached_snapshot.assert_called_once()
+
+
+def test_empty_text_content_update_includes_diff(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    previous = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc",
+        mime_type="text/plain",
+        parents=["root"],
+        trashed=False,
+        created_time="2026-04-01T00:00:00Z",
+        modified_time="2026-04-01T00:00:00Z",
+        owned_by_me=True,
+        content_snapshot="",
+        content_hash=source.diff_calc.get_hash(""),
+    )
+    source._get_cached_snapshot = MagicMock(return_value=previous)
+    source._set_cached_snapshot = MagicMock()
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc",
+        "mimeType": "text/plain",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-01T00:00:00Z",
+        "modifiedTime": "2026-04-01T01:00:00Z",
+        "ownedByMe": True,
+        "version": "2",
+    })
+    source._fetch_text_content = MagicMock(return_value="hello")
+
+    events = source._process_change(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-01T01:00:00Z"},
+        datetime.now(timezone.utc),
+    )
+
+    updated_events = [e for e in events if e.event_type == GoogleDriveEventType.FILE_UPDATED]
+    assert len(updated_events) == 1
+    assert updated_events[0].data["contentDiff"]["addedCharCount"] == 5
+
+
+def test_move_only_change_does_not_emit_low_value_update(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    previous = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc.pdf",
+        mime_type="application/pdf",
+        parents=["old"],
+        trashed=False,
+        created_time="2026-04-01T00:00:00Z",
+        modified_time="2026-04-01T00:00:00Z",
+        owned_by_me=True,
+    )
+    source._get_cached_snapshot = MagicMock(return_value=previous)
+    source._set_cached_snapshot = MagicMock()
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Doc.pdf",
+        "mimeType": "application/pdf",
+        "parents": ["new"],
+        "trashed": False,
+        "createdTime": "2026-04-01T00:00:00Z",
+        "modifiedTime": "2026-04-01T01:00:00Z",
+        "ownedByMe": True,
+        "version": "2",
+    })
+
+    events = source._process_change(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-01T01:00:00Z"},
+        datetime.now(timezone.utc),
+    )
+
+    assert [event.event_type for event in events] == [GoogleDriveEventType.FILE_MOVED]
+
+
+def test_removed_change_respects_file_id_filter(services):
+    source = GoogleDriveSource(
+        "drive",
+        make_config(filters=[{"skip_file": {"in": "file_id", "contains": "skip-me"}}]),
+        services,
+        source_id=1,
+    )
+    source._get_cached_snapshot = MagicMock(return_value=None)
+
+    events, mutations = source._process_change_result(
+        MagicMock(),
+        {"fileId": "skip-me-1", "removed": True, "time": "2026-04-01T01:00:00Z"},
+        datetime.now(timezone.utc),
+    )
+
+    assert events == []
+    assert mutations == []
+
+
+def test_first_seen_permission_shared_file_after_baseline_emits_shared(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    source._get_cached_snapshot = MagicMock(return_value=None)
+    services.kv.get.side_effect = lambda source_id, key: {
+        "trusted": True,
+        "established_at": "2026-04-01T00:00:00+00:00",
+        "config_fingerprint": source._config_fingerprint(),
+    } if key == source.BASELINE_KEY else None
+    source._fetch_file = MagicMock(return_value={
+        "id": "f1",
+        "name": "Shared by group",
+        "mimeType": "application/pdf",
+        "parents": ["root"],
+        "trashed": False,
+        "createdTime": "2026-04-02T00:00:00Z",
+        "modifiedTime": "2026-04-02T00:00:00Z",
+        "ownedByMe": False,
+        "permissions": [{"type": "group", "emailAddress": "team@example.com"}],
+        "version": "1",
+    })
+
+    events, mutations = source._process_change_result(
+        MagicMock(),
+        {"fileId": "f1", "time": "2026-04-02T00:00:00Z"},
+        datetime.now(timezone.utc),
+        allow_created=None,
+        allow_first_seen_shared=None,
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == GoogleDriveEventType.FILE_SHARED_WITH_YOU
+    assert len(mutations) == 1
+
+
+@pytest.mark.asyncio
+async def test_content_fetch_http_error_does_not_advance_cursor(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._ensure_baseline_state = MagicMock()
+    previous = DriveFileSnapshot(
+        file_id="f1",
+        name="Doc",
+        mime_type="text/plain",
+        parents=["root"],
+        trashed=False,
+        created_time="2026-04-01T00:00:00Z",
+        modified_time="2026-04-01T00:00:00Z",
+        owned_by_me=True,
+        content_snapshot="old",
+        content_hash=source.diff_calc.get_hash("old"),
+    )
+    source._get_cached_snapshot = MagicMock(return_value=previous)
+
+    services.cursor.get_last_cursor.return_value = "start-token"
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [{"fileId": "f1", "time": "2026-04-01T01:00:00Z"}],
+        "newStartPageToken": "new-start",
+    }
+    error_resp = MagicMock()
+    error_resp.status = 429
+    service.files().get.return_value.execute.side_effect = [
+        {
+            "id": "f1",
+            "name": "Doc",
+            "mimeType": "text/plain",
+            "parents": ["root"],
+            "trashed": False,
+            "createdTime": "2026-04-01T00:00:00Z",
+            "modifiedTime": "2026-04-01T01:00:00Z",
+            "ownedByMe": True,
+            "version": "2",
+        },
+        HttpError(error_resp, b"rate limited"),
+    ]
+
+    await source.fetch_and_publish()
+
+    services.writer.write_events.assert_not_called()
+    services.cursor.set_cursor.assert_not_called()
+@pytest.mark.asyncio
+async def test_processing_error_does_not_advance_cursor_or_apply_cache(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._ensure_baseline_state = MagicMock()
+    source._process_change_result = MagicMock(side_effect=RuntimeError("boom"))
+    source._apply_cache_mutations = MagicMock()
+
+    services.cursor.get_last_cursor.return_value = "start-token"
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [{"fileId": "f1"}],
+        "newStartPageToken": "new-start",
+    }
+
+    await source.fetch_and_publish()
+
+    services.cursor.set_cursor.assert_not_called()
+    source._apply_cache_mutations.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_processing_error_does_not_write_successful_page_events(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._ensure_baseline_state = MagicMock()
+    source._apply_cache_mutations = MagicMock()
+    event = MagicMock()
+    source._process_change_result = MagicMock(side_effect=[
+        ([event], [MagicMock()]),
+        RuntimeError("boom"),
+    ])
+
+    services.cursor.get_last_cursor.return_value = "start-token"
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [{"fileId": "ok"}, {"fileId": "bad"}],
+        "newStartPageToken": "new-start",
+    }
+
+    await source.fetch_and_publish()
+
+    services.writer.write_events.assert_not_called()
+    services.cursor.set_cursor.assert_not_called()
+    source._apply_cache_mutations.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_writer_failure_does_not_apply_cache_or_advance_cursor(services):
+    source = GoogleDriveSource("drive", make_config(), services, source_id=1)
+    service = MagicMock()
+    source._get_service = MagicMock(return_value=service)
+    source._ensure_baseline_state = MagicMock()
+    source._apply_cache_mutations = MagicMock()
+    event = MagicMock()
+    source._process_change_result = MagicMock(return_value=([event], [MagicMock()]))
+
+    services.cursor.get_last_cursor.return_value = "start-token"
+    services.writer.write_events.side_effect = RuntimeError("db down")
+    service.changes().list.return_value.execute.return_value = {
+        "changes": [{"fileId": "f1"}],
+        "newStartPageToken": "new-start",
+    }
+
+    await source.fetch_and_publish()
+
+    services.cursor.set_cursor.assert_not_called()
+    source._apply_cache_mutations.assert_not_called()

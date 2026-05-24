@@ -86,7 +86,6 @@ class GoogleDriveSourceConfig(GoogleSourceConfig):
     type: Literal["google_drive"] = "google_drive"
     restrict_to_my_drive: bool = False
     include_corpus_removals: bool = False
-    bootstrap_mode: Literal["baseline_only", "full_snapshot", "off"] = "baseline_only"
     eligible_mime_types_for_content_diff: List[str] = Field(
         default_factory=lambda: [
             "application/vnd.google-apps.document",

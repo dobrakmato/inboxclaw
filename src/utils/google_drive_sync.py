@@ -36,6 +36,7 @@ class DriveFileSnapshot:
     version: Optional[str] = None
     content_hash: Optional[str] = None
     content_snapshot: Optional[str] = None
+    content_unavailable: bool = False
 
     @classmethod
     def from_file_resource(cls, file_resource: dict[str, Any]) -> "DriveFileSnapshot":
@@ -84,6 +85,7 @@ class DriveFileSnapshot:
             version=data.get("version"),
             content_hash=data.get("content_hash"),
             content_snapshot=data.get("content_snapshot"),
+            content_unavailable=False,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -140,7 +142,25 @@ class DriveDebounceState:
 
 
 class DriveTransitionClassifier:
-    def classify(self, previous: Optional[DriveFileSnapshot], current: Optional[DriveFileSnapshot], *, removed: bool) -> list[str]:
+    UPDATE_FIELD_MAP = (
+        ("name", "name"),
+        ("mimeType", "mime_type"),
+        ("modificationDate", "modified_time"),
+        ("description", "description"),
+        ("lastModifyingUser", "last_modifying_user"),
+        ("webViewLink", "web_view_link"),
+        ("size", "size"),
+    )
+
+    def classify(
+        self,
+        previous: Optional[DriveFileSnapshot],
+        current: Optional[DriveFileSnapshot],
+        *,
+        removed: bool,
+        allow_created: bool = True,
+        allow_first_seen_shared: bool = True,
+    ) -> list[str]:
         event_types: list[str] = []
 
         if removed:
@@ -155,7 +175,10 @@ class DriveTransitionClassifier:
             return event_types
 
         if previous is None:
-            event_types.append(GoogleDriveEventType.FILE_CREATED)
+            if allow_first_seen_shared and self._is_shared_with_you(current):
+                event_types.append(GoogleDriveEventType.FILE_SHARED_WITH_YOU)
+            elif allow_created and current.owned_by_me:
+                event_types.append(GoogleDriveEventType.FILE_CREATED)
             return event_types
 
         if previous.parents != current.parents:
@@ -169,7 +192,21 @@ class DriveTransitionClassifier:
         if self._shared_with_you_changed(previous, current):
             event_types.append(GoogleDriveEventType.FILE_SHARED_WITH_YOU)
 
-        if self.has_update_signal(previous, current):
+        has_structural_event = any(
+            event_type
+            in {
+                GoogleDriveEventType.FILE_MOVED,
+                GoogleDriveEventType.FILE_TRASHED,
+                GoogleDriveEventType.FILE_UNTRASHED,
+                GoogleDriveEventType.FILE_SHARED_WITH_YOU,
+            }
+            for event_type in event_types
+        )
+        if self.has_update_signal(
+            previous,
+            current,
+            allow_modified_time_only=not has_structural_event,
+        ):
             event_types.append(GoogleDriveEventType.FILE_UPDATED)
 
         return event_types
@@ -179,42 +216,90 @@ class DriveTransitionClassifier:
         if snapshot.owned_by_me:
             return True
         
-        if snapshot.sharing_user:
+        if snapshot.shared_with_me_time or snapshot.sharing_user:
             return True
-        
-        if snapshot.permissions:
-            for perm in snapshot.permissions:
-                p_type = perm.get("type")
-                if p_type in ("user", "group"):
-                    return True
-                
-                # Check inherited permissions
-                details = perm.get("permissionDetails", [])
-                for detail in details:
-                    if detail.get("permissionType") in ("user", "group"):
-                        return True
-        
+         
+        if self._has_user_or_group_permission(snapshot):
+            return True
+         
         return False
-
-    def has_update_signal(self, previous: Optional[DriveFileSnapshot], current: Optional[DriveFileSnapshot]) -> bool:
+ 
+    def has_update_signal(
+        self,
+        previous: Optional[DriveFileSnapshot],
+        current: Optional[DriveFileSnapshot],
+        *,
+        allow_modified_time_only: bool = True,
+    ) -> bool:
         if previous is None or current is None:
             return False
-        
+         
         # Don't emit updates for folders
         if current.mime_type == "application/vnd.google-apps.folder":
             return False
             
-        return previous.modified_time != current.modified_time
+        changes = self.changed_update_fields(previous, current)
+        non_time_changes = {key: value for key, value in changes.items() if key != "modificationDate"}
+        if non_time_changes:
+            return True
+ 
+        if previous.content_hash is not None and current.content_hash is not None:
+            if previous.content_hash != current.content_hash:
+                return True
+            if not getattr(current, "content_unavailable", False):
+                return False
+ 
+        return allow_modified_time_only and previous.modified_time != current.modified_time
+
+    def changed_update_fields(self, previous: DriveFileSnapshot, current: DriveFileSnapshot) -> dict[str, dict[str, Any]]:
+        changes: dict[str, dict[str, Any]] = {}
+        for event_field, snapshot_field in self.UPDATE_FIELD_MAP:
+            before = getattr(previous, snapshot_field)
+            after = getattr(current, snapshot_field)
+            if before != after:
+                changes[event_field] = {"before": before, "after": after}
+        return changes
 
     @staticmethod
     def _shared_with_you_changed(previous: DriveFileSnapshot, current: DriveFileSnapshot) -> bool:
         if current.owned_by_me:
             return False
-        if not current.shared_with_me_time:
+        if not DriveTransitionClassifier._is_shared_with_you(current):
             return False
-        if not previous.shared_with_me_time:
+        if previous.owned_by_me:
             return True
-        return current.shared_with_me_time > previous.shared_with_me_time
+        if current.shared_with_me_time:
+            if not previous.shared_with_me_time:
+                return True
+            return current.shared_with_me_time > previous.shared_with_me_time
+        if current.sharing_user and not previous.sharing_user:
+            return True
+        return not DriveTransitionClassifier._is_shared_with_you(previous)
+ 
+    @staticmethod
+    def _is_shared_with_you(snapshot: DriveFileSnapshot) -> bool:
+        return not snapshot.owned_by_me and bool(
+            snapshot.shared_with_me_time
+            or snapshot.sharing_user
+            or DriveTransitionClassifier._has_user_or_group_permission(snapshot)
+        )
+
+    @staticmethod
+    def _has_user_or_group_permission(snapshot: DriveFileSnapshot) -> bool:
+        if not snapshot.permissions:
+            return False
+
+        for perm in snapshot.permissions:
+            p_type = perm.get("type")
+            if p_type in ("user", "group"):
+                return True
+
+            details = perm.get("permissionDetails", [])
+            for detail in details:
+                if detail.get("permissionType") in ("user", "group"):
+                    return True
+
+        return False
 
 
 class DriveDebounceManager:

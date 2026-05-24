@@ -794,16 +794,6 @@
           "title": "Include Corpus Removals",
           "type": "boolean"
         },
-        "bootstrap_mode": {
-          "default": "baseline_only",
-          "enum": [
-            "baseline_only",
-            "full_snapshot",
-            "off"
-          ],
-          "title": "Bootstrap Mode",
-          "type": "string"
-        },
         "eligible_mime_types_for_content_diff": {
           "items": {
             "type": "string"
