@@ -120,7 +120,7 @@ sources:
     token_file: "data/google_token.json"
 ```
 
-Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 2.0`, `max_into_future: "365d"`.
+Defaults: `calendar_ids: ["primary"]`, `poll_interval: "10m"`, `max_event_age_days: 2.0`, `max_into_future: "365d"`, `attendee_detail_limit: 3`.
 
 ### Full Configuration
 
@@ -135,6 +135,7 @@ sources:
     poll_interval: "5m"
     max_event_age_days: 7.0
     max_into_future: "30d"
+    attendee_detail_limit: 3
     calendar_overrides:
       "team@group.calendar.google.com":
         max_into_future: "365d"
@@ -149,6 +150,7 @@ sources:
 | `poll_interval`             | `string` | `"10m"`       | How often to check for changes. Supports human-readable intervals.                                                                                          |
 | `max_event_age_days`        | `float`  | `2.0`         | Drop cached snapshots older than this many days. Set to `null` to disable cache-age cleanup.                                                                |
 | `max_into_future`           | `string` | `"365d"`      | Ignore events starting after this rolling time horizon until they enter the window.                                                                         |
+| `attendee_detail_limit`     | `int`    | `3`           | Include individual attendee objects only when the event has at most this many attendees. Larger events emit attendee counts by RSVP state instead.          |
 | `calendar_overrides`        | `dict`   | `{}`          | Per-calendar overrides for `max_into_future`. Keyed by calendar ID.                                                                                        |
 | `filters`                   | `list`   | `[]`          | List of filters to ignore specific events.                                                                                                                  |
 
@@ -239,7 +241,7 @@ Contains the last known state in `previous` and the current (cancelled) state in
 
 #### `google.calendar.event.rsvp_changed`
 
-Contains a list of attendee status changes:
+Contains a list of attendee status changes. If the event exceeds `attendee_detail_limit`, the RSVP payload is summarized instead of naming individual attendees:
 
 ```json
 {
@@ -261,3 +263,5 @@ Contains a list of attendee status changes:
 ```
 
 The `event` and `previous` objects follow the [Google Calendar Event resource](https://developers.google.com/calendar/api/v3/reference/events#resource) specification.
+When an event has more attendees than `attendee_detail_limit`, the `attendees` array is replaced with `{ "total": N, "by_state": { ... } }` so individual attendee details are not emitted.
+For large-event RSVP changes, `rsvp_changes` becomes `{ "changed": N, "before": { ... }, "after": { ... } }`.

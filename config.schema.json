@@ -730,6 +730,12 @@
             }
           ]
         },
+        "attendee_detail_limit": {
+          "default": 3,
+          "minimum": 0,
+          "title": "Attendee Detail Limit",
+          "type": "integer"
+        },
         "calendar_overrides": {
           "additionalProperties": {
             "$ref": "#/$defs/GoogleCalendarOverrideConfig"

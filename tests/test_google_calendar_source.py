@@ -74,6 +74,89 @@ def test_google_calendar_created(mock_services, config):
     assert "event" in ev.data
     assert ev.data["event"]["id"] == "evt1"
 
+def test_google_calendar_created_summarizes_large_attendee_lists(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    event_item = {
+        "id": "evt1",
+        "summary": "All hands",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "attendees": [
+            {"email": "accepted1@example.com", "responseStatus": "accepted"},
+            {"email": "accepted2@example.com", "responseStatus": "accepted"},
+            {"email": "tentative@example.com", "responseStatus": "tentative"},
+            {"email": "unknown@example.com"},
+        ],
+    }
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", event_item)
+
+    assert len(events) == 1
+    assert events[0].data["event"]["attendees"] == {
+        "total": 4,
+        "by_state": {
+            "accepted": 2,
+            "tentative": 1,
+            "unknown": 1,
+        },
+    }
+    assert "accepted1@example.com" not in str(events[0].data)
+
+
+def test_google_calendar_created_keeps_attendees_at_default_limit(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    attendees = [
+        {"email": "one@example.com", "responseStatus": "accepted"},
+        {"email": "two@example.com", "responseStatus": "declined"},
+        {"email": "three@example.com", "responseStatus": "needsAction"},
+    ]
+    event_item = {
+        "id": "evt1",
+        "summary": "Small meeting",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "attendees": attendees,
+    }
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", event_item)
+
+    assert events[0].data["event"]["attendees"] == attendees
+
+
+def test_google_calendar_attendee_detail_limit_is_configurable(mock_services, config):
+    config.attendee_detail_limit = 4
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    attendees = [
+        {"email": "one@example.com", "responseStatus": "accepted"},
+        {"email": "two@example.com", "responseStatus": "declined"},
+        {"email": "three@example.com", "responseStatus": "needsAction"},
+        {"email": "four@example.com", "responseStatus": "tentative"},
+    ]
+    event_item = {
+        "id": "evt1",
+        "summary": "Medium meeting",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "attendees": attendees,
+    }
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", event_item)
+
+    assert events[0].data["event"]["attendees"] == attendees
+
+
 def test_google_calendar_updated(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
     
@@ -109,6 +192,56 @@ def test_google_calendar_updated(mock_services, config):
     assert "changes" in ev.data
     assert ev.data["changes"]["summary"]["before"] == "Old Title"
     assert ev.data["changes"]["summary"]["after"] == "New Title"
+
+
+def test_google_calendar_update_summarizes_attendee_changes_above_limit(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "attendees": [
+            {"email": "one@example.com", "responseStatus": "accepted"},
+            {"email": "two@example.com", "responseStatus": "accepted"},
+            {"email": "three@example.com", "responseStatus": "declined"},
+        ],
+    }
+    new_event = {
+        **old_event,
+        "etag": "v2",
+        "attendees": [
+            *old_event["attendees"],
+            {"email": "five@example.com", "responseStatus": "accepted"},
+        ],
+    }
+    mock_services.kv.get.return_value = old_event
+
+    events = source._classify_event_change("primary", new_event)
+
+    updated_events = [event for event in events if event.event_type == CalendarEventType.UPDATED]
+    assert len(updated_events) == 1
+    assert updated_events[0].data["changes"]["attendees"] == {
+        "before": {
+            "total": 3,
+            "by_state": {
+                "accepted": 2,
+                "declined": 1,
+            },
+        },
+        "after": {
+            "total": 4,
+            "by_state": {
+                "accepted": 3,
+                "declined": 1,
+            },
+        },
+    }
+    assert "one@example.com" not in str(updated_events[0].data)
+    assert "five@example.com" not in str(updated_events[0].data)
 
 def test_google_calendar_rsvp_changed(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
@@ -149,6 +282,61 @@ def test_google_calendar_rsvp_changed(mock_services, config):
     assert ev.data["rsvp_changes"][0]["attendee"] == "user1@example.com"
     assert ev.data["rsvp_changes"][0]["before"] == "needsAction"
     assert ev.data["rsvp_changes"][0]["after"] == "accepted"
+
+
+def test_google_calendar_rsvp_changed_summarizes_large_events(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "All hands",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "attendees": [
+            {"email": "one@example.com", "responseStatus": "needsAction"},
+            {"email": "two@example.com", "responseStatus": "accepted"},
+            {"email": "three@example.com", "responseStatus": "declined"},
+            {"email": "four@example.com", "responseStatus": "tentative"},
+        ],
+        "etag": "v1",
+    }
+    new_event = {
+        **old_event,
+        "etag": "v2",
+        "attendees": [
+            {"email": "one@example.com", "responseStatus": "accepted"},
+            {"email": "two@example.com", "responseStatus": "accepted"},
+            {"email": "three@example.com", "responseStatus": "declined"},
+            {"email": "four@example.com", "responseStatus": "tentative"},
+        ],
+    }
+    mock_services.kv.get.return_value = old_event
+
+    events = source._classify_event_change("primary", new_event)
+
+    assert len(events) == 1
+    assert events[0].event_type == CalendarEventType.RSVP_CHANGED
+    assert events[0].data["rsvp_changes"] == {
+        "changed": 1,
+        "before": {
+            "total": 4,
+            "by_state": {
+                "accepted": 1,
+                "declined": 1,
+                "needsAction": 1,
+                "tentative": 1,
+            },
+        },
+        "after": {
+            "total": 4,
+            "by_state": {
+                "accepted": 2,
+                "declined": 1,
+                "tentative": 1,
+            },
+        },
+    }
+    assert "one@example.com" not in str(events[0].data)
 
 def test_google_calendar_deleted(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)

@@ -109,6 +109,7 @@ class GoogleCalendarSourceConfig(GoogleSourceConfig):
     calendar_ids: List[str] = Field(default_factory=lambda: ["primary"])
     max_event_age_days: Optional[float] = 2.0
     max_into_future: Interval = "365d"
+    attendee_detail_limit: int = Field(default=3, ge=0)
     calendar_overrides: Dict[str, GoogleCalendarOverrideConfig] = Field(default_factory=dict)
     filters: List[Dict[str, CalendarFilterItem]] = Field(default_factory=list)
 

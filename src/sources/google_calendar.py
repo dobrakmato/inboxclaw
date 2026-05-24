@@ -555,6 +555,71 @@ class GoogleCalendarSource:
                 )
         return changes
 
+    def _attendee_state_summary(self, attendees: list[Any]) -> dict[str, Any]:
+        by_state: dict[str, int] = {}
+        for attendee in attendees:
+            state = None
+            if isinstance(attendee, dict):
+                state = attendee.get("responseStatus")
+            if not isinstance(state, str) or not state:
+                state = "unknown"
+            by_state[state] = by_state.get(state, 0) + 1
+
+        return {
+            "total": len(attendees),
+            "by_state": dict(sorted(by_state.items())),
+        }
+
+    def _attendees_exceed_detail_limit(self, event_item: Optional[dict[str, Any]]) -> bool:
+        if event_item is None:
+            return False
+        attendees = event_item.get("attendees")
+        return isinstance(attendees, list) and len(attendees) > self.config.attendee_detail_limit
+
+    def _event_for_payload(self, event_item: dict[str, Any]) -> dict[str, Any]:
+        event_copy = deepcopy(event_item)
+        attendees = event_copy.get("attendees")
+        if isinstance(attendees, list) and len(attendees) > self.config.attendee_detail_limit:
+            event_copy["attendees"] = self._attendee_state_summary(attendees)
+        return event_copy
+
+    def _event_for_update_payload(
+        self,
+        original_event: dict[str, Any],
+        normalized_event: dict[str, Any],
+        *,
+        summarize_attendees: bool,
+    ) -> dict[str, Any]:
+        event_copy = deepcopy(normalized_event)
+        attendees = original_event.get("attendees")
+        if isinstance(attendees, list) and (
+            summarize_attendees or len(attendees) > self.config.attendee_detail_limit
+        ):
+            event_copy["attendees"] = self._attendee_state_summary(attendees)
+        return event_copy
+
+    def _rsvp_summary_for_payload(
+        self,
+        previous_event: Optional[dict[str, Any]],
+        current_event: Optional[dict[str, Any]],
+        rsvp_changes: list[RsvpChangeDTO],
+    ) -> dict[str, Any]:
+        summary: dict[str, Any] = {
+            "changed": len(rsvp_changes),
+        }
+
+        if previous_event is not None:
+            attendees = previous_event.get("attendees")
+            if isinstance(attendees, list):
+                summary["before"] = self._attendee_state_summary(attendees)
+
+        if current_event is not None:
+            attendees = current_event.get("attendees")
+            if isinstance(attendees, list):
+                summary["after"] = self._attendee_state_summary(attendees)
+
+        return summary
+
     def _normalize_for_general_change(
         self,
         event_item: Optional[dict[str, Any]],
@@ -629,39 +694,53 @@ class GoogleCalendarSource:
 
         if event_type == CalendarEventType.CREATED:
             if current_event:
-                payload["event"] = deepcopy(current_event)
-        
+                payload["event"] = self._event_for_payload(current_event)
+
         elif event_type == CalendarEventType.UPDATED:
-            # For updates, we provide the diff of changed fields
             if previous_event and current_event:
-                # Use common fields for the diff but exclude large/unstable ones
-                # to keep it minimal as per instructions.
-                # However, the user said "fields which changed with before/after subobjects (computed dynamically with the util class)"
-                # We can compute the diff between the two snapshots but exclude very large fields if they didn't change.
-                # Actually, the DictDiff only returns what changed.
                 exclude = {"etag", "updated", "sequence", "id", "kind"}
-                # We also want to exclude attendees from the general update diff 
-                # because they are handled by RSVP if they are the only change.
-                # If they are part of a general update, they might be included, 
-                # but it can be messy.
-                # Let's keep it simple for now as requested.
                 before_norm = self._normalize_for_general_change(previous_event) or {}
                 after_norm = self._normalize_for_general_change(current_event) or {}
-                
-                payload["changes"] = DictDiff.compute(before_norm, after_norm, exclude=exclude)
+                summarize_attendees = self._attendees_exceed_detail_limit(
+                    previous_event
+                ) or self._attendees_exceed_detail_limit(current_event)
+                before_norm = self._event_for_update_payload(
+                    previous_event,
+                    before_norm,
+                    summarize_attendees=summarize_attendees,
+                )
+                after_norm = self._event_for_update_payload(
+                    current_event,
+                    after_norm,
+                    summarize_attendees=summarize_attendees,
+                )
+
+                payload["changes"] = DictDiff.compute(
+                    before_norm,
+                    after_norm,
+                    exclude=exclude,
+                )
 
         elif event_type == CalendarEventType.DELETED:
             if current_event:
-                payload["event"] = deepcopy(current_event)
+                payload["event"] = self._event_for_payload(current_event)
             if previous_event:
-                payload["previous"] = deepcopy(previous_event)
+                payload["previous"] = self._event_for_payload(previous_event)
 
         elif event_type == CalendarEventType.RSVP_CHANGED:
-            # RSVP only emits who changed their status and how
             if rsvp_changes:
-                # User asked for "rsvp changes (you can make this shape yourself)"
-                # Let's keep the existing list of RsvpChangeDTO but it fits the pattern.
-                payload["rsvp_changes"] = [change.model_dump() for change in rsvp_changes]
+                if self._attendees_exceed_detail_limit(
+                    current_event
+                ) or self._attendees_exceed_detail_limit(previous_event):
+                    payload["rsvp_changes"] = self._rsvp_summary_for_payload(
+                        previous_event,
+                        current_event,
+                        rsvp_changes,
+                    )
+                else:
+                    payload["rsvp_changes"] = [
+                        change.model_dump() for change in rsvp_changes
+                    ]
 
         return payload
 
