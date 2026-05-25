@@ -50,6 +50,8 @@ _PREVIOUS_EVENT_UNSET = object()
 
 
 class GoogleCalendarSource:
+    _EVENT_PAYLOAD_EXCLUDED_FIELDS = frozenset({"sequence", "iCalUID", "etag", "reminders"})
+
     def __init__(
         self,
         name: str,
@@ -578,6 +580,9 @@ class GoogleCalendarSource:
 
     def _event_for_payload(self, event_item: dict[str, Any]) -> dict[str, Any]:
         event_copy = deepcopy(event_item)
+        for field in self._EVENT_PAYLOAD_EXCLUDED_FIELDS:
+            event_copy.pop(field, None)
+
         attendees = event_copy.get("attendees")
         if isinstance(attendees, list) and len(attendees) > self.config.attendee_detail_limit:
             event_copy["attendees"] = self._attendee_state_summary(attendees)
@@ -591,6 +596,9 @@ class GoogleCalendarSource:
         summarize_attendees: bool,
     ) -> dict[str, Any]:
         event_copy = deepcopy(normalized_event)
+        for field in self._EVENT_PAYLOAD_EXCLUDED_FIELDS:
+            event_copy.pop(field, None)
+
         attendees = original_event.get("attendees")
         if isinstance(attendees, list) and (
             summarize_attendees or len(attendees) > self.config.attendee_detail_limit
@@ -628,9 +636,10 @@ class GoogleCalendarSource:
             return None
 
         normalized = deepcopy(event_item)
-        normalized.pop("etag", None)
+        for field in self._EVENT_PAYLOAD_EXCLUDED_FIELDS:
+            normalized.pop(field, None)
+
         normalized.pop("updated", None)
-        normalized.pop("sequence", None)
         normalized.pop("kind", None)
 
         attendees = normalized.get("attendees")
@@ -698,7 +707,7 @@ class GoogleCalendarSource:
 
         elif event_type == CalendarEventType.UPDATED:
             if previous_event and current_event:
-                exclude = {"etag", "updated", "sequence", "id", "kind"}
+                exclude = {*self._EVENT_PAYLOAD_EXCLUDED_FIELDS, "updated", "id", "kind"}
                 before_norm = self._normalize_for_general_change(previous_event) or {}
                 after_norm = self._normalize_for_general_change(current_event) or {}
                 summarize_attendees = self._attendees_exceed_detail_limit(

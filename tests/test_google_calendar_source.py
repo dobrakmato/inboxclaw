@@ -74,6 +74,34 @@ def test_google_calendar_created(mock_services, config):
     assert "event" in ev.data
     assert ev.data["event"]["id"] == "evt1"
 
+
+def test_google_calendar_payload_omits_provider_metadata(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    event_item = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "sequence": 3,
+        "iCalUID": "evt1@example.com",
+        "reminders": {"useDefault": True},
+    }
+
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", event_item)
+
+    assert len(events) == 1
+    emitted_event = events[0].data["event"]
+    assert emitted_event["id"] == "evt1"
+    for field in ("etag", "sequence", "iCalUID", "reminders"):
+        assert field not in emitted_event
+    assert event_item["etag"] == "v1"
+
+
 def test_google_calendar_created_summarizes_large_attendee_lists(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
 
@@ -1187,6 +1215,35 @@ def test_google_calendar_sequence_only_change_not_emitted(mock_services, config)
 
     events = source._classify_event_change("primary", new_event)
     assert len(events) == 0
+
+
+def test_google_calendar_payload_metadata_only_change_not_emitted(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": _future_iso(7)},
+        "end": {"dateTime": _future_iso(7, 1)},
+        "status": "confirmed",
+        "etag": "v1",
+        "sequence": 0,
+        "iCalUID": "evt1@example.com",
+        "reminders": {"useDefault": True},
+    }
+    new_event = {
+        **old_event,
+        "etag": "v2",
+        "sequence": 1,
+        "iCalUID": "evt1-rewritten@example.com",
+        "reminders": {"useDefault": False},
+    }
+
+    mock_services.kv.get.return_value = old_event
+
+    events = source._classify_event_change("primary", new_event)
+
+    assert events == []
 
 
 def test_google_calendar_too_old_clears_cache(mock_services):
