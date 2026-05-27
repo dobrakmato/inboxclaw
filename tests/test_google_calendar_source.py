@@ -102,6 +102,34 @@ def test_google_calendar_payload_omits_provider_metadata(mock_services, config):
     assert event_item["etag"] == "v1"
 
 
+def test_google_calendar_created_compacts_datetime_payload_keys(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    start_time = _future_iso(7)
+    end_time = _future_iso(7, 1)
+
+    event_item = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": start_time, "timeZone": "Europe/Prague"},
+        "end": {"dateTime": end_time, "timeZone": "Europe/Prague"},
+        "originalStartTime": {"dateTime": start_time, "timeZone": "Europe/Prague"},
+        "status": "confirmed",
+        "etag": "v1",
+    }
+
+    mock_services.kv.get.return_value = None
+
+    events = source._classify_event_change("primary", event_item)
+
+    assert len(events) == 1
+    data = events[0].data
+    assert data["start"] == {"dt": start_time, "tz": "Europe/Prague"}
+    assert data["event"]["start"] == {"dt": start_time, "tz": "Europe/Prague"}
+    assert data["event"]["end"] == {"dt": end_time, "tz": "Europe/Prague"}
+    assert data["event"]["originalStartTime"] == {"dt": start_time, "tz": "Europe/Prague"}
+    assert event_item["start"] == {"dateTime": start_time, "timeZone": "Europe/Prague"}
+
+
 def test_google_calendar_created_summarizes_large_attendee_lists(mock_services, config):
     source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
 
@@ -220,6 +248,42 @@ def test_google_calendar_updated(mock_services, config):
     assert "changes" in ev.data
     assert ev.data["changes"]["summary"]["before"] == "Old Title"
     assert ev.data["changes"]["summary"]["after"] == "New Title"
+
+
+def test_google_calendar_updated_compacts_datetime_payload_keys_in_changes(mock_services, config):
+    source = GoogleCalendarSource("test_gcal", config, mock_services, 1)
+    old_start = _future_iso(7)
+    new_start = _future_iso(7, 2)
+    end_time = _future_iso(7, 3)
+
+    old_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": old_start, "timeZone": "Europe/Prague"},
+        "end": {"dateTime": end_time, "timeZone": "Europe/Prague"},
+        "status": "confirmed",
+        "etag": "v1",
+    }
+    new_event = {
+        "id": "evt1",
+        "summary": "Meeting",
+        "start": {"dateTime": new_start, "timeZone": "Europe/Prague"},
+        "end": {"dateTime": end_time, "timeZone": "Europe/Prague"},
+        "status": "confirmed",
+        "etag": "v2",
+    }
+
+    mock_services.kv.get.return_value = old_event
+
+    events = source._classify_event_change("primary", new_event)
+
+    assert len(events) == 1
+    data = events[0].data
+    assert data["start"] == {"dt": new_start, "tz": "Europe/Prague"}
+    assert data["changes"]["start"] == {
+        "before": {"dt": old_start, "tz": "Europe/Prague"},
+        "after": {"dt": new_start, "tz": "Europe/Prague"},
+    }
 
 
 def test_google_calendar_update_summarizes_attendee_changes_above_limit(mock_services, config):

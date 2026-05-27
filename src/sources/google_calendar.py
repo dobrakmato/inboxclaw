@@ -51,6 +51,7 @@ _PREVIOUS_EVENT_UNSET = object()
 
 class GoogleCalendarSource:
     _EVENT_PAYLOAD_EXCLUDED_FIELDS = frozenset({"sequence", "iCalUID", "etag", "reminders"})
+    _PAYLOAD_TIME_KEY_ALIASES = {"dateTime": "dt", "timeZone": "tz"}
 
     def __init__(
         self,
@@ -578,6 +579,19 @@ class GoogleCalendarSource:
         attendees = event_item.get("attendees")
         return isinstance(attendees, list) and len(attendees) > self.config.attendee_detail_limit
 
+    @classmethod
+    def _compact_payload_time_keys(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                cls._PAYLOAD_TIME_KEY_ALIASES.get(key, key): cls._compact_payload_time_keys(item)
+                for key, item in value.items()
+            }
+
+        if isinstance(value, list):
+            return [cls._compact_payload_time_keys(item) for item in value]
+
+        return value
+
     def _event_for_payload(self, event_item: dict[str, Any]) -> dict[str, Any]:
         event_copy = deepcopy(event_item)
         for field in self._EVENT_PAYLOAD_EXCLUDED_FIELDS:
@@ -751,7 +765,7 @@ class GoogleCalendarSource:
                         change.model_dump() for change in rsvp_changes
                     ]
 
-        return payload
+        return self._compact_payload_time_keys(payload)
 
     def _make_new_event(
         self,

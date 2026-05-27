@@ -165,6 +165,8 @@ sources:
 
 ### Event Examples
 
+Calendar time objects in emitted payloads use compact keys: `dt` for Google Calendar's `dateTime`, and `tz` for `timeZone`.
+
 #### `google.calendar.event.created`
 
 ```json
@@ -177,12 +179,12 @@ sources:
   "data": {
     "event_id": "7abc123",
     "summary": "Project Kickoff",
-    "start": { "dateTime": "2024-10-10T10:00:00Z" },
+    "start": { "dt": "2024-10-10T10:00:00Z", "tz": "UTC" },
     "event": {
       "id": "7abc123",
       "summary": "Project Kickoff",
-      "start": { "dateTime": "2024-10-10T10:00:00Z" },
-      "end": { "dateTime": "2024-10-10T11:00:00Z" },
+      "start": { "dt": "2024-10-10T10:00:00Z", "tz": "UTC" },
+      "end": { "dt": "2024-10-10T11:00:00Z", "tz": "UTC" },
       "status": "confirmed"
     }
   },
@@ -204,12 +206,12 @@ Contains a `changes` dict with before/after values for each changed field:
   "data": {
     "event_id": "7abc123",
     "summary": "New Title",
-    "start": { "dateTime": "2024-10-10T10:30:00Z" },
+    "start": { "dt": "2024-10-10T10:30:00Z", "tz": "UTC" },
     "changes": {
       "summary": { "before": "Old Title", "after": "New Title" },
       "start": {
-        "before": { "dateTime": "2024-10-10T10:00:00Z" },
-        "after": { "dateTime": "2024-10-10T10:30:00Z" }
+        "before": { "dt": "2024-10-10T10:00:00Z", "tz": "UTC" },
+        "after": { "dt": "2024-10-10T10:30:00Z", "tz": "UTC" }
       }
     }
   },
@@ -231,7 +233,7 @@ Contains the last known state in `previous` and the current (cancelled) state in
   "data": {
     "event_id": "7abc123",
     "summary": "Project Kickoff",
-    "start": { "dateTime": "2024-10-10T10:00:00Z" },
+    "start": { "dt": "2024-10-10T10:00:00Z", "tz": "UTC" },
     "event": { "id": "7abc123", "status": "cancelled" },
     "previous": { "id": "7abc123", "summary": "Project Kickoff", "status": "confirmed" }
   },
@@ -253,7 +255,7 @@ Contains a list of attendee status changes. If the event exceeds `attendee_detai
   "data": {
     "event_id": "7abc123",
     "summary": "Project Kickoff",
-    "start": { "dateTime": "2024-10-10T10:00:00Z" },
+    "start": { "dt": "2024-10-10T10:00:00Z", "tz": "UTC" },
     "rsvp_changes": [
       { "attendee": "john@example.com", "before": "needsAction", "after": "accepted" }
     ]
