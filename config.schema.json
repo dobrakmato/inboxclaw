@@ -341,6 +341,109 @@
           "default": 3,
           "title": "Max Backfill Days",
           "type": "integer"
+        },
+        "summary_mode": {
+          "default": "concat",
+          "enum": [
+            "concat",
+            "llm"
+          ],
+          "title": "Summary Mode",
+          "type": "string"
+        },
+        "llm_endpoint_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Llm Endpoint Url"
+        },
+        "llm_api_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Llm Api Key"
+        },
+        "llm_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Llm Model"
+        },
+        "llm_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Llm Effort"
+        },
+        "llm_timeout": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "llm_max_retries": {
+          "title": "Llm Max Retries",
+          "type": "integer"
+        },
+        "daily_prompt_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Daily Prompt Path"
+        },
+        "weekly_prompt_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weekly Prompt Path"
+        },
+        "monthly_prompt_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monthly Prompt Path"
         }
       },
       "required": [

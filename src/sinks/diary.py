@@ -1,8 +1,10 @@
 import asyncio
 import calendar
+import inspect
 import json
 import logging
 import os
+import re
 import tempfile
 import time as time_module
 import uuid
@@ -40,6 +42,183 @@ WEEKLY_SKIPPED_MARKER_TEMPLATE = (
 MONTHLY_SKIPPED_MARKER_TEMPLATE = (
     "<monthly summary for {period} was skipped because all daily summaries were missing or skipped>"
 )
+PROMPT_PLACEHOLDER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
+
+DEFAULT_DAILY_PROMPT = """Create a daily episodic memory summary for **{{DATE}}**.
+
+Purpose:
+Preserve useful context for future agents and future rollups. The summary is used both for search over the past and as context for the next day.
+
+Inputs may include previous daily context, agent-captured notes, and raw observed events. Agent-captured notes are intentional memory notes created from user interactions; treat them as important, but still reconcile them with raw events. Raw events are noisy evidence; convert them into real-world episodes, not source-by-source summaries.
+
+Write only future-relevant memory. Future-relevant means it may affect work, money, schedule, obligations, relationships, health/routine, location context, projects, decisions, open loops, counters, recurring context, opportunities, or assumptions future agents should not get wrong. This list is illustrative, not exhaustive.
+
+Rules:
+
+* Merge related events into compact real-world episodes.
+* Keep concrete searchable details: names, projects, services, amounts, dates, outcomes, decisions, and unresolved questions when useful.
+* Distinguish actual events from future scheduled events.
+* If something is unclear, say what is unclear: responsibility, intent, payment status, recurrence, authorship, outcome, or next action.
+* Do not summarize provider metadata, raw/internal IDs, conference dial-in details, exact GPS coordinates, exact private addresses, large attendee lists, duplicates, or routine notification noise.
+* Do not infer exact private locations from GPS/geocoding.
+* Do not treat missing data as "nothing happened."
+* Treat angle-bracket placeholders such as `<raw events file for ... was missing>` as missing-data indicators, not as events.
+* Do not compute weekdays. If a weekday is not explicitly present, omit it.
+* Do not preserve raw events merely because they exist.
+* If a recurring or noisy source appears relevant only because of volume, note it minimally as a noise/signal pattern.
+
+Counters:
+If there are accumulating counts, streaks, repeated events, or measurable ongoing signals, carry them forward explicitly. Update known counters when possible. If the exact count cannot be determined, state the observed count for today and what remains unknown.
+
+Output exactly in Markdown:
+
+# Daily memory - {{DATE}}
+
+## Context for tomorrow
+
+Near-term context that may affect the next day: scheduled future items, active assumptions, recent unresolved state, relevant carry-over context. If none, write `None detected.`
+
+## Episodes, decisions, obligations, and state changes
+
+Concrete things that happened or changed today. Include closed items if they may be useful later, but summarize them compactly.
+
+## Open loops
+
+Unresolved user-relevant items. For each bullet, state what is unresolved, the likely next action or uncertainty, and why it remains open. Do not avoid open loops merely to be concise. If none, write `None detected.`
+
+## Possible opportunities
+
+Optional items the user may care about but has not committed to. Do not put optional opportunities under open loops unless action is required. If none, write `None detected.`
+
+## Counters and recurring signals
+
+Counts, streaks, repeated events, volume changes, recurring routines, recurring obligations, or noisy signals that should carry forward. If none, write `None detected.`
+
+## Rollup candidates
+
+Facts worth carrying into weekly/monthly/yearly summaries. Prefix each with `[week]`, `[month]`, `[year]`, or `[open]`. Include enough detail for future search and later factual-memory extraction. If none, write `None detected.`
+"""
+
+DEFAULT_WEEKLY_PROMPT = """Create a weekly episodic memory summary for **{{WEEK_ID}}**, covering **{{START_DATE}} through {{END_DATE}}**.
+
+Purpose:
+Preserve what happened during the week, what changed, what closed, what remains open, and what should carry forward. The summary is used both for search over past weeks and as context for future agents.
+
+Inputs may include previous weekly context and daily memories/markers for this week. Daily memories are already filtered episodic memory; consolidate them instead of repeating them. Preserve enough detail that future agents can understand outcomes, decisions, loose ends, dropped threads, patterns, and important past events.
+
+Write only future-relevant memory. Future-relevant means it may affect work, money, schedule, obligations, relationships, health/routine, location context, projects, decisions, counters, recurring context, opportunities, open loops, or assumptions future agents should not get wrong. This list is illustrative, not exhaustive.
+
+Rules:
+
+* Clearly state the week date range in the title.
+* Evaluate the whole week, not each day mechanically.
+* Strongly summarize closed/completed things, but retain relevant outcomes, dates, names, projects, amounts, and decisions for future lookup.
+* Give more detail to still-open things, especially next actions, unresolved questions, dependencies, or uncertainty.
+* Identify loops that were open earlier but appear resolved later in the week.
+* Preserve dropped/deprioritized things when the fact they were dropped matters.
+* Preserve counters, streaks, repeated signals, and notable volume changes so they can carry forward into future weeks.
+* Treat angle-bracket placeholders as missing-data indicators, not as events. Do not infer that nothing happened on missing/skipped days.
+* Do not summarize provider metadata, raw/internal IDs, exact GPS coordinates, exact private addresses, conference dial-in details, large attendee lists, duplicates, or routine notification noise.
+* Do not compute weekdays. Use only dates explicitly provided.
+* If a recurring or noisy source appears relevant mainly because of accumulated volume, note it compactly.
+
+Output exactly in Markdown:
+
+# Weekly memory - {{WEEK_ID}} ({{START_DATE}} through {{END_DATE}})
+
+## Executive context for next week
+
+The most important state future agents should know going into the next week. Include active context, risks, upcoming consequences, and assumptions that should carry forward. If none, write `None detected.`
+
+## What happened this week
+
+Important episodes, decisions, obligations, state changes, and outcomes from the week. Group related items by topic when useful. Closed items should be compact but searchable.
+
+## Closed or resolved items
+
+Things that appear completed, resolved, paid, decided, cancelled, dropped, or no longer active. Include the outcome and any remaining caveat. If none, write `None detected.`
+
+## Open loops and carry-over
+
+Things still unresolved or worth carrying into next week. For each bullet, include what is open, likely next action or uncertainty, and why it still matters. If none, write `None detected.`
+
+## Counters, patterns, and recurring signals
+
+Accumulating counts, repeated behaviors, streaks, recurring routines, recurring obligations, noisy sources, or pattern changes observed across the week. Preserve enough information to continue counting later. If none, write `None detected.`
+
+## Possible opportunities
+
+Optional items that may interest the user but are not obligations. Include only items still potentially relevant. If none, write `None detected.`
+
+## Archive/search notes
+
+Past events from the week that may not need active carry-over but should remain findable later: notable meetings, payments, purchases, trips, documents, decisions, incidents, project milestones, or relationship context. If none, write `None detected.`
+
+## Rollup candidates
+
+Facts worth carrying into monthly/yearly summaries. Prefix each with `[month]`, `[year]`, or `[open]`. Include enough detail for future search and later factual-memory extraction. If none, write `None detected.`
+"""
+
+DEFAULT_MONTHLY_PROMPT = """Create a monthly episodic memory summary for **{{MONTH_ID}}**, covering **{{START_DATE}} through {{END_DATE}}**.
+
+Purpose:
+Preserve the big-picture story of the month, important things that happened, important things that did not happen but were expected or wanted, durable context, and open items that should carry forward. The summary is used for long-horizon search, future-agent context, and later extraction into factual memory.
+
+Inputs may include previous monthly context and daily memories/markers for this month. Daily memories contain concrete episodes; consolidate them into higher-level themes without losing important searchable details.
+
+Write only future-relevant memory. Future-relevant means it may affect work, money, schedule, obligations, relationships, health/routine, location context, projects, decisions, counters, recurring context, opportunities, open loops, or assumptions future agents should not get wrong. This list is illustrative, not exhaustive.
+
+Rules:
+
+* Clearly state the month date range in the title.
+* Prefer topic/story grouping over chronology.
+* Capture the effect of many individual days from a higher perspective.
+* Preserve important concrete details when needed for future lookup: names, projects, services, amounts, dates, decisions, outcomes, and unresolved questions.
+* Closed items should be compact but searchable.
+* Open items should carry more detail: current state, missing decision/action, dependency, and why it still matters.
+* Include important things the user appeared to intend/want/need but did not complete, when supported by the inputs.
+* Preserve counters, recurring patterns, streaks, repeated signals, and notable volume/noise changes that should continue into future months.
+* Treat angle-bracket placeholders as missing-data indicators, not as events. Do not infer that nothing happened on missing/skipped days.
+* Do not summarize provider metadata, raw/internal IDs, exact GPS coordinates, exact private addresses, conference dial-in details, large attendee lists, duplicates, or routine notification noise.
+* Do not compute weekdays. Use only dates explicitly provided.
+* If evidence is unclear, say what is unclear rather than inventing intent, responsibility, recurrence, or outcome.
+
+Output exactly in Markdown:
+
+# Monthly memory - {{MONTH_ID}} ({{START_DATE}} through {{END_DATE}})
+
+## Big-picture context
+
+The main story of the month: what changed, what the user focused on, what mattered, and what future agents should understand. If none, write `None detected.`
+
+## Major developments by topic
+
+Important episodes, decisions, obligations, project/workstream changes, purchases/payments, travel/location context, relationship context, health/routine changes, or other meaningful events. Group by topic. Keep closed items compact but searchable.
+
+## Open loops and carry-over
+
+Unresolved items that should continue into the next month. For each bullet, include current state, missing action/decision/outcome, dependency or uncertainty, and why it still matters. If none, write `None detected.`
+
+## Things expected or wanted but not completed
+
+Important intentions, obligations, opportunities, plans, or recurring items that appear not to have happened or not to have been resolved. Include only when supported by the inputs. If none, write `None detected.`
+
+## Counters, patterns, and recurring signals
+
+Accumulating counts, repeated behaviors, streaks, recurring routines, recurring obligations, noisy sources, or pattern changes observed across the month. Preserve enough information to continue counting later. If none, write `None detected.`
+
+## Durable archive
+
+Important closed/completed facts from the month that may not need active carry-over but should remain findable later. Include outcomes, dates, names, projects, and relevant details. If none, write `None detected.`
+
+## Changed assumptions
+
+Things future agents should newly assume, stop assuming, or treat differently because of this month. If none, write `None detected.`
+
+## Yearly rollup candidates
+
+Facts worth carrying into yearly summaries or factual-memory extraction. Prefix each with `[year]` or `[open]`. Include enough detail for future search. If none, write `None detected.`
+"""
 
 
 @dataclass(frozen=True)
@@ -49,6 +228,16 @@ class DiaryConfig:
     timezone: tzinfo
     lock_timeout: float
     max_backfill_days: int
+    summary_mode: str
+    llm_endpoint_url: Optional[str]
+    llm_api_key: Optional[str]
+    llm_model: Optional[str]
+    llm_effort: Optional[str]
+    llm_timeout: float
+    llm_max_retries: int
+    daily_prompt_path: Optional[Path]
+    weekly_prompt_path: Optional[Path]
+    monthly_prompt_path: Optional[Path]
 
     @classmethod
     def from_sink_config(cls, config: DiarySinkConfig) -> "DiaryConfig":
@@ -58,7 +247,23 @@ class DiaryConfig:
             timezone=resolve_timezone(config.timezone),
             lock_timeout=config.lock_timeout,
             max_backfill_days=config.max_backfill_days,
+            summary_mode=config.summary_mode,
+            llm_endpoint_url=config.llm_endpoint_url,
+            llm_api_key=config.llm_api_key,
+            llm_model=config.llm_model,
+            llm_effort=config.llm_effort,
+            llm_timeout=config.llm_timeout,
+            llm_max_retries=config.llm_max_retries,
+            daily_prompt_path=_optional_path(config.daily_prompt_path),
+            weekly_prompt_path=_optional_path(config.weekly_prompt_path),
+            monthly_prompt_path=_optional_path(config.monthly_prompt_path),
         )
+
+
+def _optional_path(value: Optional[str]) -> Optional[Path]:
+    if value is None or value == "":
+        return None
+    return Path(value)
 
 
 def parse_cutoff_time(value: str) -> time:
@@ -364,6 +569,81 @@ def render_period_artifact(title: str, sections: list[tuple[str, str]]) -> str:
     return "\n".join(output).rstrip() + "\n"
 
 
+def render_prompt_template(template: str, placeholders: Dict[str, str]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return placeholders.get(key, match.group(0))
+
+    return PROMPT_PLACEHOLDER_RE.sub(replace, template)
+
+
+def read_prompt_template(path: Optional[Path], default_prompt: str) -> str:
+    if path is None:
+        return default_prompt
+    return path.read_text(encoding="utf-8")
+
+
+def _normalize_llm_output(content: str) -> str:
+    return content.strip() + "\n"
+
+
+def _extract_openai_message_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            elif hasattr(item, "text") and isinstance(item.text, str):
+                parts.append(item.text)
+        return "".join(parts)
+    return str(content)
+
+
+async def llm_merge(config: DiaryConfig, prompt: str, input_artifact: str) -> str:
+    if not config.llm_api_key:
+        raise ValueError("Diary LLM summary mode requires DIARY_LLM_API_KEY or OPENAI_API_KEY")
+    if not config.llm_model:
+        raise ValueError("Diary LLM summary mode requires DIARY_LLM_MODEL or OPENAI_MODEL")
+
+    try:
+        from openai import AsyncOpenAI
+    except ImportError as exc:  # pragma: no cover - exercised only without the optional dependency.
+        raise RuntimeError("Diary LLM summary mode requires the 'openai' package") from exc
+
+    client_kwargs: Dict[str, Any] = {
+        "api_key": config.llm_api_key,
+        "timeout": config.llm_timeout,
+        "max_retries": config.llm_max_retries,
+    }
+    if config.llm_endpoint_url:
+        client_kwargs["base_url"] = config.llm_endpoint_url
+
+    request_kwargs: Dict[str, Any] = {
+        "model": config.llm_model,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": input_artifact},
+        ],
+    }
+    if config.llm_effort:
+        request_kwargs["reasoning_effort"] = config.llm_effort
+
+    client = AsyncOpenAI(**client_kwargs)
+    try:
+        response = await client.chat.completions.create(**request_kwargs)
+    finally:
+        close_result = client.close()
+        if inspect.isawaitable(close_result):
+            await close_result
+
+    content = response.choices[0].message.content
+    return _normalize_llm_output(_extract_openai_message_content(content))
+
+
 def merge_daily(config: DiaryConfig, day: date) -> str:
     previous_day = day - timedelta(days=1)
     return render_period_artifact(
@@ -383,6 +663,16 @@ def merge_daily(config: DiaryConfig, day: date) -> str:
             ),
         ],
     )
+
+
+async def merge_daily_async(config: DiaryConfig, day: date) -> str:
+    input_artifact = await asyncio.to_thread(merge_daily, config, day)
+    if config.summary_mode == "concat":
+        return input_artifact
+
+    prompt_template = await asyncio.to_thread(read_prompt_template, config.daily_prompt_path, DEFAULT_DAILY_PROMPT)
+    prompt = render_prompt_template(prompt_template, {"DATE": day.isoformat()})
+    return await llm_merge(config, prompt, input_artifact)
 
 
 def merge_weekly(config: DiaryConfig, week_start: date) -> str:
@@ -406,6 +696,25 @@ def merge_weekly(config: DiaryConfig, week_start: date) -> str:
     return render_period_artifact(f"Weekly summary for {week_id}", sections)
 
 
+async def merge_weekly_async(config: DiaryConfig, week_start: date) -> str:
+    input_artifact = await asyncio.to_thread(merge_weekly, config, week_start)
+    if config.summary_mode == "concat":
+        return input_artifact
+
+    week_id = _iso_week_id(week_start)
+    end_date = week_start + timedelta(days=6)
+    prompt_template = await asyncio.to_thread(read_prompt_template, config.weekly_prompt_path, DEFAULT_WEEKLY_PROMPT)
+    prompt = render_prompt_template(
+        prompt_template,
+        {
+            "WEEK_ID": week_id,
+            "START_DATE": week_start.isoformat(),
+            "END_DATE": end_date.isoformat(),
+        },
+    )
+    return await llm_merge(config, prompt, input_artifact)
+
+
 def merge_monthly(config: DiaryConfig, month_id: str) -> str:
     previous_month = _previous_month_id(month_id)
     sections = [
@@ -426,7 +735,30 @@ def merge_monthly(config: DiaryConfig, month_id: str) -> str:
     return render_period_artifact(f"Monthly summary for {month_id}", sections)
 
 
+async def merge_monthly_async(config: DiaryConfig, month_id: str) -> str:
+    input_artifact = await asyncio.to_thread(merge_monthly, config, month_id)
+    if config.summary_mode == "concat":
+        return input_artifact
+
+    year, month = _month_tuple(month_id)
+    start_date = date(year, month, 1)
+    end_date = _last_day_of_month(year, month)
+    prompt_template = await asyncio.to_thread(read_prompt_template, config.monthly_prompt_path, DEFAULT_MONTHLY_PROMPT)
+    prompt = render_prompt_template(
+        prompt_template,
+        {
+            "MONTH_ID": month_id,
+            "START_DATE": start_date.isoformat(),
+            "END_DATE": end_date.isoformat(),
+        },
+    )
+    return await llm_merge(config, prompt, input_artifact)
+
+
 def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> None:
+    if config.summary_mode == "llm":
+        raise RuntimeError("Diary LLM summary mode must use async reconciliation")
+
     output_path = _daily_path(config, day)
     if output_path.exists():
         return
@@ -451,6 +783,45 @@ def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> No
         return
 
     atomic_write_text(output_path, merge_daily(config, day))
+    logger.info(
+        "Diary sink '%s' daily summary generated for %s",
+        sink_name,
+        day.isoformat(),
+        extra={
+            "operation": "daily_summary_generated",
+            "period_type": "daily",
+            "period": day.isoformat(),
+            "output_path": str(output_path),
+        },
+    )
+
+
+async def generate_or_skip_daily_async(config: DiaryConfig, day: date, sink_name: str) -> None:
+    output_path = _daily_path(config, day)
+    if output_path.exists():
+        return
+
+    user_path = _user_path(config, day)
+    raw_path = _raw_path(config, day)
+    if not user_path.exists() and not raw_path.exists():
+        content = _daily_skipped_marker(day) + "\n"
+        await asyncio.to_thread(atomic_write_text, output_path, content)
+        logger.info(
+            "Diary sink '%s' daily summary skipped for %s",
+            sink_name,
+            day.isoformat(),
+            extra={
+                "operation": "daily_summary_skipped",
+                "period_type": "daily",
+                "period": day.isoformat(),
+                "reason": "user notes and raw events were both missing",
+                "output_path": str(output_path),
+            },
+        )
+        return
+
+    content = await merge_daily_async(config, day)
+    await asyncio.to_thread(atomic_write_text, output_path, content)
     logger.info(
         "Diary sink '%s' daily summary generated for %s",
         sink_name,
@@ -489,6 +860,9 @@ def _daily_artifact_is_meaningful(config: DiaryConfig, day: date) -> bool:
 
 
 def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: str) -> None:
+    if config.summary_mode == "llm":
+        raise RuntimeError("Diary LLM summary mode must use async reconciliation")
+
     week_id = _iso_week_id(week_start)
     output_path = _weekly_path(config, week_id)
     if output_path.exists():
@@ -524,7 +898,47 @@ def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: st
     )
 
 
+async def generate_or_skip_weekly_async(config: DiaryConfig, week_start: date, sink_name: str) -> None:
+    week_id = _iso_week_id(week_start)
+    output_path = _weekly_path(config, week_id)
+    if output_path.exists():
+        return
+
+    if not any(_daily_artifact_is_meaningful(config, day) for day in _day_range(week_start, week_start + timedelta(days=6))):
+        await asyncio.to_thread(atomic_write_text, output_path, _weekly_skipped_marker(week_id) + "\n")
+        logger.info(
+            "Diary sink '%s' weekly summary skipped for %s",
+            sink_name,
+            week_id,
+            extra={
+                "operation": "weekly_summary_skipped",
+                "period_type": "weekly",
+                "period": week_id,
+                "reason": "all daily summaries were missing or skipped",
+                "output_path": str(output_path),
+            },
+        )
+        return
+
+    content = await merge_weekly_async(config, week_start)
+    await asyncio.to_thread(atomic_write_text, output_path, content)
+    logger.info(
+        "Diary sink '%s' weekly summary generated for %s",
+        sink_name,
+        week_id,
+        extra={
+            "operation": "weekly_summary_generated",
+            "period_type": "weekly",
+            "period": week_id,
+            "output_path": str(output_path),
+        },
+    )
+
+
 def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str) -> None:
+    if config.summary_mode == "llm":
+        raise RuntimeError("Diary LLM summary mode must use async reconciliation")
+
     output_path = _monthly_path(config, month_id)
     if output_path.exists():
         return
@@ -546,6 +960,42 @@ def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str)
         return
 
     atomic_write_text(output_path, merge_monthly(config, month_id))
+    logger.info(
+        "Diary sink '%s' monthly summary generated for %s",
+        sink_name,
+        month_id,
+        extra={
+            "operation": "monthly_summary_generated",
+            "period_type": "monthly",
+            "period": month_id,
+            "output_path": str(output_path),
+        },
+    )
+
+
+async def generate_or_skip_monthly_async(config: DiaryConfig, month_id: str, sink_name: str) -> None:
+    output_path = _monthly_path(config, month_id)
+    if output_path.exists():
+        return
+
+    if not any(_daily_artifact_is_meaningful(config, day) for day in _days_in_month(month_id)):
+        await asyncio.to_thread(atomic_write_text, output_path, _monthly_skipped_marker(month_id) + "\n")
+        logger.info(
+            "Diary sink '%s' monthly summary skipped for %s",
+            sink_name,
+            month_id,
+            extra={
+                "operation": "monthly_summary_skipped",
+                "period_type": "monthly",
+                "period": month_id,
+                "reason": "all daily summaries were missing or skipped",
+                "output_path": str(output_path),
+            },
+        )
+        return
+
+    content = await merge_monthly_async(config, month_id)
+    await asyncio.to_thread(atomic_write_text, output_path, content)
     logger.info(
         "Diary sink '%s' monthly summary generated for %s",
         sink_name,
@@ -586,6 +1036,9 @@ def write_raw_entry(config: DiaryConfig, event: Event, line: str, sink_name: str
 
 
 def reconcile_diary(config: DiaryConfig, sink_name: str, now: Optional[datetime] = None) -> None:
+    if config.summary_mode == "llm":
+        raise RuntimeError("Diary LLM summary mode must use async reconciliation")
+
     with DiaryLock(config, sink_name):
         ensure_diary_structure(config, sink_name)
         _cleanup_temporary_files(config, sink_name)
@@ -640,6 +1093,71 @@ def reconcile_diary(config: DiaryConfig, sink_name: str, now: Optional[datetime]
             "monthly",
             latest_month,
         )
+
+
+async def reconcile_diary_async(config: DiaryConfig, sink_name: str, now: Optional[datetime] = None) -> None:
+    lock = DiaryLock(config, sink_name)
+    await asyncio.to_thread(lock.acquire)
+    try:
+        await asyncio.to_thread(ensure_diary_structure, config, sink_name)
+        await asyncio.to_thread(_cleanup_temporary_files, config, sink_name)
+
+        current_time = now or datetime.now(config.timezone)
+        current_diary_date = resolve_diary_date(current_time, config.cutoff_time, config.timezone)
+        closed_day = current_diary_date - timedelta(days=1)
+
+        await asyncio.to_thread(ensure_current_user_note, config, current_diary_date, sink_name)
+        await asyncio.to_thread(
+            _update_symlink,
+            config,
+            "today.md",
+            _user_path(config, current_diary_date),
+            sink_name,
+            "daily",
+            current_diary_date.isoformat(),
+        )
+
+        reconcile_start = _reconciliation_start_date(config, closed_day)
+        for day in _day_range(reconcile_start, closed_day):
+            await generate_or_skip_daily_async(config, day, sink_name)
+
+        for week_start in _weekly_starts_for_window(reconcile_start, closed_day):
+            await generate_or_skip_weekly_async(config, week_start, sink_name)
+
+        for month_id in _month_ids_for_window(reconcile_start, closed_day):
+            await generate_or_skip_monthly_async(config, month_id, sink_name)
+
+        await asyncio.to_thread(
+            _update_symlink,
+            config,
+            "yesterday.md",
+            _daily_path(config, closed_day),
+            sink_name,
+            "daily",
+            closed_day.isoformat(),
+        )
+        latest_week_start = _latest_completed_week_start(closed_day)
+        await asyncio.to_thread(
+            _update_symlink_if_target_exists,
+            config,
+            "last_week.md",
+            _weekly_path(config, _iso_week_id(latest_week_start)),
+            sink_name,
+            "weekly",
+            _iso_week_id(latest_week_start),
+        )
+        latest_month = _latest_completed_month_id(closed_day)
+        await asyncio.to_thread(
+            _update_symlink_if_target_exists,
+            config,
+            "last_month.md",
+            _monthly_path(config, latest_month),
+            sink_name,
+            "monthly",
+            latest_month,
+        )
+    finally:
+        await asyncio.to_thread(lock.release)
 
 
 def _reconciliation_start_date(config: DiaryConfig, closed_day: date) -> date:
@@ -897,7 +1415,7 @@ class DiarySink:
             )
             return
 
-        self.reconcile()
+        await self.reconcile_async()
         self._task = self.services.add_task(self._run_loop())
         logger.info("Diary sink '%s' started (path=%s)", self.name, self.config.path)
 
@@ -917,6 +1435,9 @@ class DiarySink:
     def reconcile(self, now: Optional[datetime] = None) -> None:
         reconcile_diary(self.diary_config, self.name, now=now)
 
+    async def reconcile_async(self, now: Optional[datetime] = None) -> None:
+        await reconcile_diary_async(self.diary_config, self.name, now=now)
+
     async def _run_loop(self) -> None:
         notification_event = None
         try:
@@ -928,7 +1449,7 @@ class DiarySink:
                 except asyncio.TimeoutError:
                     pass
                 self._last_event_id = self.process_new_events(self._last_event_id)
-                self.reconcile()
+                await self.reconcile_async()
         except asyncio.CancelledError:
             raise
         except Exception:

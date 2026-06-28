@@ -48,9 +48,64 @@ On startup and periodically while running, the sink reconciles the diary tree fr
 - updates convenience symlinks atomically
 - preserves existing summary files
 
-Daily summaries concatenate the previous daily artifact, user notes, and raw events. Weekly summaries concatenate the previous weekly artifact and the seven daily artifacts for that ISO week. Monthly summaries concatenate the previous monthly artifact and all daily artifacts in the month. Missing inputs and empty files are rendered explicitly so later summarizers can distinguish missing data from empty data.
+By default, daily summaries concatenate the previous daily artifact, user notes, and raw events. Weekly summaries concatenate the previous weekly artifact and the seven daily artifacts for that ISO week. Monthly summaries concatenate the previous monthly artifact and all daily artifacts in the month. Missing inputs and empty files are rendered explicitly so later summarizers can distinguish missing data from empty data.
 
 Daily backfill is bounded by `max_backfill_days`. Existing summaries are never regenerated, but reconciliation rechecks the bounded window for gaps so a crash after creating a later artifact does not strand an earlier missing one. Weekly/monthly reconciliation covers periods that overlap that same window. If all daily inputs for a weekly or monthly summary are missing or skipped, the sink writes a skipped marker for that period.
+
+## LLM Summarization
+
+Set `summary_mode: llm` to replace the concatenation artifact with an LLM-generated Markdown memory summary. The sink uses the OpenAI Python SDK against an OpenAI-compatible chat completions endpoint. API calls run through the async reconciliation path used by sink startup and the background loop.
+
+```yaml
+sink:
+  diary:
+    type: diary
+    path: "./data/diary"
+    timezone: "UTC"
+    summary_mode: llm
+```
+
+LLM connection settings can be provided directly in config, but are intended to come from environment variables:
+
+```bash
+DIARY_LLM_ENDPOINT_URL=https://api.openai.com/v1
+DIARY_LLM_API_KEY=...
+DIARY_LLM_MODEL=gpt-4.1
+DIARY_LLM_EFFORT=medium
+DIARY_LLM_TIMEOUT=2m
+DIARY_LLM_MAX_RETRIES=2
+```
+
+`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` are also accepted as fallbacks for the matching `DIARY_LLM_*` variables.
+
+The built-in daily, weekly, and monthly prompts are used when no prompt path is configured. To override them, point the sink at Markdown prompt files:
+
+```yaml
+sink:
+  diary:
+    type: diary
+    path: "./data/diary"
+    summary_mode: llm
+    daily_prompt_path: "./prompts/diary-daily.md"
+    weekly_prompt_path: "./prompts/diary-weekly.md"
+    monthly_prompt_path: "./prompts/diary-monthly.md"
+```
+
+Prompt changes do not invalidate or regenerate previous summaries. The sink still preserves any existing `daily/`, `weekly/`, or `monthly/` artifact and only generates missing periods.
+
+### Prompt Placeholders
+
+Prompt files may include placeholders using double braces. Whitespace inside the braces is allowed. Unknown placeholders are left unchanged.
+
+| Placeholder | Daily | Weekly | Monthly | Description |
+|:--|:--:|:--:|:--:|:--|
+| `{{DATE}}` | yes | no | no | Diary date being summarized, formatted as `YYYY-MM-DD`. |
+| `{{WEEK_ID}}` | no | yes | no | ISO week id, formatted as `YYYY-Www`. |
+| `{{MONTH_ID}}` | no | no | yes | Month id, formatted as `YYYY-MM`. |
+| `{{START_DATE}}` | no | yes | yes | First date covered by the weekly or monthly summary. |
+| `{{END_DATE}}` | no | yes | yes | Last date covered by the weekly or monthly summary. |
+
+The source material is sent to the model as a separate user message. Prompt files should describe how to summarize the input; they do not need an input placeholder.
 
 ## Configuration Reference
 
@@ -63,3 +118,13 @@ Daily backfill is bounded by `max_backfill_days`. Existing summaries are never r
 | `timezone` | `string\|null` | UTC       | Timezone for cutoff resolution; use `"UTC"` or an IANA timezone name. `"local"` is not supported. |
 | `lock_timeout` | interval | `"30s"`   | Maximum time to wait for the diary lock. |
 | `max_backfill_days` | integer | `3`       | Maximum daily reconciliation window. |
+| `summary_mode` | `string` | `"concat"` | `concat` writes deterministic input artifacts; `llm` generates summaries with an OpenAI-compatible LLM. |
+| `llm_endpoint_url` | `string\|null` | env       | OpenAI-compatible base URL; also read from `DIARY_LLM_ENDPOINT_URL` or `OPENAI_BASE_URL`. |
+| `llm_api_key` | `string\|null` | env       | API key; also read from `DIARY_LLM_API_KEY` or `OPENAI_API_KEY`. |
+| `llm_model` | `string\|null` | env       | Model name; also read from `DIARY_LLM_MODEL` or `OPENAI_MODEL`. |
+| `llm_effort` | `string\|null` | env       | Optional reasoning effort; read from `DIARY_LLM_EFFORT` when omitted. |
+| `llm_timeout` | interval | `"2m"`     | LLM request timeout; also read from `DIARY_LLM_TIMEOUT`. |
+| `llm_max_retries` | integer | `2`       | LLM SDK retry count; also read from `DIARY_LLM_MAX_RETRIES`. |
+| `daily_prompt_path` | `string\|null` | `null`    | Markdown file overriding the built-in daily prompt. |
+| `weekly_prompt_path` | `string\|null` | `null`   | Markdown file overriding the built-in weekly prompt. |
+| `monthly_prompt_path` | `string\|null` | `null`  | Markdown file overriding the built-in monthly prompt. |

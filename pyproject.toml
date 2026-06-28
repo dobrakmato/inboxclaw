@@ -9,6 +9,7 @@ dependencies = [
     "google-api-python-client",
     "google-auth-oauthlib",
     "httpx",
+    "openai>=1.0.0",
     "pydantic",
     "pytimeparse>=1.1.8",
     "pyyaml",

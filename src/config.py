@@ -260,6 +260,22 @@ class DiarySinkConfig(BaseSinkConfig):
     timezone: Optional[str] = None
     lock_timeout: Interval = "30s"
     max_backfill_days: int = 3
+    summary_mode: Literal["concat", "llm"] = "concat"
+    llm_endpoint_url: Optional[str] = Field(
+        default_factory=lambda: os.environ.get("DIARY_LLM_ENDPOINT_URL") or os.environ.get("OPENAI_BASE_URL")
+    )
+    llm_api_key: Optional[str] = Field(
+        default_factory=lambda: os.environ.get("DIARY_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    )
+    llm_model: Optional[str] = Field(
+        default_factory=lambda: os.environ.get("DIARY_LLM_MODEL") or os.environ.get("OPENAI_MODEL")
+    )
+    llm_effort: Optional[str] = Field(default_factory=lambda: os.environ.get("DIARY_LLM_EFFORT"))
+    llm_timeout: Interval = Field(default_factory=lambda: os.environ.get("DIARY_LLM_TIMEOUT", "2m"))
+    llm_max_retries: int = Field(default_factory=lambda: int(os.environ.get("DIARY_LLM_MAX_RETRIES", "2")))
+    daily_prompt_path: Optional[str] = None
+    weekly_prompt_path: Optional[str] = None
+    monthly_prompt_path: Optional[str] = None
 
 SinkConfig = Annotated[
     Union[

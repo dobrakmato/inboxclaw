@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import yaml
@@ -59,7 +59,18 @@ def no_symlink_updates(monkeypatch):
     return updates
 
 
-def test_diary_config_loads_defaults(tmp_path):
+def test_diary_config_loads_defaults(tmp_path, monkeypatch):
+    for env_name in [
+        "DIARY_LLM_ENDPOINT_URL",
+        "OPENAI_BASE_URL",
+        "DIARY_LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "DIARY_LLM_MODEL",
+        "OPENAI_MODEL",
+        "DIARY_LLM_EFFORT",
+    ]:
+        monkeypatch.delenv(env_name, raising=False)
+
     config = DiarySinkConfig(type="diary", path=str(tmp_path))
 
     assert config.path == str(tmp_path)
@@ -67,6 +78,28 @@ def test_diary_config_loads_defaults(tmp_path):
     assert config.timezone is None
     assert config.lock_timeout == 30.0
     assert config.max_backfill_days == 3
+    assert config.summary_mode == "concat"
+    assert config.llm_api_key is None
+    assert config.llm_model is None
+    assert config.daily_prompt_path is None
+
+
+def test_diary_llm_config_reads_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIARY_LLM_ENDPOINT_URL", "https://llm.example.test/v1")
+    monkeypatch.setenv("DIARY_LLM_API_KEY", "secret")
+    monkeypatch.setenv("DIARY_LLM_MODEL", "memory-model")
+    monkeypatch.setenv("DIARY_LLM_EFFORT", "medium")
+    monkeypatch.setenv("DIARY_LLM_TIMEOUT", "45s")
+    monkeypatch.setenv("DIARY_LLM_MAX_RETRIES", "4")
+
+    config = DiarySinkConfig(type="diary", path=str(tmp_path), summary_mode="llm")
+
+    assert config.llm_endpoint_url == "https://llm.example.test/v1"
+    assert config.llm_api_key == "secret"
+    assert config.llm_model == "memory-model"
+    assert config.llm_effort == "medium"
+    assert config.llm_timeout == 45.0
+    assert config.llm_max_retries == 4
 
 
 @pytest.mark.asyncio
@@ -186,6 +219,77 @@ def test_reconcile_generates_daily_placeholders(no_symlink_updates, services, tm
     assert "user notes" in daily
     assert "<raw events file for 2026-01-02 was missing>" in daily
     assert (tmp_path / "user" / "2026-01-03.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_llm_daily_summary_uses_prompt_override_and_input_artifact(
+    no_symlink_updates, services, tmp_path, monkeypatch
+):
+    prompt_path = tmp_path / "daily-prompt.md"
+    prompt_path.write_text("Summarize {{DATE}} and keep {{UNKNOWN}} literal.", encoding="utf-8")
+    user_dir = tmp_path / "user"
+    raw_dir = tmp_path / "raw"
+    user_dir.mkdir()
+    raw_dir.mkdir()
+    (user_dir / "2026-01-02.md").write_text("intentional note\n", encoding="utf-8")
+    (raw_dir / "2026-01-02.md").write_text('{"event": "raw"}\n', encoding="utf-8")
+    merge = AsyncMock(return_value="# Daily memory - 2026-01-02\n\nLLM summary\n")
+    monkeypatch.setattr(diary_module, "llm_merge", merge)
+    sink = DiarySink(
+        "test_diary",
+        {
+            "path": str(tmp_path),
+            "timezone": "UTC",
+            "summary_mode": "llm",
+            "llm_api_key": "key",
+            "llm_model": "model",
+            "daily_prompt_path": str(prompt_path),
+        },
+        services,
+    )
+
+    await sink.reconcile_async(now=datetime(2026, 1, 3, 4, 0, tzinfo=timezone.utc))
+
+    daily = (tmp_path / "daily" / "2026-01-02.md").read_text(encoding="utf-8")
+    assert daily == "# Daily memory - 2026-01-02\n\nLLM summary\n"
+    _, prompt, input_artifact = merge.await_args.args
+    assert prompt == "Summarize 2026-01-02 and keep {{UNKNOWN}} literal."
+    assert "intentional note" in input_artifact
+    assert '{"event": "raw"}' in input_artifact
+    assert "Previous daily summary (2026-01-01)" in input_artifact
+
+
+@pytest.mark.asyncio
+async def test_llm_prompt_changes_do_not_regenerate_existing_summaries(
+    no_symlink_updates, services, tmp_path, monkeypatch
+):
+    prompt_path = tmp_path / "daily-prompt.md"
+    prompt_path.write_text("First {{DATE}}", encoding="utf-8")
+    user_dir = tmp_path / "user"
+    user_dir.mkdir()
+    (user_dir / "2026-01-02.md").write_text("note\n", encoding="utf-8")
+    merge = AsyncMock(return_value="first summary\n")
+    monkeypatch.setattr(diary_module, "llm_merge", merge)
+    sink = DiarySink(
+        "test_diary",
+        {
+            "path": str(tmp_path),
+            "timezone": "UTC",
+            "summary_mode": "llm",
+            "llm_api_key": "key",
+            "llm_model": "model",
+            "daily_prompt_path": str(prompt_path),
+        },
+        services,
+    )
+    now = datetime(2026, 1, 3, 4, 0, tzinfo=timezone.utc)
+
+    await sink.reconcile_async(now=now)
+    prompt_path.write_text("Changed {{DATE}}", encoding="utf-8")
+    await sink.reconcile_async(now=now)
+
+    assert (tmp_path / "daily" / "2026-01-02.md").read_text(encoding="utf-8") == "first summary\n"
+    assert merge.await_count == 1
 
 
 def test_daily_skipped_marker_is_not_retried(no_symlink_updates, services, tmp_path):
