@@ -16,6 +16,7 @@ dependencies = [
     "ruamel.yaml>=0.18.15",
     "sqlalchemy",
     "sse-starlette",
+    "tzdata; sys_platform == 'win32'",
     "uvicorn",
     "watchdog>=4.0.0",
     "websockets",

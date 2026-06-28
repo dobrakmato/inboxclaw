@@ -76,6 +76,9 @@ In very active development — some features may break at any time. A good fit f
 * Server-Sent Events (SSE)
 * HTTP Pull
 * Command (CLI execution)
+* Folder
+* Diary
+* Win11 Toast
 
 ## Quick Start
 
@@ -130,6 +133,8 @@ Sink-specific docs:
 * [SSE](docs/sink-sse.md)
 * [HTTP Pull](docs/sink-http-pull.md)
 * [Command](docs/sink-command.md)
+* [Folder](docs/sink-folder.md)
+* [Diary](docs/sink-diary.md)
 * [Win11 Toast](docs/sink-win11toast.md)
 
 ## AI Disclaimer

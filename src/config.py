@@ -253,6 +253,14 @@ class FolderSinkConfig(BaseSinkConfig):
     type: Literal["folder"] = "folder"
     path: str
 
+class DiarySinkConfig(BaseSinkConfig):
+    type: Literal["diary"] = "diary"
+    path: str
+    cutoff_time: str = "04:00"
+    timezone: Optional[str] = None
+    lock_timeout: Interval = "30s"
+    max_backfill_days: int = 3
+
 SinkConfig = Annotated[
     Union[
         WebhookSinkConfig,
@@ -261,6 +269,7 @@ SinkConfig = Annotated[
         Win11ToastSinkConfig,
         CommandSinkConfig,
         FolderSinkConfig,
+        DiarySinkConfig,
     ],
     Field(discriminator="type")
 ]

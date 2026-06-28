@@ -282,6 +282,73 @@
       "title": "DatabaseConfig",
       "type": "object"
     },
+    "DiarySinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "diary",
+          "default": "diary",
+          "title": "Type",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": "*",
+          "title": "Match"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "cutoff_time": {
+          "default": "04:00",
+          "title": "Cutoff Time",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        },
+        "lock_timeout": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "max_backfill_days": {
+          "default": 3,
+          "title": "Max Backfill Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "DiarySinkConfig",
+      "type": "object"
+    },
     "DriveFilterItem": {
       "properties": {
         "in": {
@@ -1431,6 +1498,9 @@
           },
           {
             "$ref": "#/$defs/FolderSinkConfig"
+          },
+          {
+            "$ref": "#/$defs/DiarySinkConfig"
           }
         ]
       },
@@ -1448,6 +1518,9 @@
         },
         "win11toast": {
           "$ref": "#/$defs/Win11ToastSinkConfig"
+        },
+        "diary": {
+          "$ref": "#/$defs/DiarySinkConfig"
         }
       }
     }

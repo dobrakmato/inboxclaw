@@ -20,6 +20,7 @@ from src.sinks.http_pull import HttpPullSink
 from src.sinks.win11toast import Win11ToastSink
 from src.sinks.command import CommandSink
 from src.sinks.folder import FolderSink
+from src.sinks.diary import DiarySink
 
 logger = logging.getLogger("inboxclaw")
 
@@ -143,6 +144,11 @@ def init_sinks(services: AppServices):
             elif snk_type == "folder":
                 logger.info(f"Initializing Folder sink: {name}")
                 sink = FolderSink(name, snk_config, services)
+                services.sinks[name] = sink
+                services.add_task(sink.start())
+            elif snk_type == "diary":
+                logger.info(f"Initializing Diary sink: {name}")
+                sink = DiarySink(name, snk_config, services)
                 services.sinks[name] = sink
                 services.add_task(sink.start())
             else:

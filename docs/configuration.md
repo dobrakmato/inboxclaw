@@ -112,6 +112,8 @@ See the dedicated documentation for each sink:
 - [SSE](sink-sse.md)
 - [HTTP Pull](sink-http-pull.md)
 - [Command](sink-command.md)
+- [Folder](sink-folder.md)
+- [Diary](sink-diary.md)
 - [Windows 11 Toast](sink-win11toast.md)
 
 ## Full Example

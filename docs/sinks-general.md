@@ -26,6 +26,7 @@ sink:
 | [HTTP Pull](sink-http-pull.md)          | `http_pull`  | Your app polls for batches of events and confirms receipt.                   |
 | [SSE](sink-sse.md)                      | `sse`        | Streams events in real-time over a persistent HTTP connection.               |
 | [Folder](sink-folder.md)                | `folder`     | Appends events as JSONL to daily files in a local directory.                 |
+| [Diary](sink-diary.md)                  | `diary`      | Appends raw events and maintains reconciled diary notes and summaries.       |
 | [Win11 Toast](sink-win11toast.md)       | `win11toast` | Shows a Windows 11 desktop notification per event. For debugging only.       |
 
 ## Event Matching
