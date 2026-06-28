@@ -43,6 +43,26 @@ inboxclaw stats [OPTIONS]
 inboxclaw stats
 ```
 
+### `llm test`
+Verifies that the LLM configuration is correct and works by sending a simple test prompt.
+
+**Usage:**
+```bash
+inboxclaw llm test [OPTIONS]
+```
+
+**Options:**
+- `--sink TEXT`: Specific diary sink name to use for configuration. If not provided, the first diary sink found will be used.
+
+**Example:**
+```bash
+# Test with default settings or the first diary sink found
+inboxclaw llm test
+
+# Test with a specific sink's configuration
+inboxclaw llm test --sink my-diary
+```
+
 ### `events`
 Displays the latest published events from the database.
 
