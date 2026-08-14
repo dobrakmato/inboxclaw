@@ -63,6 +63,36 @@ inboxclaw llm test
 inboxclaw llm test --sink my-diary
 ```
 
+### `diary backfill`
+Interactively generates missing historical Diary sink summaries for a bounded date range.
+
+The command never overwrites existing `daily/`, `weekly/`, or `monthly/` files. It only inspects closed diary dates, runs under the diary lock, and asks for confirmation before generating files unless `--yes` is passed. Daily files are generated for the requested dates; weekly and monthly rollups are generated for completed periods that overlap the requested range.
+
+**Usage:**
+```bash
+inboxclaw diary backfill [OPTIONS]
+```
+
+**Options:**
+- `--config TEXT`: Path to the configuration file (default: `config.yaml`).
+- `--sink TEXT`: Specific diary sink name to use. If multiple diary sinks exist and this is omitted, the command prompts for one.
+- `--date-from YYYY-MM-DD`: First diary date to backfill.
+- `--date-to YYYY-MM-DD`: Last diary date to backfill.
+- `--last-n-days INTEGER`: Backfill the last N closed diary days. Cannot be combined with `--date-from` or `--date-to`.
+- `--yes`: Skip the confirmation prompt.
+
+**Examples:**
+```bash
+# Prompt for a date range and confirmation
+inboxclaw diary backfill
+
+# Generate missing summaries for an explicit historical range
+inboxclaw diary backfill --sink diary --date-from 2026-01-01 --date-to 2026-01-31
+
+# Generate missing files for the last seven closed diary days without prompting
+inboxclaw diary backfill --last-n-days 7 --yes
+```
+
 ### `events`
 Displays the latest published events from the database.
 

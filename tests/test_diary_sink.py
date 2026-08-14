@@ -7,17 +7,19 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import yaml
+from click.testing import CliRunner
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from zoneinfo import ZoneInfoNotFoundError
 
 import src.sinks.diary as diary_module
+from src.cli import cli
 from src.config import DiarySinkConfig, load_config
 from src.database import Base, Event, Source
 from src.pipeline.notifier import EventNotifier
 from src.services import AppServices
-from src.sinks.diary import DiarySink
+from src.sinks.diary import DiaryConfig, DiarySink, generate_missing_diary_range_async
 
 
 @pytest.fixture
@@ -390,6 +392,112 @@ def test_reconcile_fills_missing_daily_gap_in_backfill_window(no_symlink_updates
     day2 = (tmp_path / "daily" / "2026-01-02.md").read_text(encoding="utf-8")
     assert "raw day 2" in day2
     assert (tmp_path / "daily" / "2026-01-04.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_historical_backfill_does_not_overwrite_existing_daily(tmp_path):
+    user_dir = tmp_path / "user"
+    daily_dir = tmp_path / "daily"
+    user_dir.mkdir()
+    daily_dir.mkdir()
+    (user_dir / "2026-01-02.md").write_text("new source note\n", encoding="utf-8")
+    (daily_dir / "2026-01-02.md").write_text("keep this summary\n", encoding="utf-8")
+    config = DiaryConfig.from_sink_config(DiarySinkConfig(path=str(tmp_path), timezone="UTC"))
+
+    result = await generate_missing_diary_range_async(
+        config,
+        "test_diary",
+        datetime(2026, 1, 2, tzinfo=timezone.utc).date(),
+        datetime(2026, 1, 2, tzinfo=timezone.utc).date(),
+    )
+
+    assert result.daily_existing == 1
+    assert result.generated_total == 0
+    assert (daily_dir / "2026-01-02.md").read_text(encoding="utf-8") == "keep this summary\n"
+
+
+def test_diary_backfill_cli_generates_explicit_range(tmp_path):
+    diary_root = tmp_path / "diary"
+    user_dir = diary_root / "user"
+    user_dir.mkdir(parents=True)
+    (user_dir / "2026-01-02.md").write_text("historical note\n", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.dump(
+            {
+                "database": {"retention_days": 30, "db_path": ":memory:"},
+                "sources": {},
+                "sink": {
+                    "journal": {
+                        "type": "diary",
+                        "path": str(diary_root),
+                        "timezone": "UTC",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "diary",
+            "backfill",
+            "--config",
+            str(config_path),
+            "--sink",
+            "journal",
+            "--date-from",
+            "2026-01-02",
+            "--date-to",
+            "2026-01-02",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Diary backfill complete." in result.output
+    assert "1 generated" in result.output
+    assert "historical note" in (diary_root / "daily" / "2026-01-02.md").read_text(encoding="utf-8")
+
+
+def test_diary_backfill_cli_rejects_combined_last_n_days_and_range(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.dump(
+            {
+                "database": {"retention_days": 30, "db_path": ":memory:"},
+                "sources": {},
+                "sink": {
+                    "journal": {
+                        "type": "diary",
+                        "path": str(tmp_path / "diary"),
+                        "timezone": "UTC",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "diary",
+            "backfill",
+            "--config",
+            str(config_path),
+            "--last-n-days",
+            "1",
+            "--date-from",
+            "2026-01-02",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--last-n-days cannot be combined" in result.output
 
 
 def test_reconcile_updates_convenience_symlinks(services, tmp_path):

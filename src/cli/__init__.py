@@ -21,3 +21,4 @@ import src.cli.commands.events # noqa: F401
 import src.cli.commands.config # noqa: F401
 import src.cli.commands.stats # noqa: F401
 import src.cli.commands.llm # noqa: F401
+import src.cli.commands.diary # noqa: F401

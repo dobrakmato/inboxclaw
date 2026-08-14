@@ -78,6 +78,51 @@ DIARY_LLM_MAX_RETRIES=2
 
 `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` are also accepted as fallbacks for the matching `DIARY_LLM_*` variables.
 
+### Provider Examples
+
+The Diary sink uses the OpenAI Python SDK with the Chat Completions API, so any OpenAI-compatible provider can be used by changing the base URL, API key, and model name. Prefer the `DIARY_LLM_*` variables when configuring the diary sink so other OpenAI-based tools on the same machine do not accidentally inherit the diary model.
+
+OpenAI:
+
+```bash
+DIARY_LLM_ENDPOINT_URL=https://api.openai.com/v1
+DIARY_LLM_API_KEY=${OPENAI_API_KEY}
+DIARY_LLM_MODEL=gpt-5
+DIARY_LLM_EFFORT=medium
+```
+
+OpenAI's own SDK also reads `OPENAI_API_KEY` from the environment, and current OpenAI documentation lists GPT-5-family models for `/v1/chat/completions`. You can omit `DIARY_LLM_ENDPOINT_URL` for the default OpenAI endpoint. See the OpenAI quickstart and model endpoint documentation:
+
+- https://platform.openai.com/docs/quickstart/make-your-first-api-request
+- https://platform.openai.com/docs/models/default-usage-policies-by-endpoint
+
+DeepSeek:
+
+```bash
+DIARY_LLM_ENDPOINT_URL=https://api.deepseek.com
+DIARY_LLM_API_KEY=${DEEPSEEK_API_KEY}
+DIARY_LLM_MODEL=deepseek-v4-flash
+```
+
+DeepSeek documents its OpenAI-format base URL as `https://api.deepseek.com`. Current DeepSeek V4 model IDs include `deepseek-v4-flash` and `deepseek-v4-pro`; older `deepseek-chat` and `deepseek-reasoner` names were scheduled for deprecation on July 24, 2026. Check DeepSeek's model page before choosing a model for long-term use:
+
+- https://api-docs.deepseek.com/quick_start/pricing/
+
+OpenRouter:
+
+```bash
+DIARY_LLM_ENDPOINT_URL=https://openrouter.ai/api/v1
+DIARY_LLM_API_KEY=${OPENROUTER_API_KEY}
+DIARY_LLM_MODEL=anthropic/claude-sonnet-4
+```
+
+OpenRouter documents the OpenAI SDK base URL as `https://openrouter.ai/api/v1`. Model IDs use provider/model slugs such as `openai/gpt-4o`, `anthropic/claude-sonnet-4`, or latest aliases such as `~openai/gpt-latest`. Browse the catalog or use OpenRouter's models endpoint for exact current slugs:
+
+- https://openrouter.ai/docs/quickstart
+- https://openrouter.ai/docs/guides/overview/models
+
+`llm_effort` is passed as `reasoning_effort`. Leave it unset for providers or models that do not support OpenAI-style reasoning effort.
+
 The built-in daily, weekly, and monthly prompts are used when no prompt path is configured. To override them, point the sink at Markdown prompt files:
 
 ```yaml

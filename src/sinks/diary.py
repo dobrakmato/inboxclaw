@@ -266,6 +266,35 @@ def _optional_path(value: Optional[str]) -> Optional[Path]:
     return Path(value)
 
 
+@dataclass
+class DiaryBackfillResult:
+    daily_generated: int = 0
+    daily_skipped: int = 0
+    daily_existing: int = 0
+    weekly_generated: int = 0
+    weekly_skipped: int = 0
+    weekly_existing: int = 0
+    monthly_generated: int = 0
+    monthly_skipped: int = 0
+    monthly_existing: int = 0
+
+    def add(self, period_type: str, action: str) -> None:
+        current = getattr(self, f"{period_type}_{action}")
+        setattr(self, f"{period_type}_{action}", current + 1)
+
+    @property
+    def generated_total(self) -> int:
+        return self.daily_generated + self.weekly_generated + self.monthly_generated
+
+    @property
+    def skipped_total(self) -> int:
+        return self.daily_skipped + self.weekly_skipped + self.monthly_skipped
+
+    @property
+    def existing_total(self) -> int:
+        return self.daily_existing + self.weekly_existing + self.monthly_existing
+
+
 def parse_cutoff_time(value: str) -> time:
     parts = value.split(":")
     if len(parts) not in (2, 3):
@@ -755,13 +784,13 @@ async def merge_monthly_async(config: DiaryConfig, month_id: str) -> str:
     return await llm_merge(config, prompt, input_artifact)
 
 
-def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> None:
+def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> str:
     if config.summary_mode == "llm":
         raise RuntimeError("Diary LLM summary mode must use async reconciliation")
 
     output_path = _daily_path(config, day)
     if output_path.exists():
-        return
+        return "existing"
 
     user_path = _user_path(config, day)
     raw_path = _raw_path(config, day)
@@ -780,7 +809,7 @@ def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> No
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     atomic_write_text(output_path, merge_daily(config, day))
     logger.info(
@@ -794,12 +823,13 @@ def generate_or_skip_daily(config: DiaryConfig, day: date, sink_name: str) -> No
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
-async def generate_or_skip_daily_async(config: DiaryConfig, day: date, sink_name: str) -> None:
+async def generate_or_skip_daily_async(config: DiaryConfig, day: date, sink_name: str) -> str:
     output_path = _daily_path(config, day)
     if output_path.exists():
-        return
+        return "existing"
 
     user_path = _user_path(config, day)
     raw_path = _raw_path(config, day)
@@ -818,7 +848,7 @@ async def generate_or_skip_daily_async(config: DiaryConfig, day: date, sink_name
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     content = await merge_daily_async(config, day)
     await asyncio.to_thread(atomic_write_text, output_path, content)
@@ -833,6 +863,7 @@ async def generate_or_skip_daily_async(config: DiaryConfig, day: date, sink_name
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
 def _daily_skipped_marker(day: date) -> str:
@@ -859,14 +890,14 @@ def _daily_artifact_is_meaningful(config: DiaryConfig, day: date) -> bool:
     return path.exists() and not _artifact_matches_marker(path, _daily_skipped_marker(day))
 
 
-def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: str) -> None:
+def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: str) -> str:
     if config.summary_mode == "llm":
         raise RuntimeError("Diary LLM summary mode must use async reconciliation")
 
     week_id = _iso_week_id(week_start)
     output_path = _weekly_path(config, week_id)
     if output_path.exists():
-        return
+        return "existing"
 
     if not any(_daily_artifact_is_meaningful(config, day) for day in _day_range(week_start, week_start + timedelta(days=6))):
         atomic_write_text(output_path, _weekly_skipped_marker(week_id) + "\n")
@@ -882,7 +913,7 @@ def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: st
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     atomic_write_text(output_path, merge_weekly(config, week_start))
     logger.info(
@@ -896,13 +927,14 @@ def generate_or_skip_weekly(config: DiaryConfig, week_start: date, sink_name: st
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
-async def generate_or_skip_weekly_async(config: DiaryConfig, week_start: date, sink_name: str) -> None:
+async def generate_or_skip_weekly_async(config: DiaryConfig, week_start: date, sink_name: str) -> str:
     week_id = _iso_week_id(week_start)
     output_path = _weekly_path(config, week_id)
     if output_path.exists():
-        return
+        return "existing"
 
     if not any(_daily_artifact_is_meaningful(config, day) for day in _day_range(week_start, week_start + timedelta(days=6))):
         await asyncio.to_thread(atomic_write_text, output_path, _weekly_skipped_marker(week_id) + "\n")
@@ -918,7 +950,7 @@ async def generate_or_skip_weekly_async(config: DiaryConfig, week_start: date, s
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     content = await merge_weekly_async(config, week_start)
     await asyncio.to_thread(atomic_write_text, output_path, content)
@@ -933,15 +965,16 @@ async def generate_or_skip_weekly_async(config: DiaryConfig, week_start: date, s
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
-def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str) -> None:
+def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str) -> str:
     if config.summary_mode == "llm":
         raise RuntimeError("Diary LLM summary mode must use async reconciliation")
 
     output_path = _monthly_path(config, month_id)
     if output_path.exists():
-        return
+        return "existing"
 
     if not any(_daily_artifact_is_meaningful(config, day) for day in _days_in_month(month_id)):
         atomic_write_text(output_path, _monthly_skipped_marker(month_id) + "\n")
@@ -957,7 +990,7 @@ def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str)
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     atomic_write_text(output_path, merge_monthly(config, month_id))
     logger.info(
@@ -971,12 +1004,13 @@ def generate_or_skip_monthly(config: DiaryConfig, month_id: str, sink_name: str)
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
-async def generate_or_skip_monthly_async(config: DiaryConfig, month_id: str, sink_name: str) -> None:
+async def generate_or_skip_monthly_async(config: DiaryConfig, month_id: str, sink_name: str) -> str:
     output_path = _monthly_path(config, month_id)
     if output_path.exists():
-        return
+        return "existing"
 
     if not any(_daily_artifact_is_meaningful(config, day) for day in _days_in_month(month_id)):
         await asyncio.to_thread(atomic_write_text, output_path, _monthly_skipped_marker(month_id) + "\n")
@@ -992,7 +1026,7 @@ async def generate_or_skip_monthly_async(config: DiaryConfig, month_id: str, sin
                 "output_path": str(output_path),
             },
         )
-        return
+        return "skipped"
 
     content = await merge_monthly_async(config, month_id)
     await asyncio.to_thread(atomic_write_text, output_path, content)
@@ -1007,6 +1041,7 @@ async def generate_or_skip_monthly_async(config: DiaryConfig, month_id: str, sin
             "output_path": str(output_path),
         },
     )
+    return "generated"
 
 
 def write_raw_entry(config: DiaryConfig, event: Event, line: str, sink_name: str) -> None:
@@ -1118,14 +1153,7 @@ async def reconcile_diary_async(config: DiaryConfig, sink_name: str, now: Option
         )
 
         reconcile_start = _reconciliation_start_date(config, closed_day)
-        for day in _day_range(reconcile_start, closed_day):
-            await generate_or_skip_daily_async(config, day, sink_name)
-
-        for week_start in _weekly_starts_for_window(reconcile_start, closed_day):
-            await generate_or_skip_weekly_async(config, week_start, sink_name)
-
-        for month_id in _month_ids_for_window(reconcile_start, closed_day):
-            await generate_or_skip_monthly_async(config, month_id, sink_name)
+        await _generate_missing_range_locked_async(config, sink_name, reconcile_start, closed_day)
 
         await asyncio.to_thread(
             _update_symlink,
@@ -1158,6 +1186,45 @@ async def reconcile_diary_async(config: DiaryConfig, sink_name: str, now: Option
         )
     finally:
         await asyncio.to_thread(lock.release)
+
+
+async def generate_missing_diary_range_async(
+    config: DiaryConfig,
+    sink_name: str,
+    start_day: date,
+    end_day: date,
+) -> DiaryBackfillResult:
+    if start_day > end_day:
+        raise ValueError("Diary historical range start must be on or before the end date")
+
+    lock = DiaryLock(config, sink_name)
+    await asyncio.to_thread(lock.acquire)
+    try:
+        await asyncio.to_thread(ensure_diary_structure, config, sink_name)
+        await asyncio.to_thread(_cleanup_temporary_files, config, sink_name)
+        return await _generate_missing_range_locked_async(config, sink_name, start_day, end_day)
+    finally:
+        await asyncio.to_thread(lock.release)
+
+
+async def _generate_missing_range_locked_async(
+    config: DiaryConfig,
+    sink_name: str,
+    start_day: date,
+    end_day: date,
+) -> DiaryBackfillResult:
+    result = DiaryBackfillResult()
+
+    for day in _day_range(start_day, end_day):
+        result.add("daily", await generate_or_skip_daily_async(config, day, sink_name))
+
+    for week_start in _weekly_starts_for_window(start_day, end_day):
+        result.add("weekly", await generate_or_skip_weekly_async(config, week_start, sink_name))
+
+    for month_id in _month_ids_for_window(start_day, end_day):
+        result.add("monthly", await generate_or_skip_monthly_async(config, month_id, sink_name))
+
+    return result
 
 
 def _reconciliation_start_date(config: DiaryConfig, closed_day: date) -> date:
