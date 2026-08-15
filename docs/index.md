@@ -86,6 +86,7 @@ Follow the **[Onboarding Tutorial](onboarding/index.md)** for a complete step-by
 - [Gmail](source-gmail.md)
 - [Google Calendar](source-google-calendar.md)
 - [Google Drive](source-google-drive.md)
+- [Strava](source-strava.md)
 - [Fio Banka](source-fio.md)
 - [Faktury Online](source-faktury-online.md)
 - [Home Assistant](source-home-assistant.md)

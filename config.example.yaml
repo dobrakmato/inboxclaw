@@ -39,6 +39,12 @@ sources:
     api_token: "${JIRA_API_TOKEN}" # Use env var or literal
     jql: "assignee = currentUser() AND resolution = Unresolved"
     poll_interval: "1m"
+  # strava:
+  #   client_id: "${STRAVA_CLIENT_ID}"
+  #   client_secret: "${STRAVA_CLIENT_SECRET}"
+  #   refresh_token: "${STRAVA_REFRESH_TOKEN}"
+  #   poll_interval: "15m"
+  #   lookback_days: 7
   # add more sources according to docs
 
 # Publish SSE stream of events.

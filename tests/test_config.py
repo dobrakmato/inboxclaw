@@ -171,3 +171,4 @@ def test_generated_schema_supports_key_named_discriminator_without_type() -> Non
 
     source_props = schema["properties"]["sources"]["properties"]
     assert source_props["faktury_online"]["$ref"] == "#/$defs/FakturyOnlineSourceConfig"
+    assert source_props["strava"]["$ref"] == "#/$defs/StravaSourceConfig"

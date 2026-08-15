@@ -44,6 +44,7 @@ Health comes from the same work that produces events:
 | Faktury Online | Session setup, invoice listing, required invoice details, event writes, and cache updates completed. |
 | Fio | The real transaction request and processing completed. A rate-limit rejection is unhealthy. No separate quota-consuming probe is made. |
 | GoCardless / Nordigen | The scheduled token and transaction operation completed. Authentication failures, consent expiry, rate limits, and upstream backoff are unhealthy. |
+| Strava | Credentials, token refresh, the paginated activity-list request, activity processing, event writes, and cache updates completed. |
 | Home Assistant | The WebSocket authenticated and the entity subscription was acknowledged. Disconnects and failed reconnects are unhealthy. |
 | Filesystem | The configured directory exists and the baseline/periodic scan or watcher is operating. |
 | Mock | Event generation and writing completed. |

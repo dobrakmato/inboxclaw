@@ -1374,6 +1374,68 @@
       "title": "ServerConfig",
       "type": "object"
     },
+    "StravaSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "strava",
+          "default": "strava",
+          "title": "Type",
+          "type": "string"
+        },
+        "coalesce": {
+          "items": {
+            "$ref": "#/$defs/CoalesceRule"
+          },
+          "title": "Coalesce",
+          "type": "array"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "title": "Client Secret",
+          "type": "string"
+        },
+        "refresh_token": {
+          "title": "Refresh Token",
+          "type": "string"
+        },
+        "poll_interval": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "lookback_days": {
+          "default": 7,
+          "minimum": 1,
+          "title": "Lookback Days",
+          "type": "integer"
+        },
+        "per_page": {
+          "default": 100,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "Per Page",
+          "type": "integer"
+        },
+        "ignored_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignored Fields",
+          "type": "array"
+        }
+      },
+      "title": "StravaSourceConfig",
+      "type": "object"
+    },
     "WebhookSinkConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1548,6 +1610,9 @@
             "$ref": "#/$defs/GoogleHealthSourceConfig"
           },
           {
+            "$ref": "#/$defs/StravaSourceConfig"
+          },
+          {
             "$ref": "#/$defs/FilesystemSourceConfig"
           }
         ]
@@ -1578,6 +1643,9 @@
         },
         "nordigen": {
           "$ref": "#/$defs/NordigenSourceConfig"
+        },
+        "strava": {
+          "$ref": "#/$defs/StravaSourceConfig"
         }
       }
     },

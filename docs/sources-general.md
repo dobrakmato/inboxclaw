@@ -74,6 +74,7 @@ See the dedicated [Event Coalescing](coalescing.md) page for detailed explanatio
 | :jira: [Jira](source-jira.md)                              | `jira`            | Assigned tasks updates and changes.        | [atlassian.com](https://www.atlassian.com/software/jira)   |
 | :clipboard: [Asana](source-asana.md)                       | `asana`           | Project task tracking and changes.         | [asana.com](https://asana.com)                             |
 | :heart: [Google Health](source-google-health.md)            | `google_health`   | Health & fitness data (steps, sleep, etc). | [developers.google.com/health](https://developers.google.com/health) |
+| :running: [Strava](source-strava.md)                        | `strava`          | Athlete activity creation and updates.    | [strava.com](https://www.strava.com)                       |
 | :open_file_folder: [Filesystem](source-filesystem.md)       | `filesystem`      | Local file changes (create, update, delete, move). | -                                                   |
 | :credit_card: [GoCardless / Nordigen](source-nordigen.md)   | `nordigen`        | Bank transactions (GoCardless).            | [gocardless.com](https://gocardless.com/bank-account-data) |
 | :test_tube: [Mock](source-mock.md)                          | `mock`            | Random test events for pipeline testing.   | -                                                          |

@@ -62,6 +62,7 @@ In very active development — some features may break at any time. A good fit f
 * ✉️ Gmail
 * 📅 Google Calendar
 * 💾 Google Drive
+* 🏃 Strava
 * 🏦 Fio Banka
 * 🧾 Faktury Online
 * 🏠 Home Assistant
@@ -120,6 +121,7 @@ Source-specific docs:
 * [Gmail](docs/source-gmail.md)
 * [Google Calendar](docs/source-google-calendar.md)
 * [Google Drive](docs/source-google-drive.md)
+* [Strava](docs/source-strava.md)
 * [Fio](docs/source-fio.md)
 * [Faktury Online](docs/source-faktury-online.md)
 * [Home Assistant](docs/source-home-assistant.md)

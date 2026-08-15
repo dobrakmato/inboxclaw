@@ -13,6 +13,7 @@ from src.sources.nordigen import NordigenSource
 from src.sources.jira import JiraSource
 from src.sources.asana import AsanaSource
 from src.sources.google_health import GoogleHealthSource
+from src.sources.strava import StravaSource
 from src.sources.filesystem import FilesystemSource
 from src.sinks.sse import SSESink
 from src.sinks.webhook import WebhookSink
@@ -36,6 +37,7 @@ SOURCE_TYPES = {
     "jira": JiraSource,
     "asana": AsanaSource,
     "google_health": GoogleHealthSource,
+    "strava": StravaSource,
     "filesystem": FilesystemSource,
 }
 

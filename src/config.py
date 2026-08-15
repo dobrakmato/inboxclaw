@@ -177,6 +177,23 @@ class GoogleHealthSourceConfig(GoogleSourceConfig):
     data_types: List[str] = Field(default_factory=lambda: ["steps", "sleep", "exercise", "weight", "heart-rate"])
     lookback_days: int = 7
 
+class StravaSourceConfig(BaseSourceConfig):
+    type: Literal["strava"] = "strava"
+    client_id: str = Field(default_factory=lambda: os.environ.get("STRAVA_CLIENT_ID", ""))
+    client_secret: str = Field(default_factory=lambda: os.environ.get("STRAVA_CLIENT_SECRET", ""))
+    refresh_token: str = Field(default_factory=lambda: os.environ.get("STRAVA_REFRESH_TOKEN", ""))
+    poll_interval: Interval = "15m"
+    lookback_days: int = Field(default=7, ge=1)
+    per_page: int = Field(default=100, ge=1, le=200)
+    ignored_fields: List[str] = Field(default_factory=lambda: [
+        "achievement_count",
+        "athlete_count",
+        "comment_count",
+        "kudos_count",
+        "photo_count",
+        "total_photo_count",
+    ])
+
 class FilesystemSourceConfig(BaseSourceConfig):
     type: Literal["filesystem"] = "filesystem"
     path: str
@@ -203,6 +220,7 @@ SourceConfig = Annotated[
         JiraSourceConfig,
         AsanaSourceConfig,
         GoogleHealthSourceConfig,
+        StravaSourceConfig,
         FilesystemSourceConfig,
     ],
     Field(discriminator="type")

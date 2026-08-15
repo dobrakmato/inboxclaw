@@ -60,6 +60,7 @@ Coalescing is configured per source. For the full explanation, see [Event Coales
 | Gmail | New emails and label changes | [Gmail Source](../source-gmail.md) |
 | Google Calendar | New and updated calendar events | [Google Calendar Source](../source-google-calendar.md) |
 | Google Drive | File changes and new files | [Google Drive Source](../source-google-drive.md) |
+| Strava | New and updated athlete activities | [Strava Source](../source-strava.md) |
 | Fio Banka | Bank transactions | [Fio Source](../source-fio.md) |
 | Faktury Online | Invoice changes | [Faktury Online Source](../source-faktury-online.md) |
 | Home Assistant | Device and sensor state changes | [Home Assistant Source](../source-home-assistant.md) |

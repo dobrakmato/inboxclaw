@@ -28,7 +28,7 @@ def _collect_interval_field_names() -> set[str]:
         GoogleCalendarSourceConfig, GoogleCalendarOverrideConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
         HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
-        DiarySinkConfig,
+        DiarySinkConfig, StravaSourceConfig,
     )
     names: set[str] = set()
     for model in [
@@ -36,7 +36,7 @@ def _collect_interval_field_names() -> set[str]:
         GoogleCalendarSourceConfig, GoogleCalendarOverrideConfig, FakturyOnlineSourceConfig, FioSourceConfig,
         MockSourceConfig, NordigenSourceConfig, WebhookSinkConfig,
         HttpPullSinkConfig, SSESinkConfig, TTLConfig, CoalesceRule,
-        DiarySinkConfig,
+        DiarySinkConfig, StravaSourceConfig,
     ]:
         for field_name, field_info in model.model_fields.items():
             # Interval fields have annotation float (after BeforeValidator strips the wrapper)
@@ -148,6 +148,7 @@ def _add_key_named_variant_properties(schema: dict) -> None:
             "MockSourceConfig",
             "HomeAssistantSourceConfig",
             "NordigenSourceConfig",
+            "StravaSourceConfig",
         ],
         "sink": [
             "WebhookSinkConfig",

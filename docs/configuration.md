@@ -81,6 +81,7 @@ Each source type has its own specific configuration. See the dedicated documenta
 - [Gmail](source-gmail.md)
 - [Google Calendar](source-google-calendar.md)
 - [Google Drive](source-google-drive.md)
+- [Strava](source-strava.md)
 - [Fio Banka](source-fio.md)
 - [Faktury Online](source-faktury-online.md)
 - [Home Assistant](source-home-assistant.md)

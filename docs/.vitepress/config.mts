@@ -54,6 +54,7 @@ export default defineConfig({
                     {text: 'Gmail', link: '/source-gmail'},
                     {text: 'Google Calendar', link: '/source-google-calendar'},
                     {text: 'Google Drive', link: '/source-google-drive'},
+                    {text: 'Strava', link: '/source-strava'},
                     {text: 'Fio Banka', link: '/source-fio'},
                     {text: 'Faktury Online', link: '/source-faktury-online'},
                     {text: 'Home Assistant', link: '/source-home-assistant'},
