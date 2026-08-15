@@ -35,7 +35,7 @@ sources:
 
 ### 3. Initial baseline
 
-On the first run, the source establishes a Drive changes cursor with `getStartPageToken()` and does not crawl or cache your existing Drive files. Existing files are initialized if they later appear in the changes feed, and they are not reported as newly created unless Drive metadata shows they were created or shared after the trusted baseline.
+On the first run, the source establishes the user changes cursor with `getStartPageToken()`. When `restrict_to_my_drive` is `false`, it also establishes a cursor for each shared drive and caches those drives' existing files without emitting synthetic events. Existing user/My Drive files are initialized if they later appear in the changes feed, and they are not reported as newly created unless Drive metadata shows they were created or shared after the trusted baseline.
 
 ## Core Concepts
 
@@ -50,13 +50,15 @@ When a file change is detected, the source compares the new metadata against its
 
 ### Recovery, filters, and My Drive scope
 
-If the Drive changes cursor expires, the source resets to a fresh cursor with `getStartPageToken()` and establishes a new trusted baseline without crawling Drive. Events that happened during the gap are not inferred; future changes continue normally. Cached snapshots are kept so later updates can still compare against the last known state.
+If a user or shared-drive changes cursor expires, the source obtains a fresh cursor for that log and performs a scoped current-state reconciliation. It compares visible files with cached snapshots and emits the recoverable net changes: creations with a trusted post-baseline creation signal, moves, trash transitions, updates, newly shared files, and removals. Intermediate transitions that are no longer represented in Drive's current state cannot be reconstructed after Google expires the history token.
 
 Filters apply to every event type, including removals. For removed files, `file_id` filters always work; `name` and `parent_id` filters use the last cached snapshot when available.
 
-When `restrict_to_my_drive: true`, incremental polling uses Drive's `restrictToMyDrive` changes option. This is not the same as filtering to files owned by you.
+When `restrict_to_my_drive: true`, incremental polling uses Drive's `restrictToMyDrive` changes option. This is not the same as filtering to files owned by you. When it is `false`, the source tracks both the user change log and a separate change log for every shared drive the user belongs to. Shared-drive checkpoints are stored per drive and new shared drives are baselined without emitting synthetic creation events. If access to a shared drive is lost, each cached file from that drive emits `file_removed` and its cached snapshot and checkpoint are removed atomically.
 
-If content fetching for a diffable file hits an API error such as auth failure or rate limiting, the source does not advance the cursor for that page. This allows the change to be retried instead of emitting a misleading update with only timestamp metadata.
+Content failures are classified by their Drive error reason. Permanent content limitations such as `exportSizeLimitExceeded` do not block metadata processing: the source preserves the last available content snapshot, emits any meaningful metadata update, and advances the page checkpoint. Auth failures, rate limits, and server errors remain retryable and prevent the page transaction from committing. Rate and server failures use bounded asynchronous exponential backoff.
+
+Drive requests use an asynchronous HTTP client, so slow Drive responses do not block the application's event loop. Each changes page commits its events, cached snapshots, and next cursor checkpoint in one database transaction.
 
 ### Coalescing (Debounce)
 
@@ -128,7 +130,7 @@ sources:
 | `poll_interval`                      | `string` | `"10m"`                          | How often to check for changes. Supports human-readable intervals (e.g. `"30s"`, `"5m"`).       |
 | `restrict_to_my_drive`               | `bool`   | `false`                          | `true` limits incremental changes to My Drive. It is not an "owned by me" filter. |
 | `include_corpus_removals`            | `bool`   | `false`                          | Request corpus-removal details when available.                                                  |
-| `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/plain`, `text/markdown`, `text/html` | MIME types eligible for paragraph-level text diffing.                         |
+| `eligible_mime_types_for_content_diff`| `list`  | Google Docs, `text/plain`, `text/markdown`, `text/html` | MIME types eligible for paragraph-level text diffing. Among native Google Workspace formats, only Google Docs is currently supported; Sheets and Slides entries are ignored with a warning. |
 | `max_diffable_file_bytes`            | `int`    | `10485760` (10 MB)               | Size limit for content fetching and diffing.                                                    |
 | `max_changed_sections`               | `int`    | `5`                              | Maximum number of changed text sections included in a diff payload.                             |
 | `max_section_chars`                  | `int`    | `300`                            | Maximum characters per changed text section before adding a `(truncated)` marker.                |
@@ -144,10 +146,10 @@ sources:
 | `google.drive.file_trashed`           | Drive file ID | File was moved to trash.                                       |
 | `google.drive.file_untrashed`         | Drive file ID | File was restored from trash.                                  |
 | `google.drive.file_shared_with_you`   | Drive file ID | A non-owned file became visible to you after the trusted baseline. |
-| `google.drive.file_removed`           | Drive file ID | File was removed in the changes feed or became inaccessible when processing a change. |
+| `google.drive.file_removed`           | Drive file ID | File was removed from the user's visible Drive corpus or became inaccessible. |
 | `google.drive.file_updated`           | Drive file ID | Meaningful content or metadata update.                         |
 
-> `google.drive.file_deleted` and `google.drive.file_permission_changed` are intentionally not emitted in the current version. Deletions/removals are represented as `google.drive.file_removed`.
+> Drive's change log does not distinguish permanent deletion from every form of lost access or corpus removal. All of these visibility-loss cases are represented as `google.drive.file_removed` with the last known metadata.
 
 ### Event Examples
 

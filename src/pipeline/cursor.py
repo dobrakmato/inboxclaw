@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy import select, update
+from sqlalchemy.orm import Session
 from src.database import Source
 
 if TYPE_CHECKING:
@@ -30,8 +31,12 @@ class SourceCursor:
         Sets the cursor to a new value for the given source_id.
         """
         with self.services.db_session_maker() as session:
-            session.execute(
-                update(Source).where(Source.id == source_id).values(cursor=value)
-            )
+            self.set_cursor_in_session(session, source_id, value)
             session.commit()
             logger.debug(f"Set cursor for source {source_id} to {value}")
+
+    @staticmethod
+    def set_cursor_in_session(session: Session, source_id: int, value: str) -> None:
+        session.execute(
+            update(Source).where(Source.id == source_id).values(cursor=value)
+        )

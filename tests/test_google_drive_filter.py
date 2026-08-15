@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 from src.sources.google_drive import GoogleDriveSource
 from src.config import GoogleDriveSourceConfig, DriveFilterItem
@@ -34,32 +34,26 @@ def test_google_drive_source_filtering_logic(mock_services):
     # 4. No match
     assert source._should_filter("file456", "normal file") is False
 
-@patch("src.sources.google_drive.build")
-@patch("src.sources.google_drive.get_google_credentials")
 @pytest.mark.asyncio
-async def test_google_drive_process_change_filtering(mock_creds, mock_build, mock_services):
+async def test_google_drive_process_change_filtering(mock_services):
     config = GoogleDriveSourceConfig(
         token_file="fake_token.json",
         filters=[{"skip": DriveFilterItem(in_field="file_id", contains="SKIP")}]
     )
     source = GoogleDriveSource("test_drive", config, mock_services, 1)
     
-    service = MagicMock()
-    mock_build.return_value = service
-    
-    # Mock file metadata fetch
-    service.files().get().execute.return_value = {
+    source._fetch_file = AsyncMock(return_value={
         "id": "file_SKIP_123",
         "name": "Filtered File",
         "mimeType": "text/plain",
         "modifiedTime": "2023-01-01T00:00:00Z",
         "version": "1"
-    }
+    })
     
     change = {"fileId": "file_SKIP_123", "removed": False, "time": "2023-01-01T00:00:00Z"}
     now = datetime.now(timezone.utc)
     
-    events = source._process_change(service, change, now)
+    events = await source._process_change(MagicMock(), change, now)
     
     assert len(events) == 0
     # Ensure it didn't even try to classify or build events

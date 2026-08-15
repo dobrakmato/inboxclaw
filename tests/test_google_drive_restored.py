@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from src.config import GoogleDriveSourceConfig
 from src.sources.google_drive import GoogleDriveSource
@@ -63,12 +63,12 @@ async def test_file_updated_emitted_and_contains_diff(services):
         "description": "Updated description"
     }
     
-    source._fetch_file = MagicMock(return_value=current_resource)
-    source._fetch_text_content = MagicMock(return_value="Hello Beautiful World")
+    source._fetch_file = AsyncMock(return_value=current_resource)
+    source._fetch_text_content = AsyncMock(return_value="Hello Beautiful World")
     
     now = datetime.now(timezone.utc)
-    events = source._process_change(
-        service=MagicMock(),
+    events = await source._process_change(
+        client=MagicMock(),
         change={"fileId": "f1", "removed": False, "time": "2024-01-01T01:00:00Z"},
         now=now
     )
@@ -111,10 +111,11 @@ async def test_file_moved_contains_before_after(services):
         "ownedByMe": True,
     }
     
-    source._fetch_file = MagicMock(return_value=current_resource)
+    source._fetch_file = AsyncMock(return_value=current_resource)
+    source._fetch_text_content = AsyncMock(return_value=None)
     
-    events = source._process_change(
-        service=MagicMock(),
+    events = await source._process_change(
+        client=MagicMock(),
         change={"fileId": "f1", "removed": False, "time": "2024-01-01T01:00:00Z"},
         now=datetime.now(timezone.utc)
     )

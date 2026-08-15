@@ -34,6 +34,8 @@ class DriveFileSnapshot:
     web_view_link: Optional[str] = None
     size: Optional[str] = None
     version: Optional[str] = None
+    can_download: Optional[bool] = None
+    drive_id: Optional[str] = None
     content_hash: Optional[str] = None
     content_snapshot: Optional[str] = None
     content_unavailable: bool = False
@@ -60,6 +62,8 @@ class DriveFileSnapshot:
             web_view_link=file_resource.get("webViewLink"),
             size=file_resource.get("size"),
             version=file_resource.get("version"),
+            can_download=(file_resource.get("capabilities") or {}).get("canDownload"),
+            drive_id=file_resource.get("driveId"),
         )
 
     @classmethod
@@ -83,6 +87,8 @@ class DriveFileSnapshot:
             web_view_link=data.get("web_view_link"),
             size=data.get("size"),
             version=data.get("version"),
+            can_download=data.get("can_download"),
+            drive_id=data.get("drive_id"),
             content_hash=data.get("content_hash"),
             content_snapshot=data.get("content_snapshot"),
             content_unavailable=False,
@@ -108,6 +114,8 @@ class DriveFileSnapshot:
             "web_view_link": self.web_view_link,
             "size": self.size,
             "version": self.version,
+            "can_download": self.can_download,
+            "drive_id": self.drive_id,
             "content_hash": self.content_hash,
             "content_snapshot": self.content_snapshot,
         }
@@ -215,6 +223,9 @@ class DriveTransitionClassifier:
         """Determines if the file is intentionally shared with the user."""
         if snapshot.owned_by_me:
             return True
+
+        if snapshot.drive_id:
+            return True
         
         if snapshot.shared_with_me_time or snapshot.sharing_user:
             return True
@@ -279,7 +290,8 @@ class DriveTransitionClassifier:
     @staticmethod
     def _is_shared_with_you(snapshot: DriveFileSnapshot) -> bool:
         return not snapshot.owned_by_me and bool(
-            snapshot.shared_with_me_time
+            snapshot.drive_id
+            or snapshot.shared_with_me_time
             or snapshot.sharing_user
             or DriveTransitionClassifier._has_user_or_group_permission(snapshot)
         )

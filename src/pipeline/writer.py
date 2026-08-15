@@ -1,7 +1,5 @@
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
-from pydantic import BaseModel
+from typing import List, TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -53,62 +51,73 @@ class EventWriter:
         Writes a list of events in a single transaction.
         Returns the number of new events created.
         """
-        new_count = 0
-        seen_ids = set()
-
-        # 1. Get source config to check for coalesce rules
-        source_name = None
         with self.services.db_session_maker() as session:
-            source = session.scalar(select(Source).where(Source.id == source_id))
-            if source:
-                source_name = source.name
+            new_count = self.write_events_in_session(session, source_id, events)
+            session.commit()
 
+        if new_count > 0:
+            self.services.notifier.notify()
+            logger.info(f"Committed {new_count} new events for source {source_id}")
+        return new_count
+
+    def write_events_in_session(
+        self,
+        session: Session,
+        source_id: int,
+        events: List[NewEvent],
+        *,
+        use_savepoints: bool = True,
+    ) -> int:
+        """Write events without committing, for a caller-owned transaction."""
+        source = session.scalar(select(Source).where(Source.id == source_id))
+        source_name = source.name if source else None
         coalesce_rules = []
         if source_name and source_name in self.services.config.sources:
             coalesce_rules = self.services.config.sources[source_name].coalesce
 
-        with self.services.db_session_maker() as session:
-            for event in events:
-                if event.event_id in seen_ids:
-                    logger.warning(f"Duplicate event_id {event.event_id} in current batch for source {source_id}, skipping.")
-                    continue
-                seen_ids.add(event.event_id)
+        new_count = 0
+        seen_ids: set[str] = set()
+        for event in events:
+            if event.event_id in seen_ids:
+                logger.warning(
+                    f"Duplicate event_id {event.event_id} in current batch for source {source_id}, skipping."
+                )
+                continue
+            seen_ids.add(event.event_id)
 
-                try:
-                    # Use a savepoint to allow continuing on IntegrityError if it happens on flush
-                    with session.begin_nested():
-                        # 2. Check Coalesce Rules
-                        matched_rule = None
-                        for rule in coalesce_rules:
-                            if EventMatcher(rule.match).matches(event.event_type):
-                                matched_rule = rule
-                                break
-                        
-                        if matched_rule:
-                            # 3. Path B: Coalesced
-                            if self.services.coalescer.handle_event(session, source_id, event, matched_rule):
-                                logger.debug(f"Event {event.event_id} routed to CoalescenceManager")
-                                continue
-                            # If handle_event fails (e.g. no entity_id), fall through to immediate write
+            def write_one() -> bool:
+                matched_rule = None
+                for rule in coalesce_rules:
+                    if EventMatcher(rule.match).matches(event.event_type):
+                        matched_rule = rule
+                        break
 
-                        # 4. Path A: Immediate
-                        created = self._write_event_internal(
-                            session=session,
-                            source_id=source_id,
-                            event=event
-                        )
-                        if created:
-                            new_count += 1
-                            logger.debug(f"Queued new event: {event.event_id}")
-                except IntegrityError:
-                    logger.warning(f"Duplicate event_id {event.event_id} for source {source_id} (integrity error), skipping.")
-                    continue
-            
-            if new_count > 0:
-                session.commit()
-                self.services.notifier.notify()
-                logger.info(f"Committed {new_count} new events for source {source_id}")
-            else:
-                session.commit() # To save pending_events changes
-            
+                if matched_rule and self.services.coalescer.handle_event(
+                    session,
+                    source_id,
+                    event,
+                    matched_rule,
+                ):
+                    logger.debug(f"Event {event.event_id} routed to CoalescenceManager")
+                    return False
+
+                created = self._write_event_internal(session, source_id, event)
+                if created:
+                    logger.debug(f"Queued new event: {event.event_id}")
+                return created
+
+            if not use_savepoints:
+                if write_one():
+                    new_count += 1
+                continue
+
+            try:
+                with session.begin_nested():
+                    if write_one():
+                        new_count += 1
+            except IntegrityError:
+                logger.warning(
+                    f"Duplicate event_id {event.event_id} for source {source_id} (integrity error), skipping."
+                )
+
         return new_count

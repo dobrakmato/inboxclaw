@@ -1,0 +1,23 @@
+The goal is to provide useful ongoing information about files and folders from google drive
+
+- When a new file is created, it should emit a `file_created` event with the file details.
+- When a file is updated, it should emit a `file_updated` event with the updated file details in before/after structure.
+- When a file is deleted or otherwise removed from the user's visible Drive corpus, it should emit a `file_removed` event with basic info and last known fields.
+- When file is moved, it should emit a `file_moved` event with before/after parents and basic info.
+- When a file is trashed or untrashed, it should emit a `file_trashed` or `file_untrashed` events with basic info.
+- When file is newly shared with user it should emit `file_shared_with_you` event with basic info + sharing user.
+- It should be possible to restrict reported changes to "my drive" only using configuration option
+- For text files (list of mimes should be configurable + sane default) it should compute a diff of sections (truncate before/after with "(truncated)" marker), there is configurable max limit of reported sections + max limit of chars per changed section.
+- For text files it should report number of changes sections, added char count, removed char count using the standard differ
+- For computing text diffs there is configurable max file size in bytes
+- Diffs are not computed for binary files
+- When untracked file is removed, this must be passed down (the downstream can already know about the file). We shoudn't hide the fact that removal happened.
+- Only meaningful fields should produce updates. Provider-only metadata (etag, version number alone, viewed time, etc..) changes should be suppressed.
+- The system must not emit file_created during first sync, cache rebuild, config expansion, filter changes, or cursor reset unless the provider gives a trusted creation signal and the previous baseline is trusted.
+- It should initialize cache the first time it sees a file - instead of emitting fake "created" event
+- It should correctly handle gaps in sync when the application was not running (e.g. because it crashed, or because the device was offline, or token expired and was recreated)
+- We should not emit empty updates, or updates that provide zero value to the user (only version number changes, or last viewer change, etc...)
+- It should support filtering out events based on name, file id, parent id with standard regex, substring match (case insensitive) matching strategies. For such events we never emit any events.
+- It should correctly handle rate limit problems, auth failures, partial failures without dropping or corrupting data
+- When filters / config is changed,  we do not require correctness between events emitted before and after config change (e.g. its fine to emit created, then config changes, and deleted is not emitted because of filter change)
+- It should not lose events during error recovery

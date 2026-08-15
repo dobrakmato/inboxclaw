@@ -50,7 +50,7 @@ sink:
     url: "https://example.com/drive"
     match: 
       - "google.drive.*"
-      - "!google.drive.file_deleted"
+      - "!google.drive.file_removed"
 ```
 
 If you only provide negative patterns, Inboxclaw assumes you want to match everything else:

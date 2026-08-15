@@ -187,21 +187,29 @@ def test_drive_file_snapshot_fields():
         "ownedByMe": True,
         "webViewLink": "https://docs.google.com/file/d/file123/view",
         "size": "1024",
+        "capabilities": {"canDownload": False},
+        "driveId": "shared-drive-1",
         "permissions": [{"type": "user", "emailAddress": "test@example.com"}]
     }
     snapshot = DriveFileSnapshot.from_file_resource(file_resource)
     assert snapshot.file_id == "file123"
     assert snapshot.web_view_link == "https://docs.google.com/file/d/file123/view"
     assert snapshot.size == "1024"
+    assert snapshot.can_download is False
+    assert snapshot.drive_id == "shared-drive-1"
     assert snapshot.permissions == [{"type": "user", "emailAddress": "test@example.com"}]
 
     # Test dict roundtrip
     data = snapshot.to_dict()
     assert data["web_view_link"] == "https://docs.google.com/file/d/file123/view"
     assert data["size"] == "1024"
+    assert data["can_download"] is False
+    assert data["drive_id"] == "shared-drive-1"
     assert data["permissions"] == [{"type": "user", "emailAddress": "test@example.com"}]
 
     from_dict = DriveFileSnapshot.from_dict(data)
     assert from_dict.web_view_link == snapshot.web_view_link
     assert from_dict.size == snapshot.size
+    assert from_dict.can_download == snapshot.can_download
+    assert from_dict.drive_id == snapshot.drive_id
     assert from_dict.permissions == snapshot.permissions

@@ -16,12 +16,18 @@ def _token_lock(token_path: Path) -> Lock:
         _TOKEN_LOCKS[resolved] = lock
     return lock
 
-def get_google_credentials(token_file: str, source_name: str) -> Credentials:
+def get_google_credentials(
+    token_file: str,
+    source_name: str,
+    *,
+    force_refresh: bool = False,
+) -> Credentials:
     """
     Shared logic to load and refresh Google OAuth2 credentials from a token file.
     
     :param token_file: Path to the JSON token file.
     :param source_name: Name of the source for error reporting.
+    :param force_refresh: Refresh the access token even if its local expiry has not elapsed.
     :return: Refreshed Credentials object.
     :raises ValueError: If token_file is not provided.
     """
@@ -39,10 +45,10 @@ def get_google_credentials(token_file: str, source_name: str) -> Credentials:
     token_path = token_path.resolve()
     creds = Credentials.from_authorized_user_file(str(token_path))
 
-    if creds and creds.expired and creds.refresh_token:
+    if creds and (force_refresh or creds.expired) and creds.refresh_token:
         with _token_lock(token_path):
             creds = Credentials.from_authorized_user_file(str(token_path))
-            if creds and creds.expired and creds.refresh_token:
+            if creds and (force_refresh or creds.expired) and creds.refresh_token:
                 creds.refresh(Request())
                 tmp_path = token_path.with_name(f"{token_path.name}.tmp")
                 tmp_path.write_text(creds.to_json(), encoding="utf-8")
