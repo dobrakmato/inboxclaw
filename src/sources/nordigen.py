@@ -100,6 +100,7 @@ class NordigenSource:
         self.source_id = source_id
         self.writer = services.writer
         self.kv = services.kv
+        self.health = services.health.reporter(name)
 
         # Sources using the same API credentials share one in-process lock and
         # one KV owner, avoiding simultaneous /token/new/ calls for each bank.
@@ -445,14 +446,25 @@ class NordigenSource:
 
         while True:
             if self._is_in_backoff():
+                self.health.unhealthy(
+                    "backoff",
+                    "The source is waiting for a persisted upstream retry window.",
+                )
                 wait = self._seconds_until_next_poll()
                 await asyncio.sleep(max(wait, 60))
                 continue
 
+            self.health.checking()
             try:
-                await self._poll()
-            except Exception:
+                succeeded = await self._poll()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
                 logger.exception("Unexpected error in Nordigen source '%s' poll loop", self.name)
+                self.health.unhealthy_from_exception(error)
+            else:
+                if succeeded:
+                    self.health.healthy()
 
             self._record_poll()
             await asyncio.sleep(self.config.effective_poll_interval)
@@ -461,12 +473,17 @@ class NordigenSource:
     # Poll
     # ------------------------------------------------------------------
 
-    async def _poll(self) -> None:
+    async def _poll(self) -> bool:
         if not self.config.account_id:
             logger.warning(
                 "Nordigen source '%s' has no account_id configured — skipping poll", self.name
             )
-            return
+            self.health.unhealthy(
+                "configuration",
+                "No GoCardless account_id is configured.",
+                action="Run 'inboxclaw nordigen connect' to connect an account.",
+            )
+            return False
 
         try:
             access_token = await self._get_access_token()
@@ -481,10 +498,15 @@ class NordigenSource:
                 exc.retry_at.isoformat(),
             )
             self._set_backoff(remaining)
-            return
+            self.health.unhealthy(
+                "authentication",
+                "Automatic GoCardless token renewal is waiting for its retry window.",
+                action="Reconnect the account if automatic renewal continues to fail.",
+            )
+            return False
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
-            return
+            return False
 
         account_id = self.config.account_id
         now = datetime.now(timezone.utc)
@@ -520,13 +542,14 @@ class NordigenSource:
 
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
-            return
-        except Exception:
+            return False
+        except Exception as error:
             logger.exception(
                 "Nordigen source '%s': unexpected error polling account '%s'",
                 self.name, self.config.account_id,
             )
-            return
+            self.health.unhealthy_from_exception(error)
+            return False
 
         events = []
         max_booked_date: Optional[date] = None
@@ -550,6 +573,7 @@ class NordigenSource:
         # Advance checkpoint to the latest booked date seen (or today if none)
         new_last_booked = (max_booked_date or today).isoformat()
         self.kv.set(self.source_id, _KV_LAST_BOOKED_DATE, new_last_booked)
+        return True
 
     def _map_transaction(self, tx: Transaction, status: str) -> NewEvent:
         account_id = self.config.account_id
@@ -611,6 +635,10 @@ class NordigenSource:
                 self.name, account_id, summary, detail,
             )
             self._set_backoff(6 * 3600)
+            self.health.unhealthy(
+                "rate_limited",
+                "The GoCardless API rate limit was reached.",
+            )
 
         elif status == 401:
             logger.error(
@@ -618,9 +646,17 @@ class NordigenSource:
                 "Reconnect the account.",
                 self.name, account_id, summary, detail,
             )
+            self.health.unhealthy(
+                "expired",
+                "GoCardless access expired or was revoked.",
+                action="Reconnect the bank account using 'inboxclaw nordigen connect'.",
+            )
             self.writer.write_events(self.source_id, [
                 NewEvent(
-                    event_id=f"nordigen_error_401_{account_id}_{datetime.now(timezone.utc).isoformat()}",
+                    event_id=(
+                        f"nordigen_error_401_{account_id}_"
+                        f"{datetime.now(timezone.utc).isoformat()}"
+                    ),
                     event_type="nordigen.error.access_expired",
                     entity_id=None,
                     data={
@@ -628,7 +664,10 @@ class NordigenSource:
                         "source": self.name,
                         "summary": summary,
                         "detail": detail,
-                        "action": "Reconnect the bank account using: python main.py nordigen connect",
+                        "action": (
+                            "Reconnect the bank account using: "
+                            "inboxclaw nordigen connect"
+                        ),
                     },
                 )
             ])
@@ -640,9 +679,17 @@ class NordigenSource:
                 "The user may not have the necessary permissions.",
                 self.name, account_id, summary, detail,
             )
+            self.health.unhealthy(
+                "authorization",
+                "GoCardless denied access to the configured account.",
+                action="Check account permissions or reconnect the bank account.",
+            )
             self.writer.write_events(self.source_id, [
                 NewEvent(
-                    event_id=f"nordigen_error_403_{account_id}_{datetime.now(timezone.utc).isoformat()}",
+                    event_id=(
+                        f"nordigen_error_403_{account_id}_"
+                        f"{datetime.now(timezone.utc).isoformat()}"
+                    ),
                     event_type="nordigen.error.access_forbidden",
                     entity_id=None,
                     data={
@@ -662,9 +709,14 @@ class NordigenSource:
                 self.name, status, account_id, summary, detail,
             )
             self._set_backoff(3600)
+            self.health.unhealthy(
+                "upstream",
+                f"The GoCardless institution service returned HTTP {status}.",
+            )
 
         else:
             logger.error(
                 "Nordigen source '%s': HTTP %d for account '%s' (%s: %s)",
                 self.name, status, account_id, summary, detail,
             )
+            self.health.unhealthy_from_exception(exc)

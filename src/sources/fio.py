@@ -27,6 +27,8 @@ class FioSource:
         self.cursor_manager = services.cursor
         self.writer = services.writer
         self.last_poll_time: Optional[datetime] = None
+        self.health = services.health.reporter(name)
+        self._poll_failed = False
 
         if not self.config.token:
             logger.warning(f"Fio source '{self.name}' has no token configured. It will not be able to fetch data.")
@@ -35,15 +37,37 @@ class FioSource:
         """Main loop for the Fio source."""
         logger.info(f"Starting Fio source '{self.name}' with poll interval {self.config.poll_interval}s")
         while True:
+            if not self.config.token:
+                self.health.unhealthy(
+                    "configuration",
+                    "No Fio API token is configured.",
+                    action="Configure token or the FIO_TOKEN environment variable.",
+                )
+                await asyncio.sleep(self.config.poll_interval)
+                continue
+
+            self.health.checking()
             try:
                 await self.poll()
-            except Exception:
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
                 logger.exception(f"Error in Fio source '{self.name}' poll loop")
+                self.health.unhealthy_from_exception(error)
+            else:
+                if self._poll_failed:
+                    self.health.unhealthy(
+                        "rate_limited",
+                        "The Fio API rejected the operational poll because of its rate limit.",
+                    )
+                else:
+                    self.health.healthy()
             
             await asyncio.sleep(self.config.poll_interval)
 
     async def poll(self):
         """Perform a single poll of the Fio API."""
+        self._poll_failed = False
         now = datetime.now(timezone.utc)
         
         # Enforce internal rate limit
@@ -83,6 +107,7 @@ class FioSource:
             
             if response.status_code == 409:
                 logger.warning(f"Fio API rate limit hit (409 Conflict) for source '{self.name}'")
+                self._poll_failed = True
                 return
             
             response.raise_for_status()
@@ -177,7 +202,7 @@ class FioSource:
             return parsed_txs
         except Exception as e:
             logger.error(f"Error parsing Fio response: {e}")
-            return []
+            raise
 
     def _map_to_event(self, tx: Dict[str, Any]) -> NewEvent:
         """Maps a transaction dictionary to a NewEvent."""

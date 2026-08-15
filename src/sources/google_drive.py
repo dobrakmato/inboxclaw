@@ -53,6 +53,8 @@ class GoogleDriveSource:
         self.source_id = source_id
         self.token_file = config.token_file
         self.poll_interval = config.poll_interval
+        self.health = services.health.reporter(name)
+        self._poll_error: Optional[BaseException] = None
         self.classifier = DriveTransitionClassifier()
         self.diff_calc = DriveTextDiffCalculator(
             max_section_chars=config.max_section_chars,
@@ -1081,7 +1083,8 @@ class GoogleDriveSource:
 
         return True
 
-    async def fetch_and_publish(self):
+    async def fetch_and_publish(self) -> bool:
+        self._poll_error = None
         try:
             async with self._get_client() as client:
                 page_token = self.services.cursor.get_last_cursor(self.source_id)
@@ -1090,12 +1093,15 @@ class GoogleDriveSource:
                 if not page_token:
                     await self._reset_drive_cursor(client)
                     logger.info("Initialized Google Drive startPageToken for %s", self.name)
-                    return
+                    return False
 
                 self._ensure_baseline_state(baseline_now)
 
                 if not await self._drain_change_log(client, page_token):
-                    return
+                    self._poll_error = RuntimeError(
+                        "One or more Google Drive changes could not be processed."
+                    )
+                    return False
 
                 if not self.config.restrict_to_my_drive:
                     shared_drive_cursors = await self._sync_shared_drive_membership(client)
@@ -1105,14 +1111,33 @@ class GoogleDriveSource:
                             shared_page_token,
                             drive_id=drive_id,
                         ):
-                            return
+                            self._poll_error = RuntimeError(
+                                f"Google Drive changes for shared drive {drive_id} could not be processed."
+                            )
+                            return False
+                return True
         except DriveApiError as error:
             logger.error(f"An error occurred in Google Drive source {self.name}: {error}")
+            self._poll_error = error
+            return False
         except Exception as e:
             logger.error(f"Unexpected error in Google Drive source {self.name}: {e}", exc_info=True)
+            self._poll_error = e
+            return False
 
     async def run(self):
         logger.info(f"Starting Google Drive source: {self.name} polling every {self.poll_interval}")
         while True:
-            await self.fetch_and_publish()
+            self.health.checking()
+            try:
+                operational_cycle_completed = await self.fetch_and_publish()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self.health.unhealthy_from_exception(error)
+            else:
+                if self._poll_error is not None:
+                    self.health.unhealthy_from_exception(self._poll_error)
+                elif operational_cycle_completed:
+                    self.health.healthy()
             await asyncio.sleep(self.poll_interval)

@@ -22,6 +22,7 @@ class HomeAssistantSource:
         self.access_token = config.access_token
         self.entity_ids = config.entity_ids
         self.message_id = 1
+        self.health = services.health.reporter(name)
 
     def _changed(self, old: dict, new: dict, attr: str = None) -> bool:
         if attr is None:
@@ -168,13 +169,27 @@ class HomeAssistantSource:
     async def run(self):
         """Main loop with reconnection logic."""
         while True:
+            self.health.checking()
             try:
                 await self._listen()
             except ConnectionClosed:
                 logger.warning(f"Connection to Home Assistant {self.name} closed. Reconnecting in 10s...")
+                self.health.unhealthy(
+                    "connectivity",
+                    "The Home Assistant WebSocket connection closed.",
+                )
                 await asyncio.sleep(10)
+            except PermissionError:
+                logger.error(f"Authentication failed for Home Assistant source {self.name}")
+                self.health.unhealthy(
+                    "authentication",
+                    "Home Assistant rejected the configured access token.",
+                    action="Create and configure a valid long-lived Home Assistant access token.",
+                )
+                await asyncio.sleep(30)
             except Exception as e:
                 logger.error(f"Error in Home Assistant source {self.name}: {e}. Retrying in 30s...", exc_info=True)
+                self.health.unhealthy_from_exception(e)
                 await asyncio.sleep(30)
 
     async def _listen(self):
@@ -184,7 +199,7 @@ class HomeAssistantSource:
             msg = json.loads(await ws.recv())
             if msg["type"] != "auth_required":
                 logger.error(f"Unexpected initial message from {self.name}: {msg}")
-                return
+                raise RuntimeError("Home Assistant did not start the expected authentication flow")
 
             # 2) Authenticate
             await ws.send(json.dumps({
@@ -195,7 +210,7 @@ class HomeAssistantSource:
             msg = json.loads(await ws.recv())
             if msg["type"] != "auth_ok":
                 logger.error(f"Authentication failed for {self.name}: {msg}")
-                return
+                raise PermissionError("Home Assistant authentication failed")
 
             logger.info(f"Authenticated with Home Assistant {self.name}")
 
@@ -213,9 +228,10 @@ class HomeAssistantSource:
             ack = json.loads(await ws.recv())
             if ack.get("type") != "result" or not ack.get("success"):
                 logger.error(f"Subscription failed for {self.name}: {ack}")
-                return
+                raise RuntimeError("Home Assistant rejected the entity subscription")
 
             logger.info(f"Subscribed to {len(self.entity_ids)} entities in Home Assistant {self.name}")
+            self.health.healthy("Authenticated and subscribed to Home Assistant entity changes.")
 
             while True:
                 raw = json.loads(await ws.recv())

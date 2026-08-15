@@ -150,3 +150,26 @@ async def test_run_accepts_default_poll_interval(mock_services):
 
     poll_mock.assert_awaited_once()
     sleep_mock.assert_awaited_once_with(21600.0)
+
+
+@pytest.mark.asyncio
+async def test_run_reports_missing_credentials_without_polling(mock_services):
+    config = FakturyOnlineSourceConfig(
+        type="faktury_online",
+        api_key="",
+        email="",
+        poll_interval="10s",
+    )
+    source = FakturyOnlineSource("test_faktury", config, mock_services, 1)
+
+    with patch.object(source, "poll", new=AsyncMock()) as poll_mock:
+        with patch(
+            "src.sources.faktury_online.asyncio.sleep",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await source.run()
+
+    poll_mock.assert_not_awaited()
+    source.health.unhealthy.assert_called_once()
+    assert source.health.unhealthy.call_args.args[0] == "configuration"

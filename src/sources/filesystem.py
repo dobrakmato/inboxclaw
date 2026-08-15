@@ -166,6 +166,7 @@ class FilesystemSource:
         self._snapshots: Dict[str, FileSnapshot] = {}
         self._observer: Optional[Observer] = None
         self._watcher_queue: Optional[asyncio.Queue] = None
+        self.health = services.health.reporter(name)
 
     # ------------------------------------------------------------------
     # Scanning helpers
@@ -208,8 +209,9 @@ class FilesystemSource:
         """Walk the watched directory and return a dict of relative_path -> FileSnapshot."""
         result: Dict[str, FileSnapshot] = {}
         if not self.path.is_dir():
-            logger.warning(f"Filesystem source '{self.name}': path does not exist or is not a directory: {self.path}")
-            return result
+            raise FileNotFoundError(
+                f"Filesystem source path does not exist or is not a directory: {self.path}"
+            )
 
         if self.recursive:
             iterator = self.path.rglob("*")
@@ -410,9 +412,14 @@ class FilesystemSource:
 
         if not self.path.is_dir():
             logger.error(f"Filesystem source '{self.name}': path does not exist: {self.path}")
+            self.health.unhealthy(
+                "configuration",
+                "The configured filesystem source path does not exist or is not a directory.",
+            )
             return
 
         # Initial full scan to establish baseline and catch anything missed while offline
+        self.health.checking()
         initial_events = self._full_scan_and_diff()
         if initial_events:
             self.services.writer.write_events(self.source_id, initial_events)
@@ -425,6 +432,7 @@ class FilesystemSource:
         if use_watcher:
             loop = asyncio.get_running_loop()
             self._start_observer(loop)
+        self.health.healthy("The filesystem baseline and watcher were initialized successfully.")
 
         try:
             if use_watcher and not use_poll:
@@ -436,9 +444,11 @@ class FilesystemSource:
                 # Poll-only mode
                 while True:
                     await asyncio.sleep(self.poll_interval)
+                    self.health.checking()
                     events = self._full_scan_and_diff()
                     if events:
                         self.services.writer.write_events(self.source_id, events)
+                    self.health.healthy()
             else:
                 # Hybrid mode: drain watcher frequently, reconcile periodically
                 elapsed = 0.0
@@ -449,11 +459,16 @@ class FilesystemSource:
                     await self._process_watcher_events()
                     if elapsed >= self.poll_interval:
                         elapsed = 0.0
+                        self.health.checking()
                         events = self._full_scan_and_diff()
                         if events:
                             self.services.writer.write_events(self.source_id, events)
+                        self.health.healthy()
         except asyncio.CancelledError:
             pass
+        except Exception as error:
+            self.health.unhealthy_from_exception(error)
+            raise
         finally:
             self._stop_observer()
             logger.info(f"Filesystem source '{self.name}' stopped.")

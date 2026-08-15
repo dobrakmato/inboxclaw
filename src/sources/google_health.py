@@ -134,6 +134,8 @@ class GoogleHealthSource:
         self.source_id = source_id
         self.cursor_manager = services.cursor
         self.writer = services.writer
+        self.health = services.health.reporter(name)
+        self._poll_errors: List[Exception] = []
 
     def _get_auth_headers(self) -> Dict[str, str]:
         """Get authorization headers using Google OAuth2 credentials."""
@@ -147,14 +149,24 @@ class GoogleHealthSource:
             f"{self.config.poll_interval}s, data types: {self.config.data_types}"
         )
         while True:
+            self.health.checking()
             try:
                 await self.poll()
-            except Exception:
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
                 logger.exception(f"Error in Google Health source '{self.name}' poll loop")
+                self.health.unhealthy_from_exception(error)
+            else:
+                if self._poll_errors:
+                    self.health.unhealthy_from_exception(self._poll_errors[0])
+                else:
+                    self.health.healthy()
             await asyncio.sleep(self.config.poll_interval)
 
     async def poll(self) -> None:
         """Perform a single poll across all configured data types."""
+        self._poll_errors = []
         now = datetime.now(timezone.utc)
 
         last_cursor_str = self.cursor_manager.get_last_cursor(self.source_id)
@@ -169,6 +181,7 @@ class GoogleHealthSource:
 
         headers = self._get_auth_headers()
         all_events: List[NewEvent] = []
+        failures: List[Exception] = []
 
         async with httpx.AsyncClient() as client:
             for data_type in self.config.data_types:
@@ -180,14 +193,20 @@ class GoogleHealthSource:
                         f"Google Health source '{self.name}' HTTP error for "
                         f"'{data_type}': {e.response.status_code} {e.response.text}"
                     )
-                except Exception:
+                    failures.append(e)
+                except Exception as error:
                     logger.exception(
                         f"Google Health source '{self.name}' error fetching '{data_type}'"
                     )
+                    failures.append(error)
 
         if all_events:
             self.writer.write_events(self.source_id, all_events)
             logger.info(f"Google Health source '{self.name}' wrote {len(all_events)} events")
+
+        self._poll_errors = failures
+        if failures:
+            return
 
         self.cursor_manager.set_cursor(self.source_id, now.isoformat())
 

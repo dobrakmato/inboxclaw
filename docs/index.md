@@ -78,6 +78,7 @@ Follow the **[Onboarding Tutorial](onboarding/index.md)** for a complete step-by
 - [Event Pipeline](pipeline.md)
 - [Event Coalescing](coalescing.md)
 - [Data Model](data-model.md)
+- [Source Health](health.md)
 
 ## Event Sources
 

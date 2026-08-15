@@ -48,6 +48,12 @@ def transactional_source(tmp_path):
     with session_maker() as session:
         session.add(Source(id=1, name="drive", type="google_drive", cursor="old-token"))
         session.commit()
+    services.health.register(
+        "drive",
+        "google_drive",
+        1,
+        expected_interval=drive_config.poll_interval,
+    )
     return GoogleDriveSource("drive", drive_config, services, source_id=1), services, session_maker
 
 

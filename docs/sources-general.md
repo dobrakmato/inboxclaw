@@ -24,6 +24,8 @@ sources:
 
 The pipeline will start polling the source automatically on startup.
 
+Each source also reports the result of its real polling, scanning, or connection lifecycle. See [Source Health](health.md) for the CLI, HTTP endpoint, per-source semantics, and internal transition events.
+
 ## How Sources Work
 
 Sources can be implemented as polling connectors (most common) or as push-style integrations that receive events from

@@ -36,6 +36,14 @@ inboxclaw status
 
 This shows service status, recent errors, and database statistics like how many events have been processed.
 
+For an automation-friendly check of every source's real operational state, run:
+
+```bash
+inboxclaw healthcheck
+```
+
+See [Source Health](../health.md) for states, exit codes, and internal transition events.
+
 ## Viewing Logs
 
 If running as a systemd service on Linux:

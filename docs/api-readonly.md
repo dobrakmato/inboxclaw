@@ -2,6 +2,8 @@
 
 Inboxclaw exposes a set of **read-only HTTP endpoints** that let external applications inspect events, sources, and sinks without modifying any state. All endpoints live under the `/api` prefix.
 
+Operational source state is exposed separately through `GET /healthcheck`; process-only liveness is available at `GET /healthcheck/live`. See [Source Health](health.md).
+
 ## Why use the Read-Only API?
 
 A common pattern is to have Inboxclaw deliver lightweight event notifications (via [Webhook](/sink-webhook), [SSE](/sink-sse), or [HTTP Pull](/sink-http-pull)) to another system — for example an LLM agent — which then decides whether an event is interesting. The agent only needs the event ID to reference it; the full event payload can be fetched later through this API. This avoids forcing the consumer to copy or store large JSON payloads.

@@ -50,6 +50,8 @@ def mock_services(db_session_maker):
     services.notifier = MagicMock()
     services.writer = MagicMock()
     services.cursor = MagicMock()
+    services.health = MagicMock()
+    services.health.reporter.return_value = MagicMock()
     services.background_tasks = []
 
     def add_task(coro):

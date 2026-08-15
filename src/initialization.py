@@ -24,9 +24,49 @@ from src.sinks.diary import DiarySink
 
 logger = logging.getLogger("inboxclaw")
 
+SOURCE_TYPES = {
+    "gmail": GmailSource,
+    "google_drive": GoogleDriveSource,
+    "google_calendar": GoogleCalendarSource,
+    "faktury_online": FakturyOnlineSource,
+    "mock": MockSource,
+    "home_assistant": HomeAssistantSource,
+    "fio": FioSource,
+    "nordigen": NordigenSource,
+    "jira": JiraSource,
+    "asana": AsanaSource,
+    "google_health": GoogleHealthSource,
+    "filesystem": FilesystemSource,
+}
+
+
+def _health_interval(source_config) -> float | None:
+    if getattr(source_config, "watch_mode", None) == "watch":
+        return None
+    if hasattr(source_config, "effective_poll_interval"):
+        return float(source_config.effective_poll_interval)
+    if hasattr(source_config, "poll_interval"):
+        return float(source_config.poll_interval)
+    if hasattr(source_config, "interval"):
+        return float(source_config.interval)
+    return None
+
 def init_sources(services: AppServices):
     """Initialize sources based on configuration."""
+    if "inboxclaw" in services.config.sources:
+        raise ValueError("'inboxclaw' is reserved for internal Inboxclaw events")
+
     with services.db_session_maker() as session:
+        internal_source = session.scalar(select(Source).where(Source.name == "inboxclaw"))
+        if internal_source is None:
+            internal_source = Source(name="inboxclaw", type="inboxclaw")
+            session.add(internal_source)
+            session.commit()
+            session.refresh(internal_source)
+        elif internal_source.type != "inboxclaw":
+            raise ValueError("Database source name 'inboxclaw' is reserved for internal events")
+        services.health.set_internal_source(internal_source.id)
+
         for name, s_config in services.config.sources.items():
             s_type = s_config.type
             
@@ -40,68 +80,37 @@ def init_sources(services: AppServices):
             
             source_id = source.id
             
-            if s_type == "gmail":
-                logger.info(f"Initializing Gmail source: {name} (id={source_id})")
-                source_instance = GmailSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "google_drive":
-                logger.info(f"Initializing Google Drive source: {name} (id={source_id})")
-                source_instance = GoogleDriveSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "google_calendar":
-                logger.info(f"Initializing Google Calendar source: {name} (id={source_id})")
-                source_instance = GoogleCalendarSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "faktury_online":
-                logger.info(f"Initializing Faktury Online source: {name} (id={source_id})")
-                source_instance = FakturyOnlineSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "mock":
-                logger.info(f"Initializing Mock source: {name} (id={source_id})")
-                source_instance = MockSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.start())
-            elif s_type == "home_assistant":
-                logger.info(f"Initializing Home Assistant source: {name} (id={source_id})")
-                source_instance = HomeAssistantSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "fio":
-                logger.info(f"Initializing Fio source: {name} (id={source_id})")
-                source_instance = FioSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "nordigen":
-                logger.info(f"Initializing Nordigen source: {name} (id={source_id})")
-                source_instance = NordigenSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "jira":
-                logger.info(f"Initializing Jira source: {name} (id={source_id})")
-                source_instance = JiraSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "asana":
-                logger.info(f"Initializing Asana source: {name} (id={source_id})")
-                source_instance = AsanaSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "google_health":
-                logger.info(f"Initializing Google Health source: {name} (id={source_id})")
-                source_instance = GoogleHealthSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            elif s_type == "filesystem":
-                logger.info(f"Initializing Filesystem source: {name} (id={source_id})")
-                source_instance = FilesystemSource(name, s_config, services, source_id)
-                services.sources[name] = source_instance
-                services.add_task(source_instance.run())
-            else:
+            services.health.register(
+                name,
+                s_type,
+                source_id,
+                expected_interval=_health_interval(s_config),
+            )
+
+            source_class = SOURCE_TYPES.get(s_type)
+            if source_class is None:
                 logger.warning(f"Unknown source type {s_type} for {name}")
+                services.health.unhealthy(
+                    name,
+                    "configuration",
+                    f"Source type '{s_type}' is not implemented.",
+                )
+                continue
+
+            try:
+                logger.info("Initializing %s source: %s (id=%s)", s_type, name, source_id)
+                source_instance = source_class(name, s_config, services, source_id)
+                services.sources[name] = source_instance
+                task = services.add_task(source_instance.run())
+                services.health.attach_task(name, task)
+            except Exception:
+                logger.exception("Failed to initialize source '%s'", name)
+                services.health.unhealthy(
+                    name,
+                    "initialization",
+                    "The source could not be initialized.",
+                    action="Check the Inboxclaw logs for the initialization error.",
+                )
 
 def init_sinks(services: AppServices):
     """Initialize sinks based on configuration."""

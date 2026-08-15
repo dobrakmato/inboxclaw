@@ -23,21 +23,26 @@ class MockSource:
         else:
             self.interval = config.interval
         self.task: asyncio.Task | None = None
+        self.health = services.health.reporter(name)
 
     async def start(self):
         """Start generating mock events."""
         logger.info(f"Starting MockSource '{self.name}' with interval {self.interval}s")
-        self.task = self.services.add_task(self._run())
+        self.task = self.services.add_task(self.run())
 
-    async def _run(self):
+    async def run(self):
+        logger.info(f"Starting MockSource '{self.name}' with interval {self.interval}s")
         while True:
             try:
                 await asyncio.sleep(self.interval)
+                self.health.checking()
                 self._generate_event()
+                self.health.healthy()
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Error in MockSource '{self.name}': {e}", exc_info=True)
+                self.health.unhealthy_from_exception(e)
                 await asyncio.sleep(5)  # Wait before retrying
 
     def _generate_event(self):

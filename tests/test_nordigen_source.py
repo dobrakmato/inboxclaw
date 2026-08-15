@@ -796,7 +796,7 @@ class TestHandleHttpError:
         assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
         source.writer.write_events.assert_not_called()
 
-    def test_401_emits_error_event_and_sets_backoff(self, source, mock_kv):
+    def test_401_emits_event_reports_unhealthy_and_sets_backoff(self, source, mock_kv):
         exc = self._make_exc(401, {"summary": "AccessExpiredError", "detail": "Access has expired"})
         source._handle_http_error(exc)
 
@@ -806,9 +806,11 @@ class TestHandleHttpError:
         assert events[0].event_type == "nordigen.error.access_expired"
         assert events[0].entity_id is None
         assert "action" in events[0].data
+        source.health.unhealthy.assert_called_once()
+        assert source.health.unhealthy.call_args.args[0] == "expired"
         assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
 
-    def test_403_emits_error_event_and_sets_backoff(self, source, mock_kv):
+    def test_403_emits_event_reports_unhealthy_and_sets_backoff(self, source, mock_kv):
         exc = self._make_exc(403, {"summary": "AccountAccessForbidden", "detail": "Forbidden"})
         source._handle_http_error(exc)
 
@@ -816,6 +818,8 @@ class TestHandleHttpError:
         events = source.writer.write_events.call_args.args[1]
         assert events[0].event_type == "nordigen.error.access_forbidden"
         assert events[0].entity_id is None
+        source.health.unhealthy.assert_called_once()
+        assert source.health.unhealthy.call_args.args[0] == "authorization"
         assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
 
     def test_500_sets_backoff_no_event(self, source, mock_kv):

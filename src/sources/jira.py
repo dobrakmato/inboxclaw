@@ -28,6 +28,9 @@ class JiraSource:
         )
         self.field_map = {}  # id -> name
         self.task: Optional[asyncio.Task] = None
+        self.health = services.health.reporter(name)
+        self._poll_had_errors = False
+        self._field_discovery_healthy = True
 
     def _get_auth_header(self) -> str:
         auth_str = f"{self.config.email}:{self.config.api_token}"
@@ -43,12 +46,22 @@ class JiraSource:
         self.services.add_task(self._periodic_field_discovery())
         
         while True:
+            self.health.checking()
             try:
                 await self.fetch_and_publish()
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Error in JiraSource '{self.name}': {e}", exc_info=True)
+                self.health.unhealthy_from_exception(e)
+            else:
+                if self._poll_had_errors or not self._field_discovery_healthy:
+                    self.health.unhealthy(
+                        "partial_failure",
+                        "The source reached Jira, but one or more issues could not be processed.",
+                    )
+                else:
+                    self.health.healthy()
             
             await asyncio.sleep(self.config.poll_interval)
 
@@ -61,6 +74,11 @@ class JiraSource:
                 break
             except Exception as e:
                 logger.error(f"Error discovering fields in JiraSource '{self.name}': {e}")
+            if not self._field_discovery_healthy:
+                self.health.unhealthy(
+                    "partial_failure",
+                    "Jira field discovery did not complete successfully.",
+                )
 
     async def _discover_fields(self):
         logger.info(f"Discovering fields for JiraSource '{self.name}'")
@@ -69,12 +87,15 @@ class JiraSource:
             response.raise_for_status()
             fields = response.json()
             self.field_map = {f["id"]: f["name"] for f in fields}
+            self._field_discovery_healthy = True
             logger.info(f"Discovered {len(self.field_map)} fields for JiraSource '{self.name}'")
         except Exception as e:
             logger.error(f"Failed to discover fields for JiraSource '{self.name}': {e}")
+            self._field_discovery_healthy = False
 
     async def fetch_and_publish(self):
         logger.debug(f"Polling Jira issues for '{self.name}'")
+        self._poll_had_errors = False
         
         # 1. Search for issues
         issues = await self._search_issues()
@@ -99,6 +120,7 @@ class JiraSource:
                     await self._handle_existing_issue(issue)
             except Exception as e:
                 logger.error(f"Error processing Jira issue {key} in source '{self.name}': {e}", exc_info=True)
+                self._poll_had_errors = True
         
         # Handle removed issues (no longer assigned)
         for key in removed_keys:
@@ -106,6 +128,7 @@ class JiraSource:
                 await self._handle_removed_issue(key)
             except Exception as e:
                 logger.error(f"Error processing removed Jira issue {key} in source '{self.name}': {e}", exc_info=True)
+                self._poll_had_errors = True
 
     async def _search_issues(self) -> List[Dict[str, Any]]:
         all_issues = []
@@ -349,6 +372,7 @@ class JiraSource:
             return data.get("comments", [])
         except Exception as e:
             logger.error(f"Failed to fetch comments for {key}: {e}")
+            self._poll_had_errors = True
             return None
 
     async def _fetch_issue_detail(self, key: str) -> Dict[str, Any]:

@@ -64,6 +64,8 @@ class GoogleCalendarSource:
         self.config = config
         self.services = services
         self.source_id = source_id
+        self.health = services.health.reporter(name)
+        self._poll_had_errors = False
 
     def _get_service(self):
         creds = get_google_credentials(self.config.token_file, self.name)
@@ -1334,7 +1336,8 @@ class GoogleCalendarSource:
                 current_sync_token = None
 
             if not current_sync_token:
-                self._rebuild_sync_baseline(service, calendar_id)
+                if not self._rebuild_sync_baseline(service, calendar_id):
+                    self._poll_had_errors = True
                 return
 
             if not self._snapshot_cache_is_trusted(calendar_id):
@@ -1343,7 +1346,8 @@ class GoogleCalendarSource:
                     self.name,
                     calendar_id,
                 )
-                self._rebuild_sync_baseline(service, calendar_id)
+                if not self._rebuild_sync_baseline(service, calendar_id):
+                    self._poll_had_errors = True
                 return
 
             emitted_events: list[NewEvent] = []
@@ -1427,6 +1431,7 @@ class GoogleCalendarSource:
                 error,
                 exc_info=True,
             )
+            self._poll_had_errors = True
         except Exception as e:
             logger.error(
                 "Unexpected error in Calendar source %s (calendar: %s): %s",
@@ -1435,8 +1440,10 @@ class GoogleCalendarSource:
                 e,
                 exc_info=True,
             )
+            self._poll_had_errors = True
 
     async def fetch_and_publish(self):
+        self._poll_had_errors = False
         service = self._get_service()
         for calendar_id in self.config.calendar_ids:
             await self.fetch_and_publish_calendar(service, calendar_id)
@@ -1449,7 +1456,21 @@ class GoogleCalendarSource:
         )
         self.services.add_task(self._cleanup_loop())
         while True:
-            await self.fetch_and_publish()
+            self.health.checking()
+            try:
+                await self.fetch_and_publish()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self.health.unhealthy_from_exception(error)
+            else:
+                if self._poll_had_errors:
+                    self.health.unhealthy(
+                        "partial_failure",
+                        "One or more configured calendars could not be synchronized.",
+                    )
+                else:
+                    self.health.healthy()
             await asyncio.sleep(self.config.poll_interval)
 
     async def _cleanup_loop(self):

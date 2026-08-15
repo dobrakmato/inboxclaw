@@ -110,6 +110,7 @@ Reference docs:
 * [App lifecycle](docs/app-lifecycle.md)
 * [Pipeline](docs/pipeline.md)
 * [Data model](docs/data-model.md)
+* [Source health](docs/health.md)
 * [Sources overview](docs/sources-general.md)
 * [Sinks overview](docs/sinks-general.md)
 * [Google auth CLI](docs/google-auth-cli.md)

@@ -80,6 +80,7 @@ export default defineConfig({
                 text: 'Reference',
                 items: [
                     {text: 'App Lifecycle', link: '/app-lifecycle'},
+                    {text: 'Source Health', link: '/health'},
                     {text: 'CLI Reference', link: '/cli'},
                     {text: 'Key/Value storage', link: '/kv-general'},
                     {text: 'Configuration', link: '/configuration'},

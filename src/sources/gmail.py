@@ -24,6 +24,7 @@ class GmailSource:
         self.token_file = config.token_file
         self.poll_interval = config.poll_interval
         self.cursor = SourceCursor(services)
+        self.health = services.health.reporter(name)
 
     def _get_service(self):
         creds = get_google_credentials(self.token_file, self.name)
@@ -136,7 +137,7 @@ class GmailSource:
             }
         )
 
-    def _recover_expired_history_id(self, service) -> None:
+    def _recover_expired_history_id(self, service) -> bool:
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.config.recovery_backfill_window)
         query = f"after:{int(cutoff.timestamp())}"
         events: list[NewEvent] = []
@@ -170,17 +171,19 @@ class GmailSource:
         fresh_history_id = profile.get('historyId')
         if fresh_history_id:
             self.cursor.set_cursor(self.source_id, str(fresh_history_id))
+            return True
+        return False
 
-    async def fetch_and_publish(self):
+    async def fetch_and_publish(self) -> bool:
         try:
             service = self._get_service()
             current_history_id = self.cursor.get_last_cursor(self.source_id)
 
             if not current_history_id:
                 if self._initialize_history_id(service):
-                    return
+                    return False
                 # If no messages found, we can't initialize historyId yet
-                return
+                return False
 
             # Fetch history since the last historyId
             events = []
@@ -197,8 +200,7 @@ class GmailSource:
                 except HttpError as e:
                     if e.resp.status == 404:
                         logger.warning(f"historyId {current_history_id} is too old for {self.name}, backfilling recent messages")
-                        self._recover_expired_history_id(service)
-                        return
+                        return self._recover_expired_history_id(service)
                     raise
 
                 history_records = history_results.get('history', [])
@@ -295,14 +297,26 @@ class GmailSource:
 
             if str(new_history_id) != str(current_history_id):
                 self.cursor.set_cursor(self.source_id, str(new_history_id))
+            return True
 
         except HttpError as error:
             logger.error(f"An error occurred in Gmail source {self.name}: {error}")
+            raise
         except Exception as e:
             logger.error(f"Unexpected error in Gmail source {self.name}: {e}", exc_info=True)
+            raise
 
     async def run(self):
         logger.info(f"Starting Gmail source: {self.name} polling every {self.poll_interval}")
         while True:
-            await self.fetch_and_publish()
+            self.health.checking()
+            try:
+                operational_cycle_completed = await self.fetch_and_publish()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self.health.unhealthy_from_exception(error)
+            else:
+                if operational_cycle_completed:
+                    self.health.healthy()
             await asyncio.sleep(self.poll_interval)

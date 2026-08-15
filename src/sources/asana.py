@@ -45,6 +45,9 @@ class AsanaSource:
             timeout=30.0,
         )
         self.custom_field_map: Dict[str, str] = {}  # gid -> name
+        self.health = services.health.reporter(name)
+        self._poll_had_errors = False
+        self._field_discovery_healthy = True
 
     async def run(self):
         logger.info(f"Starting AsanaSource '{self.name}'")
@@ -56,12 +59,22 @@ class AsanaSource:
         self.services.add_task(self._periodic_field_discovery())
 
         while True:
+            self.health.checking()
             try:
                 await self.fetch_and_publish()
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Error in AsanaSource '{self.name}': {e}", exc_info=True)
+                self.health.unhealthy_from_exception(e)
+            else:
+                if self._poll_had_errors or not self._field_discovery_healthy:
+                    self.health.unhealthy(
+                        "partial_failure",
+                        "The source reached Asana, but one or more tasks could not be processed.",
+                    )
+                else:
+                    self.health.healthy()
 
             await asyncio.sleep(self.config.poll_interval)
 
@@ -74,11 +87,17 @@ class AsanaSource:
                 break
             except Exception as e:
                 logger.error(f"Error discovering custom fields in AsanaSource '{self.name}': {e}")
+            if not self._field_discovery_healthy:
+                self.health.unhealthy(
+                    "partial_failure",
+                    "Asana custom-field discovery did not complete for every configured project.",
+                )
 
     async def _discover_custom_fields(self):
         """Discover custom fields for all configured projects."""
         logger.info(f"Discovering custom fields for AsanaSource '{self.name}'")
         total = 0
+        had_errors = False
         for project_gid in self.config.project_gids:
             try:
                 response = await self.client.get(
@@ -94,10 +113,13 @@ class AsanaSource:
                         total += 1
             except Exception as e:
                 logger.error(f"Failed to discover custom fields for project {project_gid}: {e}")
+                had_errors = True
+        self._field_discovery_healthy = not had_errors
         logger.info(f"Discovered {total} custom fields for AsanaSource '{self.name}'")
 
     async def fetch_and_publish(self):
         logger.debug(f"Polling Asana tasks for '{self.name}'")
+        self._poll_had_errors = False
 
         for project_gid in self.config.project_gids:
             await self._poll_project(project_gid)
@@ -124,18 +146,21 @@ class AsanaSource:
                 await self._handle_new_task(project_gid, task_by_gid[gid])
             except Exception as e:
                 logger.error(f"Error processing new Asana task {gid}: {e}", exc_info=True)
+                self._poll_had_errors = True
 
         for gid in existing_gids:
             try:
                 await self._handle_existing_task(project_gid, task_by_gid[gid])
             except Exception as e:
                 logger.error(f"Error processing existing Asana task {gid}: {e}", exc_info=True)
+                self._poll_had_errors = True
 
         for gid in removed_gids:
             try:
                 await self._handle_removed_task(project_gid, gid)
             except Exception as e:
                 logger.error(f"Error processing removed Asana task {gid}: {e}", exc_info=True)
+                self._poll_had_errors = True
 
     async def _list_project_tasks(self, project_gid: str) -> List[Dict[str, Any]]:
         all_tasks: List[Dict[str, Any]] = []

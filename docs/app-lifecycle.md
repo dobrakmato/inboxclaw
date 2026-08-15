@@ -17,7 +17,8 @@ On startup, the FastAPI lifespan (`src/app.py`) performs these steps:
    - event notifier
 4. Initialize sources from `config.sources`.
 5. Initialize sinks from `config.sink`.
-6. Start the retention cleanup background task.
+6. Start the source-health watchdog.
+7. Start the retention cleanup background task.
 
 ## Source and Sink Initialization
 
@@ -38,6 +39,7 @@ During runtime:
 - Events are persisted and deduplicated by the pipeline writer.
 - Sinks consume matching events from the database and deliver them outward.
 - The notifier wakes up real-time or worker-style sinks when new events arrive.
+- Sources report the outcome of their real operational work to the in-memory health registry; a local watchdog detects stopped or stale runners without contacting upstream APIs.
 
 See [Pipeline](pipeline.md) for the event flow details.
 

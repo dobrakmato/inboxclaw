@@ -9,6 +9,7 @@ from src.pipeline.writer import EventWriter
 from src.pipeline.cursor import SourceCursor
 from src.pipeline.kv import SourceKVService
 from src.pipeline.coalescer import CoalescenceManager
+from src.health import SourceHealthRegistry
 
 @dataclass
 class AppServices:
@@ -21,6 +22,7 @@ class AppServices:
     cursor: SourceCursor = field(init=False)
     kv: SourceKVService = field(init=False)
     coalescer: CoalescenceManager = field(init=False)
+    health: SourceHealthRegistry = field(init=False)
     background_tasks: List[asyncio.Task] = field(default_factory=list)
     sources: Dict[str, Any] = field(default_factory=dict)
     sinks: Dict[str, Any] = field(default_factory=dict)
@@ -30,6 +32,7 @@ class AppServices:
         self.cursor = SourceCursor(self)
         self.kv = SourceKVService(self)
         self.coalescer = CoalescenceManager(self)
+        self.health = SourceHealthRegistry(self)
 
     def add_task(self, coro) -> asyncio.Task:
         """Create and track a background task."""
@@ -46,6 +49,7 @@ class AppServices:
 
     async def stop_tasks(self):
         """Cancel all background tasks and wait for them to finish."""
+        self.health.stop()
         if not self.background_tasks:
             return
             

@@ -258,8 +258,8 @@ If the refresh token has already expired, `integration_state` is
 cooldown means this event is emitted once per failed daily mint attempt, not
 once per account poll.
 
-When bank access expires or is revoked, the source emits the existing account
-access event:
+When bank access expires or is revoked, the source continues to emit its
+granular Nordigen event:
 
 ```json
 {
@@ -276,7 +276,11 @@ access event:
 }
 ```
 
-The `action` field tells you exactly what to do. Non-actionable errors (institution unavailable, rate limits) are only logged — they are not emitted as events.
+These source-specific events coexist with the shared health system. Bank-access
+expiry, authorization failures, rate limits, and upstream failures also update
+the source's health. Sinks can receive transition-only
+`inboxclaw.source.unhealthy` and `inboxclaw.source.recovered` events by matching
+`inboxclaw.source.*`. See [Source Health](health.md).
 
 ## CLI Reference
 
@@ -310,9 +314,9 @@ inboxclaw nordigen connect --country COUNTRY [OPTIONS]
 
 ## Troubleshooting
 
-**`nordigen.error.access_expired` event received** — Your consent has expired or been revoked. Re-run `nordigen connect` to reconnect the account.
+**`nordigen.error.access_expired` event received, or health reports `expired`** — Your consent has expired or been revoked. Re-run `nordigen connect` to reconnect the account.
 
-**`nordigen.error.access_forbidden` event received** — The account may not have the necessary permissions. Re-run `nordigen connect` or check your GoCardless dashboard.
+**`nordigen.error.access_forbidden` event received, or health reports `authorization`** — The account may not have the necessary permissions. Re-run `nordigen connect` or check your GoCardless dashboard.
 
 **"Authentication failed (HTTP 401)"** — Automatic renewal also failed. Check
 `NORDIGEN_SECRET_ID` and `NORDIGEN_SECRET_KEY`; use `inboxclaw nordigen auth`

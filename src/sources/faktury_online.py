@@ -25,6 +25,8 @@ class FakturyOnlineSource:
         self.source_id = source_id
         self._client = httpx.AsyncClient(timeout=10.0)
         self._cookies: Dict[str, str] = {}
+        self.health = services.health.reporter(name)
+        self._poll_had_errors = False
 
     async def _init_session(self) -> bool:
         """Initialize session to get cookies."""
@@ -34,6 +36,7 @@ class FakturyOnlineSource:
         }
         if not data["key"] or not data["email"]:
             logger.error(f"[{self.name}] API key or email missing in config/env.")
+            self._poll_had_errors = True
             return False
         try:
             url = f"{self.BASE_URL}/init"
@@ -47,9 +50,11 @@ class FakturyOnlineSource:
                 return True
             else:
                 logger.error(f"[{self.name}] Session init failed: {result.get('status')}")
+                self._poll_had_errors = True
                 return False
         except Exception as e:
             logger.error(f"[{self.name}] Error initializing session: {e}")
+            self._poll_had_errors = True
             return False
 
     async def _fetch_invoices(self) -> List[Dict[str, Any]]:
@@ -83,9 +88,11 @@ class FakturyOnlineSource:
                     return await self._fetch_invoices()
             else:
                 logger.error(f"[{self.name}] Failed to fetch invoices: {result.get('status')}")
+                self._poll_had_errors = True
                 
         except Exception as e:
             logger.error(f"[{self.name}] Error fetching invoices: {e}")
+            self._poll_had_errors = True
             
         return []
 
@@ -104,9 +111,11 @@ class FakturyOnlineSource:
             result = response.json()
             if result.get("status") == 1:
                 return result
+            self._poll_had_errors = True
             return None
         except Exception as e:
             logger.error(f"[{self.name}] Error fetching invoice detail {code}: {e}")
+            self._poll_had_errors = True
             return None
 
     def _compute_diff(self, old: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,6 +128,7 @@ class FakturyOnlineSource:
 
     async def poll(self):
         """Poll for changes and emit events."""
+        self._poll_had_errors = False
         logger.info(f"[{self.name}] Polling for invoices...")
         invoices = await self._fetch_invoices()
         
@@ -181,9 +191,29 @@ class FakturyOnlineSource:
     async def run(self):
         """Main loop for the source."""
         while True:
+            if not self.config.api_key or not self.config.email:
+                self.health.unhealthy(
+                    "configuration",
+                    "Faktury Online requires both an API key and account email.",
+                )
+                await asyncio.sleep(self.config.poll_interval)
+                continue
+
+            self.health.checking()
             try:
                 await self.poll()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error(f"[{self.name}] Error in main loop: {e}", exc_info=True)
+                self.health.unhealthy_from_exception(e)
+            else:
+                if self._poll_had_errors:
+                    self.health.unhealthy(
+                        "upstream",
+                        "The Faktury Online operational poll did not complete successfully.",
+                    )
+                else:
+                    self.health.healthy()
             
             await asyncio.sleep(self.config.poll_interval)

@@ -20,6 +20,8 @@ The data model is the contract between sources, the internal pipeline, and sinks
 | `http_pull_batches` | HTTP Pull batch headers. |
 | `http_pull_batch_events` | Membership + processed flag for events in HTTP Pull batches. |
 
+Inboxclaw also creates one reserved `sources` row with `name = inboxclaw` and `type = inboxclaw`. It identifies internal health-transition events and is not a configured or running connector. Current health is held in memory; the existing `source_kv` table stores only a small per-source notification latch to suppress duplicate transition events across restarts.
+
 ## Tables
 
 ### `sources`

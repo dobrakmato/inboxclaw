@@ -182,6 +182,28 @@ async def test_fio_409_conflict(mock_services, config):
         assert mock_get.called
         mock_services.writer.write_events.assert_not_called()
 
+
+@pytest.mark.asyncio
+async def test_run_reports_missing_token_without_polling(mock_services, config):
+    source = FioSource(
+        "test_fio",
+        config.model_copy(update={"token": ""}),
+        mock_services,
+        1,
+    )
+
+    with patch.object(source, "poll", new=AsyncMock()) as poll_mock:
+        with patch(
+            "src.sources.fio.asyncio.sleep",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await source.run()
+
+    poll_mock.assert_not_awaited()
+    source.health.unhealthy.assert_called_once()
+    assert source.health.unhealthy.call_args.args[0] == "configuration"
+
 @pytest.mark.asyncio
 async def test_fio_empty_response(mock_services, config):
     source = FioSource("test_fio", config, mock_services, 1)

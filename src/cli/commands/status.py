@@ -77,6 +77,7 @@ def status(config_path: Optional[str], service_name: str):
 
     # 3. Healthcheck
     click.echo("\n[Healthcheck]")
+    health_by_name = {}
     host = config.server.host
     if host == "0.0.0.0":
         host = "127.0.0.1"
@@ -84,10 +85,15 @@ def status(config_path: Optional[str], service_name: str):
     try:
         with httpx.Client(timeout=2.0) as client:
             response = client.get(url)
-            if response.status_code == 200:
-                click.secho(f"Endpoint {url}: OK", fg="green")
+            payload = response.json()
+            health_by_name = {item["name"]: item for item in payload.get("sources", [])}
+            overall = payload.get("status", "unknown")
+            if overall == "healthy":
+                click.secho(f"Endpoint {url}: healthy", fg="green")
+            elif overall == "starting":
+                click.secho(f"Endpoint {url}: starting", fg="yellow")
             else:
-                click.secho(f"Endpoint {url}: Error {response.status_code}", fg="red")
+                click.secho(f"Endpoint {url}: unhealthy", fg="red")
     except Exception as e:
         click.secho(f"Endpoint {url}: Unreachable ({e})", fg="red")
 
@@ -143,7 +149,7 @@ def status(config_path: Optional[str], service_name: str):
             
         session_maker = init_db(db_path)
         with session_maker() as session:
-            num_sources_db = session.query(func.count(Source.id)).scalar()
+            num_sources_db = session.query(func.count(Source.id)).filter(Source.type != "inboxclaw").scalar()
             num_events = session.query(func.count(Event.id)).scalar()
             num_pending = session.query(func.count(PendingEvent.id)).scalar()
             num_sinks_db = session.query(func.count(Sink.id)).scalar()
@@ -160,8 +166,22 @@ def status(config_path: Optional[str], service_name: str):
                 click.echo("\n[Sources Detail]")
                 sources = session.execute(select(Source)).scalars().all()
                 for s in sources:
+                    if s.name == "inboxclaw" and s.type == "inboxclaw":
+                        click.echo(" [Internal] inboxclaw (inboxclaw)")
+                        continue
                     status_prefix = "[Active] " if s.name in config.sources else "[Inactive] "
-                    click.echo(f" {status_prefix}{s.name} ({s.type}): cursor={s.cursor or 'None'}")
+                    health = health_by_name.get(s.name)
+                    health_text = f", health={health['status']}" if health else ""
+                    if health and health.get("code"):
+                        health_text += f" ({health['code']})"
+                    if health and health.get("pending_failure"):
+                        pending = health["pending_failure"]
+                        health_text += (
+                            f", pending={pending.get('code', 'error')} "
+                            f"{pending.get('consecutive_failures', 1)}/"
+                            f"{pending.get('required_failures', 2)}"
+                        )
+                    click.echo(f" {status_prefix}{s.name} ({s.type}): cursor={s.cursor or 'None'}{health_text}")
             
             # Identify missing sources in DB
             missing_sources = [name for name in config.sources if name not in [s.name for s in session.execute(select(Source)).scalars().all()]]

@@ -2,6 +2,7 @@ import logging
 import contextlib
 import os
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from src.config import load_config
 from src.services import AppServices
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     app.state.services = services
     init_sources(services)
     init_sinks(services)
+    services.add_task(services.health.watchdog())
     
     # Start cleanup task
     services.add_task(cleanup_task(services))
@@ -68,6 +70,14 @@ app.add_middleware(
 
 @app.get("/healthcheck")
 async def healthcheck():
+    services = app.state.services
+    payload = services.health.snapshot()
+    status_code = 503 if payload["status"] == "unhealthy" else 200
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get("/healthcheck/live")
+async def healthcheck_live():
     return {"status": "ok"}
 
 @app.get("/")

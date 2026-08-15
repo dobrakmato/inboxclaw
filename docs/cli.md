@@ -10,8 +10,18 @@ The `inboxclaw` command becomes available automatically after the first run of `
 
 ## Core Commands
 
+### `healthcheck`
+
+Reports the live self-assessment of every configured source. It reads the running service's health registry and does not launch extra source polls.
+
+```bash
+inboxclaw healthcheck [--config PATH] [--json] [--timeout SECONDS]
+```
+
+The command exits `0` when healthy, `1` when any source is unhealthy, and `2` when sources are still starting or the service/configuration cannot be read. See [Source Health](health.md).
+
 ### `status`
-Checks the status of the Inboxclaw system, including the systemd service, logs, healthcheck endpoint, version info, and database statistics.
+Checks the status of the Inboxclaw system, including the systemd service, logs, per-source health, version info, and database statistics.
 
 **Usage:**
 ```bash
