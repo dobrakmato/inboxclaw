@@ -377,7 +377,10 @@ Lists all available calendars in your Google account. This is useful for finding
 Commands for GoCardless (formerly Nordigen) Bank Account Data API.
 
 #### `nordigen auth`
-Exchanges your GoCardless API credentials (`secret_id` and `secret_key`) for a long-lived access token.
+Exchanges your GoCardless API credentials (`secret_id` and `secret_key`) for a
+long-lived refresh token. This is needed for initial setup and remains useful
+as a manual diagnostic; the running source renews it automatically before
+expiry with a persisted daily retry cooldown.
 
 #### `nordigen connect`
 Starts the process of connecting a bank account. It generates a requisition link that you must open in your browser to authorize access to your bank. Once authorized, it will display the account IDs you can add to your `config.yaml`.

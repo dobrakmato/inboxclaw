@@ -60,7 +60,7 @@ NORDIGEN_SECRET_KEY=your_secret_key
 
 ### Step 2 — Mint a refresh token
 
-The refresh token is a long-lived credential (~30 days) that the pipeline uses to obtain short-lived access tokens automatically. Run this once:
+The refresh token is a long-lived credential (~30 days) that the pipeline uses to obtain short-lived access tokens automatically. Run this once for initial setup:
 
 ```
 inboxclaw nordigen auth
@@ -73,6 +73,23 @@ NORDIGEN_REFRESH_TOKEN=your_refresh_token
 ```
 
 > **Keep this token secret.** It grants read access to any bank account you connect.
+
+After initial setup, InboxClaw renews the refresh token automatically using
+`NORDIGEN_SECRET_ID` and `NORDIGEN_SECRET_KEY`. It starts renewal three days
+before the JWT expiry and stores the new token pair in the database, so the
+`.env` refresh token does not need to be replaced every 30 days.
+
+Automatic minting is guarded by a persisted 24-hour retry cooldown. If a
+proactive attempt fails while the current refresh token is still valid,
+InboxClaw continues using that token and tries to mint again no more than once
+per day. Sources sharing the same GoCardless credentials also share one token
+cache and in-process renewal lock. Every failed mint attempt emits one
+`nordigen.error.refresh_renewal_failed` event containing the estimated time
+remaining and the next retry time.
+
+This token renewal is separate from bank consent. If the bank consent expires
+or is revoked, `nordigen connect` is still required because that flow needs
+interactive bank authorization.
 
 ### Step 3 — Connect a bank account
 
@@ -178,6 +195,7 @@ These parameters are primarily used for authentication and are typically provide
 | `nordigen.transaction.credit.pending` | *(none)*  | Pending incoming transaction — may change or disappear.  |
 | `nordigen.transaction.debit.pending`  | *(none)*  | Pending outgoing transaction — may change or disappear.  |
 | `nordigen.transaction.pending`        | *(none)*  | Pending transaction with amount exactly 0 (rare).        |
+| `nordigen.error.refresh_renewal_failed` | *(none)* | Automatic refresh-token mint failed; includes time remaining and next retry. |
 | `nordigen.error.access_expired`       | *(none)*  | Access token expired or revoked — action required.       |
 | `nordigen.error.access_forbidden`     | *(none)*  | Account access forbidden — action required.              |
 
@@ -210,7 +228,38 @@ Transactions do not have an `entity_id` because they are not tied to a persisten
 
 ### Error Event Example
 
-When access expires, is revoked, or the refresh token fails, the source emits an actionable error event so your sinks can notify you:
+A failed automatic refresh-token mint emits an actionable warning. When the
+current refresh token is still valid, `integration_state` is `degraded` and
+the payload estimates when new access tokens will become unavailable:
+
+```json
+{
+  "event_type": "nordigen.error.refresh_renewal_failed",
+  "entity_id": null,
+  "data": {
+    "account_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "source": "nordigen_checking",
+    "summary": "RefreshTokenRenewalFailed",
+    "detail": "GoCardless service unavailable",
+    "failure_type": "HTTPStatusError",
+    "integration_state": "degraded",
+    "refresh_token_expires_at": "2026-08-18T12:00:00+00:00",
+    "refresh_token_seconds_remaining": 172800,
+    "refresh_token_days_remaining": 2.0,
+    "next_retry_at": "2026-08-17T12:00:00+00:00",
+    "action": "Automatic renewal will retry after 2026-08-17T12:00:00+00:00. If renewal keeps failing, new access tokens cannot be obtained after the refresh token expires in approximately 2.0 days. Check NORDIGEN_SECRET_ID and NORDIGEN_SECRET_KEY."
+  },
+  "meta": {}
+}
+```
+
+If the refresh token has already expired, `integration_state` is
+`authentication_unavailable` and the remaining values are zero. The persisted
+cooldown means this event is emitted once per failed daily mint attempt, not
+once per account poll.
+
+When bank access expires or is revoked, the source emits the existing account
+access event:
 
 ```json
 {
@@ -233,7 +282,9 @@ The `action` field tells you exactly what to do. Non-actionable errors (institut
 
 ### `nordigen auth`
 
-Exchanges your `secret_id` and `secret_key` for a long-lived refresh token. Run once.
+Exchanges your `secret_id` and `secret_key` for a long-lived refresh token.
+Use it for initial setup or as a manual authentication diagnostic; the running
+source renews configured credentials automatically.
 
 ```
 inboxclaw nordigen auth [--secret-id ID] [--secret-key KEY]
@@ -263,7 +314,10 @@ inboxclaw nordigen connect --country COUNTRY [OPTIONS]
 
 **`nordigen.error.access_forbidden` event received** — The account may not have the necessary permissions. Re-run `nordigen connect` or check your GoCardless dashboard.
 
-**"Authentication failed (HTTP 401)"** — Your `secret_id` / `secret_key` are wrong, or your refresh token has expired (~30 days). Re-run `nordigen auth` to mint a new refresh token.
+**"Authentication failed (HTTP 401)"** — Automatic renewal also failed. Check
+`NORDIGEN_SECRET_ID` and `NORDIGEN_SECRET_KEY`; use `inboxclaw nordigen auth`
+as a manual diagnostic. Re-run `nordigen connect` only if bank consent itself
+expired or was revoked.
 
 **"No banks found for country"** — Check the country code. It must be a two-letter ISO code (e.g. `CZ`, not `Czech Republic`).
 

@@ -6,6 +6,7 @@ canonical ID generation, event mapping, error handling (401/403/429/5xx),
 actionable error events, and CLI helpers.
 """
 
+import base64
 import hashlib
 import json
 from datetime import datetime, timezone, timedelta, date
@@ -22,9 +23,13 @@ from src.schemas import NewEvent
 from src.sources.nordigen import (
     OVERLAP_DAYS,
     NordigenSource,
+    NordigenTokenRenewalDeferred,
+    REFRESH_RETRY_COOLDOWN,
     _KV_ACCESS_EXPIRES_AT,
     _KV_ACCESS_TOKEN,
     _KV_BACKOFF_UNTIL,
+    _KV_REFRESH_EXPIRES_AT,
+    _KV_REFRESH_RETRY_AT,
     _KV_REFRESH_TOKEN,
     _KV_LAST_BOOKED_DATE,
     _KV_LAST_POLL_AT,
@@ -38,6 +43,7 @@ from src.utils.nordigen_client import (
     bootstrap_refresh_token,
     canonical_tx_id,
     list_institutions,
+    parse_jwt_expiry,
     parse_tx_date,
 )
 from src.cli.commands.nordigen_connect import (
@@ -57,6 +63,7 @@ def mock_kv():
     kv = MagicMock()
     kv.get.side_effect = lambda source_id, key: store.get((source_id, key))
     kv.set.side_effect = lambda source_id, key, value: store.update({(source_id, key): value})
+    kv.delete.side_effect = lambda source_id, key: store.pop((source_id, key), None)
     return kv
 
 
@@ -119,6 +126,14 @@ def _make_tx(
     )
 
 
+def _jwt_expiring_at(expires_at: datetime) -> str:
+    def encode(value: dict) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    return f"{encode({'alg': 'none'})}.{encode({'exp': int(expires_at.timestamp())})}.signature"
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -165,6 +180,17 @@ class TestNordigenSourceConfig:
 # ---------------------------------------------------------------------------
 # KV-backed token management
 # ---------------------------------------------------------------------------
+
+class TestJwtExpiryParsing:
+    def test_reads_expiry_claim(self):
+        expires_at = datetime.now(timezone.utc) + timedelta(days=10)
+        parsed = parse_jwt_expiry(_jwt_expiring_at(expires_at))
+
+        assert parsed == expires_at.replace(microsecond=0)
+
+    @pytest.mark.parametrize("token", ["", "opaque-token", "a.b.c", "e30.e30.signature"])
+    def test_invalid_or_missing_expiry_returns_none(self, token):
+        assert parse_jwt_expiry(token) is None
 
 class TestGetAccessToken:
     @pytest.mark.asyncio
@@ -226,6 +252,174 @@ class TestGetAccessToken:
         assert mock_kv.get(1, _KV_REFRESH_TOKEN) == "new_refresh_rotated"
 
     @pytest.mark.asyncio
+    async def test_proactively_mints_token_pair_near_refresh_expiry(
+        self, source, source_config, mock_kv
+    ):
+        source_config.refresh_token = _jwt_expiring_at(
+            datetime.now(timezone.utc) + timedelta(days=2)
+        )
+
+        with patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            return_value=("new_refresh", 30 * 86400, "new_access", 86400),
+        ) as mock_bootstrap, patch(
+            "src.sources.nordigen.refresh_access_token", new_callable=AsyncMock
+        ) as mock_refresh:
+            token = await source._get_access_token()
+
+        assert token == "new_access"
+        mock_bootstrap.assert_awaited_once_with("sid", "skey")
+        mock_refresh.assert_not_awaited()
+        assert mock_kv.get(1, _KV_REFRESH_TOKEN) == "new_refresh"
+        assert mock_kv.get(1, _KV_REFRESH_EXPIRES_AT) is not None
+        assert mock_kv.get(1, _KV_REFRESH_RETRY_AT) is None
+
+    @pytest.mark.asyncio
+    async def test_failed_proactive_mint_retries_at_most_daily(
+        self, source, source_config, mock_kv
+    ):
+        source_config.refresh_token = _jwt_expiring_at(
+            datetime.now(timezone.utc) + timedelta(days=2)
+        )
+
+        with patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("temporary outage"),
+        ) as mock_bootstrap, patch(
+            "src.sources.nordigen.refresh_access_token",
+            new_callable=AsyncMock,
+            return_value=MagicMock(access="fallback_access", access_expires=60, refresh=None),
+        ) as mock_refresh:
+            assert await source._get_access_token() == "fallback_access"
+
+            # Force access renewal while the persisted token/new cooldown is active.
+            mock_kv.set(
+                1,
+                _KV_ACCESS_EXPIRES_AT,
+                (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+            )
+            assert await source._get_access_token() == "fallback_access"
+
+        mock_bootstrap.assert_awaited_once()
+        assert mock_refresh.await_count == 2
+        retry_at = datetime.fromisoformat(mock_kv.get(1, _KV_REFRESH_RETRY_AT))
+        assert retry_at > datetime.now(timezone.utc)
+        assert retry_at <= datetime.now(timezone.utc) + REFRESH_RETRY_COOLDOWN
+        source.writer.write_events.assert_called_once()
+        event = source.writer.write_events.call_args.args[1][0]
+        assert event.event_type == "nordigen.error.refresh_renewal_failed"
+        assert event.data["integration_state"] == "degraded"
+        assert event.data["refresh_token_days_remaining"] == pytest.approx(2.0, abs=0.1)
+        assert event.data["next_retry_at"] == retry_at.isoformat()
+        assert "approximately" in event.data["action"]
+
+    @pytest.mark.asyncio
+    async def test_expired_refresh_does_not_mint_again_during_cooldown(
+        self, source, source_config, mock_kv
+    ):
+        source_config.refresh_token = _jwt_expiring_at(
+            datetime.now(timezone.utc) - timedelta(minutes=1)
+        )
+
+        with patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("temporary outage"),
+        ) as mock_bootstrap:
+            with pytest.raises(RuntimeError, match="temporary outage"):
+                await source._get_access_token()
+            with pytest.raises(NordigenTokenRenewalDeferred):
+                await source._get_access_token()
+
+        mock_bootstrap.assert_awaited_once()
+        source.writer.write_events.assert_called_once()
+        event = source.writer.write_events.call_args.args[1][0]
+        assert event.event_type == "nordigen.error.refresh_renewal_failed"
+        assert event.data["integration_state"] == "authentication_unavailable"
+        assert event.data["refresh_token_days_remaining"] == 0.0
+        assert "Authentication is unavailable" in event.data["action"]
+
+    @pytest.mark.asyncio
+    async def test_refresh_401_bootstraps_once_and_recovers(self, source, mock_kv):
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 401
+        refresh_error = httpx.HTTPStatusError(
+            "expired refresh",
+            request=MagicMock(),
+            response=response,
+        )
+
+        with patch(
+            "src.sources.nordigen.refresh_access_token",
+            new_callable=AsyncMock,
+            side_effect=refresh_error,
+        ), patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            return_value=("recovered_refresh", 30 * 86400, "recovered_access", 86400),
+        ) as mock_bootstrap:
+            token = await source._get_access_token()
+
+        assert token == "recovered_access"
+        mock_bootstrap.assert_awaited_once_with("sid", "skey")
+        assert mock_kv.get(1, _KV_REFRESH_TOKEN) == "recovered_refresh"
+
+    @pytest.mark.asyncio
+    async def test_sources_with_same_credentials_share_one_token_mint(
+        self, source_config, mock_services, mock_kv
+    ):
+        source_config.refresh_token = ""
+        first = NordigenSource("checking", source_config, mock_services, source_id=5)
+        second = NordigenSource("savings", source_config, mock_services, source_id=9)
+        mock_services.sources = {"checking": first, "savings": second}
+
+        with patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            return_value=("shared_refresh", 30 * 86400, "shared_access", 86400),
+        ) as mock_bootstrap:
+            assert await first._get_access_token() == "shared_access"
+            assert await second._get_access_token() == "shared_access"
+
+        mock_bootstrap.assert_awaited_once()
+        assert mock_kv.get(5, _KV_REFRESH_TOKEN) == "shared_refresh"
+        assert mock_kv.get(9, _KV_REFRESH_TOKEN) is None
+
+    @pytest.mark.asyncio
+    async def test_sources_without_api_credentials_keep_tokens_separate(
+        self, source_config, mock_services, mock_kv
+    ):
+        first_config = source_config.model_copy(
+            update={"secret_id": "", "secret_key": "", "refresh_token": "first_refresh"}
+        )
+        second_config = source_config.model_copy(
+            update={"secret_id": "", "secret_key": "", "refresh_token": "second_refresh"}
+        )
+        first = NordigenSource("checking", first_config, mock_services, source_id=5)
+        second = NordigenSource("savings", second_config, mock_services, source_id=9)
+        mock_services.sources = {"checking": first, "savings": second}
+
+        with patch(
+            "src.sources.nordigen.refresh_access_token",
+            new_callable=AsyncMock,
+            side_effect=[
+                MagicMock(access="first_access", access_expires=86400, refresh=None),
+                MagicMock(access="second_access", access_expires=86400, refresh=None),
+            ],
+        ) as mock_refresh:
+            assert await first._get_access_token() == "first_access"
+            assert await second._get_access_token() == "second_access"
+
+        assert [call.args[0] for call in mock_refresh.await_args_list] == [
+            "first_refresh",
+            "second_refresh",
+        ]
+        assert mock_kv.get(5, _KV_ACCESS_TOKEN) == "first_access"
+        assert mock_kv.get(9, _KV_ACCESS_TOKEN) == "second_access"
+
+    @pytest.mark.asyncio
     async def test_refresh_token_failure_emits_event(self, source, mock_kv):
         """When token refresh fails with 401, an actionable error event is emitted."""
         resp = MagicMock(spec=httpx.Response)
@@ -233,18 +427,26 @@ class TestGetAccessToken:
         resp.json.return_value = {"summary": "Invalid Token", "detail": "failed to refresh access token"}
         exc = httpx.HTTPStatusError("HTTP 401", request=MagicMock(), response=resp)
         
-        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
-            mock_refresh.side_effect = exc
-            
+        with patch(
+            "src.sources.nordigen.refresh_access_token",
+            new_callable=AsyncMock,
+            side_effect=exc,
+        ), patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            side_effect=exc,
+        ):
             await source._poll()
 
-        # Check if write_events was called with the error event
+        # The guarded mint failure emits one precise event rather than an
+        # additional generic access-expired event.
         source.writer.write_events.assert_called_once()
         events = source.writer.write_events.call_args.args[1]
         assert len(events) == 1
-        assert events[0].event_type == "nordigen.error.access_expired"
+        assert events[0].event_type == "nordigen.error.refresh_renewal_failed"
         assert "failed to refresh access token" in events[0].data["detail"]
-        assert "Reconnect" in events[0].data["action"]
+        assert events[0].data["integration_state"] == "authentication_unavailable"
+        assert "Automatic renewal will retry" in events[0].data["action"]
         assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
 
     @pytest.mark.asyncio
@@ -255,14 +457,21 @@ class TestGetAccessToken:
         resp.json.return_value = {"summary": "Forbidden", "detail": "access forbidden"}
         exc = httpx.HTTPStatusError("HTTP 403", request=MagicMock(), response=resp)
         
-        with patch("src.sources.nordigen.refresh_access_token", new_callable=AsyncMock) as mock_refresh:
-            mock_refresh.side_effect = exc
-            
+        with patch(
+            "src.sources.nordigen.refresh_access_token",
+            new_callable=AsyncMock,
+            side_effect=exc,
+        ), patch(
+            "src.sources.nordigen.bootstrap_refresh_token",
+            new_callable=AsyncMock,
+            side_effect=exc,
+        ):
             await source._poll()
 
         source.writer.write_events.assert_called_once()
         events = source.writer.write_events.call_args.args[1]
-        assert events[0].event_type == "nordigen.error.access_forbidden"
+        assert events[0].event_type == "nordigen.error.refresh_renewal_failed"
+        assert events[0].data["integration_state"] == "authentication_unavailable"
         assert mock_kv.get(1, _KV_BACKOFF_UNTIL) is not None
 
 

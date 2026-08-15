@@ -23,9 +23,11 @@ from src.services import AppServices
 from src.utils.nordigen_client import (
     Transaction,
     TransactionList,
+    bootstrap_refresh_token,
     canonical_tx_id,
     fetch_transactions,
     parse_tx_date,
+    parse_jwt_expiry,
     refresh_access_token,
 )
 
@@ -42,7 +44,35 @@ _KV_BACKOFF_UNTIL = "backoff_until"
 _KV_ACCESS_TOKEN = "access_token"
 _KV_ACCESS_EXPIRES_AT = "access_expires_at"
 _KV_REFRESH_TOKEN = "refresh_token"
+_KV_REFRESH_EXPIRES_AT = "refresh_expires_at"
+_KV_REFRESH_RETRY_AT = "refresh_retry_at"
 _KV_LAST_BOOKED_DATE = "last_booked_date"
+
+# Renew early enough to survive a short outage, but put a durable one-day lease
+# in front of /token/new/ so a failure cannot cause every poll to mint again.
+REFRESH_RENEWAL_WINDOW = timedelta(days=3)
+REFRESH_RETRY_COOLDOWN = timedelta(days=1)
+TOKEN_EXPIRY_SAFETY_MARGIN = timedelta(seconds=60)
+
+
+class NordigenTokenRenewalDeferred(RuntimeError):
+    """Automatic token minting is cooling down after a recent attempt."""
+
+    def __init__(self, retry_at: datetime):
+        self.retry_at = retry_at
+        super().__init__(f"Nordigen token renewal deferred until {retry_at.isoformat()}")
+
+
+class NordigenTokenMintFailed(NordigenTokenRenewalDeferred):
+    """A guarded automatic token-minting attempt failed."""
+
+    def __init__(self, retry_at: datetime, original: Exception):
+        self.original = original
+        super().__init__(retry_at)
+        self.args = (
+            f"Nordigen token renewal failed; next attempt after "
+            f"{retry_at.isoformat()}: {original}",
+        )
 
 
 class NordigenSource:
@@ -71,46 +101,286 @@ class NordigenSource:
         self.writer = services.writer
         self.kv = services.kv
 
+        # Sources using the same API credentials share one in-process lock and
+        # one KV owner, avoiding simultaneous /token/new/ calls for each bank.
+        lock_registry = getattr(services, "_nordigen_token_locks", None)
+        if not isinstance(lock_registry, dict):
+            lock_registry = {}
+            setattr(services, "_nordigen_token_locks", lock_registry)
+        credential_key = (
+            ("credentials", config.secret_id, config.secret_key)
+            if config.secret_id and config.secret_key
+            else ("source", source_id)
+        )
+        self._token_lock = lock_registry.setdefault(credential_key, asyncio.Lock())
+
     # ------------------------------------------------------------------
     # Token management (backed by KV cache)
     # ------------------------------------------------------------------
 
-    async def _get_access_token(self) -> str:
-        """Return a valid access token, refreshing via KV-cached value if possible."""
-        now = datetime.now(timezone.utc)
+    def _token_store_source_id(self) -> int:
+        """Choose one KV owner for sources that share GoCardless credentials."""
+        if not self._can_bootstrap():
+            return self.source_id
 
-        cached_token = self.kv.get(self.source_id, _KV_ACCESS_TOKEN)
-        cached_expires = self.kv.get(self.source_id, _KV_ACCESS_EXPIRES_AT)
+        configured_sources = getattr(self.services, "sources", {})
+        if not isinstance(configured_sources, dict):
+            return self.source_id
 
-        if cached_token and cached_expires:
+        matching_ids = [self.source_id]
+        for candidate in configured_sources.values():
+            if not isinstance(candidate, NordigenSource):
+                continue
+            if (
+                candidate.config.secret_id == self.config.secret_id
+                and candidate.config.secret_key == self.config.secret_key
+            ):
+                matching_ids.append(candidate.source_id)
+        return min(matching_ids)
+
+    @staticmethod
+    def _parse_kv_datetime(raw_value: object) -> Optional[datetime]:
+        if not isinstance(raw_value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw_value)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _refresh_expiry(
+        self,
+        refresh_token: str,
+        token_store_id: int,
+        *,
+        token_is_stored: bool,
+    ) -> Optional[datetime]:
+        jwt_expiry = parse_jwt_expiry(refresh_token)
+        if jwt_expiry is not None:
+            return jwt_expiry
+        if token_is_stored:
+            return self._parse_kv_datetime(
+                self.kv.get(token_store_id, _KV_REFRESH_EXPIRES_AT)
+            )
+        return None
+
+    def _refresh_retry_at(self, token_store_id: int) -> Optional[datetime]:
+        return self._parse_kv_datetime(
+            self.kv.get(token_store_id, _KV_REFRESH_RETRY_AT)
+        )
+
+    def _can_bootstrap(self) -> bool:
+        return bool(self.config.secret_id and self.config.secret_key)
+
+    def _emit_token_mint_failure(
+        self,
+        exc: Exception,
+        now: datetime,
+        retry_at: datetime,
+        refresh_expires_at: Optional[datetime],
+    ) -> None:
+        detail = str(exc)
+        if isinstance(exc, httpx.HTTPStatusError):
             try:
-                expires_at = datetime.fromisoformat(cached_expires)
-                if now < expires_at:
-                    return cached_token
-            except ValueError:
+                response_detail = exc.response.json().get("detail")
+                if response_detail:
+                    detail = str(response_detail)
+            except Exception:
                 pass
 
-        logger.debug("Refreshing Nordigen access token for source '%s'", self.name)
-        
-        # 1. Use the best available refresh token: DB first, then .env config
-        refresh_token = self.kv.get(self.source_id, _KV_REFRESH_TOKEN) or self.config.refresh_token
-        
-        if not refresh_token:
-            raise ValueError(f"No refresh token available for Nordigen source '{self.name}'")
+        remaining_seconds: Optional[int] = None
+        remaining_days: Optional[float] = None
+        integration_state = "authentication_unavailable"
+        if refresh_expires_at is not None:
+            remaining_seconds = max(
+                0,
+                int((refresh_expires_at - now).total_seconds()),
+            )
+            remaining_days = round(remaining_seconds / 86400, 1)
+            if remaining_seconds > 0:
+                integration_state = "degraded"
 
-        token_resp = await refresh_access_token(refresh_token)
+        if remaining_days is not None and remaining_days > 0:
+            action = (
+                f"Automatic renewal will retry after {retry_at.isoformat()}. "
+                f"If renewal keeps failing, new access tokens cannot be obtained "
+                f"after the refresh token expires in approximately {remaining_days} days. "
+                "Check NORDIGEN_SECRET_ID and NORDIGEN_SECRET_KEY."
+            )
+        else:
+            action = (
+                f"Authentication is unavailable. Automatic renewal will retry after "
+                f"{retry_at.isoformat()}. Check NORDIGEN_SECRET_ID and "
+                "NORDIGEN_SECRET_KEY."
+            )
 
-        # 2. If GoCardless gave us a NEW refresh token (rotation), save it!
-        if token_resp.refresh:
-            logger.info("Nordigen source '%s': refresh token rotated, saving to DB", self.name)
-            self.kv.set(self.source_id, _KV_REFRESH_TOKEN, token_resp.refresh)
+        event = NewEvent(
+            event_id=(
+                f"nordigen_error_refresh_renewal_{self.source_id}_"
+                f"{retry_at.isoformat()}"
+            ),
+            event_type="nordigen.error.refresh_renewal_failed",
+            entity_id=None,
+            occurred_at=now,
+            data={
+                "account_id": self.config.account_id,
+                "source": self.name,
+                "summary": "RefreshTokenRenewalFailed",
+                "detail": detail,
+                "failure_type": type(exc).__name__,
+                "integration_state": integration_state,
+                "refresh_token_expires_at": (
+                    refresh_expires_at.isoformat() if refresh_expires_at else None
+                ),
+                "refresh_token_seconds_remaining": remaining_seconds,
+                "refresh_token_days_remaining": remaining_days,
+                "next_retry_at": retry_at.isoformat(),
+                "action": action,
+            },
+        )
+        try:
+            self.writer.write_events(self.source_id, [event])
+        except Exception:
+            logger.exception(
+                "Nordigen source '%s': failed to emit token-renewal error event",
+                self.name,
+            )
 
-        # 3. Save the new access token
-        expires_at = now + timedelta(seconds=token_resp.access_expires - 60)
-        self.kv.set(self.source_id, _KV_ACCESS_TOKEN, token_resp.access)
-        self.kv.set(self.source_id, _KV_ACCESS_EXPIRES_AT, expires_at.isoformat())
-        
-        return token_resp.access
+    async def _bootstrap_and_cache_tokens(
+        self,
+        token_store_id: int,
+        now: datetime,
+        current_refresh_expires_at: Optional[datetime] = None,
+    ) -> str:
+        """Mint and cache a token pair, guarded by a persisted retry lease."""
+        retry_at = now + REFRESH_RETRY_COOLDOWN
+        # Persist before the network request. A failure or process restart must
+        # not turn the regular polling loop into a token-minting retry loop.
+        self.kv.set(token_store_id, _KV_REFRESH_RETRY_AT, retry_at.isoformat())
+
+        logger.info(
+            "Nordigen credentials shared by source '%s': minting a new refresh token",
+            self.name,
+        )
+        try:
+            refresh, refresh_expires, access, access_expires = await bootstrap_refresh_token(
+                self.config.secret_id,
+                self.config.secret_key,
+            )
+            if not refresh:
+                raise ValueError(
+                    "GoCardless token/new response did not include a refresh token"
+                )
+        except Exception as exc:
+            self._emit_token_mint_failure(
+                exc,
+                now,
+                retry_at,
+                current_refresh_expires_at,
+            )
+            raise NordigenTokenMintFailed(retry_at, exc) from exc
+
+        refresh_expires_at = now + timedelta(seconds=refresh_expires)
+        access_expires_at = now + timedelta(seconds=access_expires) - TOKEN_EXPIRY_SAFETY_MARGIN
+        self.kv.set(token_store_id, _KV_REFRESH_TOKEN, refresh)
+        self.kv.set(token_store_id, _KV_REFRESH_EXPIRES_AT, refresh_expires_at.isoformat())
+        self.kv.set(token_store_id, _KV_ACCESS_TOKEN, access)
+        self.kv.set(token_store_id, _KV_ACCESS_EXPIRES_AT, access_expires_at.isoformat())
+        self.kv.delete(token_store_id, _KV_REFRESH_RETRY_AT)
+        return access
+
+    async def _get_access_token(self) -> str:
+        """Return a valid access token and renew its refresh token when needed."""
+        async with self._token_lock:
+            now = datetime.now(timezone.utc)
+            token_store_id = self._token_store_source_id()
+
+            # Re-check inside the shared lock: another account may just have
+            # renewed the credentials for every source using this secret pair.
+            cached_token = self.kv.get(token_store_id, _KV_ACCESS_TOKEN)
+            cached_expires = self._parse_kv_datetime(
+                self.kv.get(token_store_id, _KV_ACCESS_EXPIRES_AT)
+            )
+            if cached_token and cached_expires and now < cached_expires:
+                return cached_token
+
+            stored_refresh = self.kv.get(token_store_id, _KV_REFRESH_TOKEN)
+            refresh_token = stored_refresh or self.config.refresh_token
+            if not refresh_token:
+                if self._can_bootstrap():
+                    retry_at = self._refresh_retry_at(token_store_id)
+                    if retry_at and now < retry_at:
+                        raise NordigenTokenRenewalDeferred(retry_at)
+                    return await self._bootstrap_and_cache_tokens(token_store_id, now)
+                raise ValueError(f"No refresh token available for Nordigen source '{self.name}'")
+
+            refresh_expires_at = self._refresh_expiry(
+                refresh_token,
+                token_store_id,
+                token_is_stored=bool(stored_refresh),
+            )
+            renewal_due = bool(
+                refresh_expires_at
+                and refresh_expires_at - now <= REFRESH_RENEWAL_WINDOW
+            )
+            retry_at = self._refresh_retry_at(token_store_id)
+
+            if renewal_due and self._can_bootstrap():
+                if not retry_at or now >= retry_at:
+                    try:
+                        return await self._bootstrap_and_cache_tokens(
+                            token_store_id,
+                            now,
+                            refresh_expires_at,
+                        )
+                    except Exception as exc:
+                        if refresh_expires_at and now < refresh_expires_at:
+                            logger.warning(
+                                "Nordigen source '%s': proactive refresh-token renewal failed; "
+                                "using the current token until the next daily retry: %s",
+                                self.name,
+                                exc,
+                            )
+                        else:
+                            raise
+                elif refresh_expires_at and now >= refresh_expires_at:
+                    raise NordigenTokenRenewalDeferred(retry_at)
+
+            logger.debug("Refreshing Nordigen access token for source '%s'", self.name)
+            try:
+                token_resp = await refresh_access_token(refresh_token)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in (401, 403) or not self._can_bootstrap():
+                    raise
+
+                retry_at = self._refresh_retry_at(token_store_id)
+                if retry_at and now < retry_at:
+                    raise NordigenTokenRenewalDeferred(retry_at) from exc
+                return await self._bootstrap_and_cache_tokens(
+                    token_store_id,
+                    now,
+                    refresh_expires_at,
+                )
+
+            # The documented refresh endpoint returns only an access token, but
+            # retain compatibility if GoCardless ever supplies a rotated token.
+            if token_resp.refresh:
+                logger.info("Nordigen source '%s': refresh token rotated, saving to DB", self.name)
+                self.kv.set(token_store_id, _KV_REFRESH_TOKEN, token_resp.refresh)
+                rotated_expiry = parse_jwt_expiry(token_resp.refresh)
+                if rotated_expiry:
+                    self.kv.set(
+                        token_store_id,
+                        _KV_REFRESH_EXPIRES_AT,
+                        rotated_expiry.isoformat(),
+                    )
+
+            expires_at = now + timedelta(seconds=token_resp.access_expires) - TOKEN_EXPIRY_SAFETY_MARGIN
+            self.kv.set(token_store_id, _KV_ACCESS_TOKEN, token_resp.access)
+            self.kv.set(token_store_id, _KV_ACCESS_EXPIRES_AT, expires_at.isoformat())
+            return token_resp.access
 
     # ------------------------------------------------------------------
     # Poll scheduling (backed by KV cache)
@@ -200,6 +470,18 @@ class NordigenSource:
 
         try:
             access_token = await self._get_access_token()
+        except NordigenTokenRenewalDeferred as exc:
+            remaining = max(
+                60.0,
+                (exc.retry_at - datetime.now(timezone.utc)).total_seconds(),
+            )
+            logger.warning(
+                "Nordigen source '%s': automatic token renewal is cooling down until %s",
+                self.name,
+                exc.retry_at.isoformat(),
+            )
+            self._set_backoff(remaining)
+            return
         except httpx.HTTPStatusError as exc:
             self._handle_http_error(exc)
             return

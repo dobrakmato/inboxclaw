@@ -6,6 +6,7 @@ functions for all GoCardless API calls. Used by both the polling source and
 the CLI onboarding commands.
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -119,6 +120,30 @@ def parse_tx_date(tx: Transaction) -> Optional[date]:
                 except ValueError:
                     pass
     return None
+
+
+def parse_jwt_expiry(token: str) -> Optional[datetime]:
+    """Read a JWT ``exp`` claim without treating it as authentication proof.
+
+    GoCardless validates the token itself.  This unverified value is used only
+    to schedule proactive refresh-token renewal before the token expires.
+    """
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+
+        payload_segment = parts[1]
+        padding = "=" * (-len(payload_segment) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode(payload_segment + padding).decode("utf-8")
+        )
+        exp = payload.get("exp")
+        if isinstance(exp, bool) or not isinstance(exp, (int, float)):
+            return None
+        return datetime.fromtimestamp(exp, timezone.utc)
+    except (ValueError, TypeError, KeyError, OverflowError, OSError, json.JSONDecodeError):
+        return None
 
 
 def canonical_tx_id(tx: Transaction, account_id: str, status: str) -> str:
